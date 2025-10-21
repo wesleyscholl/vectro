@@ -1,4 +1,4 @@
-# Vectro — Embedding Compressor (MVP)
+# Vectro — Embedding Compressor Prototype
 
 This is an MVP layout for "Vectro", an embedding compressor prototype.
 
