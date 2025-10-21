@@ -11,56 +11,141 @@ from __future__ import annotations
 import argparse
 import numpy as np
 from python.interface import quantize_embeddings, reconstruct_embeddings, mean_cosine_similarity
+import json
+import struct
+
+
+def read_vectro_header(fp):
+    # fp is an open file object at start
+    magic = fp.read(7)
+    if not magic or not magic.startswith(b'VECTRO'):
+        raise ValueError('Not a VECTRO file')
+    version = magic[6:7]
+    # back-compat: VECTRO1 has magic b'VECTRO1' (7 bytes); we read next 4 bytes for header len
+    header_len_bytes = fp.read(4)
+    if len(header_len_bytes) < 4:
+        raise EOFError('Truncated header length')
+    header_len = int.from_bytes(header_len_bytes, 'little')
+    header_json = fp.read(header_len)
+    header = json.loads(header_json.decode('utf-8'))
+    # compute data_start position
+    data_start = fp.tell()
+    header['data_start'] = data_start
+    return header
+
+
+def iter_vectro_chunks(fp, header):
+    # Yields tuples (meta, q_bytes, scales_bytes) for each chunk by reading sequentially
+    fp.seek(header['data_start'])
+    if header.get('version', 1) == 1:
+        # legacy: all q bytes then all scales bytes; yield a single pseudo-chunk
+        n = header['n']
+        d = header['d']
+        q_bytes = fp.read(n * d)
+        scales_bytes = fp.read(n * 4)
+        meta = {'start': 0, 'end': n, 'offset': 0, 'q_len': len(q_bytes), 'scales_len': len(scales_bytes)}
+        yield meta, q_bytes, scales_bytes
+        return
+    # VECTRO2: header contains 'chunks' with per-chunk q_len and scales_len and offsets relative to data_start
+    for meta in header['chunks']:
+        q_len = meta['q_len']
+        scales_len = meta['scales_len']
+        # seek and read q + scales
+        fp.seek(header['data_start'] + meta['offset'])
+        q_bytes = fp.read(q_len)
+        scales_bytes = fp.read(scales_len)
+        yield meta, q_bytes, scales_bytes
+
+
+def reconstruct_slice_from_file(path, slice_start, slice_end):
+    # Reconstruct only vectors in [slice_start, slice_end) by reading per-chunk bytes
+    with open(path, 'rb') as fp:
+        header = read_vectro_header(fp)
+        d = header['d']
+        result_parts = []
+        for meta, q_bytes, scales_bytes in iter_vectro_chunks(fp, header):
+            cstart = meta['start']
+            cend = meta['end']
+            # no overlap
+            if cend <= slice_start or cstart >= slice_end:
+                continue
+            # reconstruct only overlapping portion
+            rel_start = max(slice_start, cstart) - cstart
+            rel_end = min(slice_end, cend) - cstart
+            n_chunk = cend - cstart
+            # reshape q and scales for full chunk then slice
+            q_arr = np.frombuffer(q_bytes, dtype=np.int8).reshape((n_chunk, d))
+            scales_arr = np.frombuffer(scales_bytes, dtype=np.float32).reshape((n_chunk,))
+            sub_q = q_arr[rel_start:rel_end]
+            sub_scales = scales_arr[rel_start:rel_end]
+            # reconstruct sub-chunk vectors (pass flattened q)
+            recon = reconstruct_embeddings(sub_q.ravel(), sub_scales, int(d))
+            result_parts.append(recon)
+        if result_parts:
+            return np.vstack(result_parts)
+        else:
+            return np.empty((0, d), dtype=np.float32)
 
 
 def cmd_compress(args: argparse.Namespace):
     import os
     import json
 
-    # chunked streaming mode when chunk_size > 0
+    # chunked streaming mode when chunk_size > 0 -> VECTRO2 format
     if args.chunk_size and args.chunk_size > 0:
-        # streaming format: VECTRO1 | uint32 header_len | header_json
-        # header_json contains {n, d, q_dtype, scales_dtype}
-        # followed by raw q bytes (n*d int8) and raw scales (n float32)
+        import tempfile
         mmap = np.load(args.infile, mmap_mode='r')
         n, d = mmap.shape
-        header = {"n": int(n), "d": int(d), "q_dtype": "int8", "scales_dtype": "float32"}
-        header_bytes = json.dumps(header).encode('utf-8')
-        with open(args.outfile, 'wb') as f:
-            f.write(b'VECTRO1')
-            f.write(len(header_bytes).to_bytes(4, 'little'))
-            f.write(header_bytes)
-            # write q chunks then scales chunks
-            # we'll write q first (n*d bytes), then scales (n*4 bytes)
-            # write q in chunks
-            scales_file_pos = f.tell() + n * d  # where scales will begin (not used here)
-            # quantize and write q per-chunk
+        # write chunk bodies to a temp file and record per-chunk metadata
+        tmpfd, tmp_path = tempfile.mkstemp(prefix='vectro_chunks_', suffix='.bin')
+        os.close(tmpfd)
+        chunk_metas = []
+        offset = 0
+        with open(tmp_path, 'wb') as tmpf:
             for start in range(0, n, args.chunk_size):
                 end = min(n, start + args.chunk_size)
                 chunk = np.asarray(mmap[start:end], dtype=np.float32)
-                # use backend if available
-                if hasattr(__import__('python.interface').interface, '_mojo_quant') and __import__('python.interface').interface._mojo_quant is not None:
-                    mojo = __import__('python.interface').interface._mojo_quant
-                    q_flat, scales = mojo.quantize_int8(chunk.ravel().tolist(), int(end - start), int(d))
-                    q_arr = np.asarray(q_flat, dtype=np.int8)
-                else:
-                    out = quantize_embeddings(chunk)
-                    q_arr = np.asarray(out['q'], dtype=np.int8)
-                    scales = out['scales']
-                f.write(q_arr.tobytes())
-                # append scales to a temporary file to write later
-                if start == 0:
-                    tmp_scales_path = args.outfile + '.scales.tmp'
-                    sf = open(tmp_scales_path, 'wb')
-                for s in (np.asarray(scales, dtype=np.float32).tolist()):
-                    sf.write(np.float32(s).tobytes())
-            if 'sf' in locals():
-                sf.close()
-                # append scales file
-                with open(tmp_scales_path, 'rb') as sf2:
-                    f.write(sf2.read())
-                os.remove(tmp_scales_path)
-        print(f"Wrote streaming compressed file: {args.outfile}")
+                out = quantize_embeddings(chunk)
+                q_arr = np.asarray(out['q'], dtype=np.int8)
+                scales_arr = np.asarray(out['scales'], dtype=np.float32)
+                q_bytes = q_arr.tobytes()
+                scales_bytes = scales_arr.tobytes()
+                # record metadata relative to chunk_data start
+                meta = {
+                    'start': int(start),
+                    'end': int(end),
+                    'offset': int(offset),
+                    'q_len': len(q_bytes),
+                    'scales_len': len(scales_bytes),
+                }
+                chunk_metas.append(meta)
+                tmpf.write(q_bytes)
+                tmpf.write(scales_bytes)
+                offset += len(q_bytes) + len(scales_bytes)
+
+        header = {
+            'version': 2,
+            'n': int(n),
+            'd': int(d),
+            'q_dtype': 'int8',
+            'scales_dtype': 'float32',
+            'chunk_size': int(args.chunk_size),
+            'chunks': chunk_metas,
+        }
+        header_bytes = json.dumps(header).encode('utf-8')
+        with open(args.outfile, 'wb') as out_f:
+            out_f.write(b'VECTRO2')
+            out_f.write(len(header_bytes).to_bytes(4, 'little'))
+            out_f.write(header_bytes)
+            # copy chunk data
+            with open(tmp_path, 'rb') as tmpf:
+                while True:
+                    data = tmpf.read(1 << 20)
+                    if not data:
+                        break
+                    out_f.write(data)
+        os.remove(tmp_path)
+        print(f"Wrote streaming compressed file (VECTRO2): {args.outfile}")
         return
 
     # non-streaming (legacy) behavior

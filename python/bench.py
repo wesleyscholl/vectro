@@ -22,6 +22,9 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from python import interface
+from python.cli import read_vectro_header, iter_vectro_chunks
+import json
+import tempfile
 
 
 def cosine_sim_matrix(a: np.ndarray, b: np.ndarray) -> np.ndarray:
@@ -127,35 +130,59 @@ def main():
 
     # If chunk_size specified, run stream-like chunked quantization to measure throughput
     if args.chunk_size and args.chunk_size > 0:
-        print(f"Running chunked quantization with chunk_size={args.chunk_size} (Python fallback)...")
-        # simulate streaming by quantizing chunks sequentially
+        print(f"Running chunked quantization with chunk_size={args.chunk_size} (VECTRO2 streaming)...")
+        # write a VECTRO2 file using streaming quantization and then reconstruct by streaming reads
+        tmpfd, out_path = tempfile.mkstemp(prefix='vectro_bench_', suffix='.v2')
+        os.close(tmpfd)
+        data_tmp = out_path + '.data'
         t0 = time.time()
-        q_chunks = []
-        scales_list = []
-        for start in range(0, args.n, args.chunk_size):
-            end = min(args.n, start + args.chunk_size)
-            chunk = emb[start:end]
-            out = interface.quantize_embeddings(chunk)
-            q_chunks.append(out['q'])
-            scales_list.append(out['scales'])
-        t1 = time.time()
-        quant_time = t1 - t0
-        # reconstruct all
+        chunk_metas = []
+        offset = 0
+        with open(data_tmp, 'wb') as dataf:
+            for start in range(0, args.n, args.chunk_size):
+                end = min(args.n, start + args.chunk_size)
+                chunk = emb[start:end]
+                out = interface.quantize_embeddings(chunk)
+                q_arr = np.asarray(out['q'], dtype=np.int8)
+                scales_arr = np.asarray(out['scales'], dtype=np.float32)
+                q_bytes = q_arr.tobytes()
+                scales_bytes = scales_arr.tobytes()
+                meta = {'start': int(start), 'end': int(end), 'offset': int(offset), 'q_len': len(q_bytes), 'scales_len': len(scales_bytes)}
+                chunk_metas.append(meta)
+                dataf.write(q_bytes)
+                dataf.write(scales_bytes)
+                offset += len(q_bytes) + len(scales_bytes)
+        header = {'version': 2, 'n': args.n, 'd': args.d, 'q_dtype': 'int8', 'scales_dtype': 'float32', 'chunk_size': int(args.chunk_size), 'chunks': chunk_metas}
+        header_bytes = json.dumps(header).encode('utf-8')
+        with open(out_path, 'wb') as out_f:
+            out_f.write(b'VECTRO2')
+            out_f.write(len(header_bytes).to_bytes(4, 'little'))
+            out_f.write(header_bytes)
+            with open(data_tmp, 'rb') as df:
+                while True:
+                    data = df.read(1 << 20)
+                    if not data:
+                        break
+                    out_f.write(data)
+        os.remove(data_tmp)
+        quant_time = time.time() - t0
+
+        # streaming reconstruct: do not load all scales/q into memory at once
         t0 = time.time()
-        recon_chunks = []
-        for i, q_flat in enumerate(q_chunks):
-            scales = scales_list[i]
-            dims = args.d
-            recon_chunks.append(interface.reconstruct_embeddings(q_flat, scales, dims))
-        recon = np.vstack(recon_chunks)
-        t1 = time.time()
-        recon_time = t1 - t0
-        # aggregate scales and q for size
-        q_all = np.concatenate([np.asarray(x, dtype=np.int8) for x in q_chunks])
-        scales_all = np.concatenate([np.asarray(x, dtype=np.float32) for x in scales_list])
+        recon = np.empty((args.n, args.d), dtype=np.float32)
+        with open(out_path, 'rb') as fp:
+            header = read_vectro_header(fp)
+            for meta, q_bytes, scales_bytes in iter_vectro_chunks(fp, header):
+                n_chunk = meta['end'] - meta['start']
+                q_arr = np.frombuffer(q_bytes, dtype=np.int8).reshape((n_chunk, args.d))
+                scales_arr = np.frombuffer(scales_bytes, dtype=np.float32)
+                recon_chunk = interface.reconstruct_embeddings(q_arr.ravel(), scales_arr, args.d)
+                recon[meta['start']:meta['end']] = recon_chunk
+        recon_time = time.time() - t0
+
         mean_cos = interface.mean_cosine_similarity(emb, recon)
         orig_bytes = emb.nbytes
-        comp_bytes = q_all.nbytes + scales_all.nbytes
+        comp_bytes = sum(m['q_len'] + m['scales_len'] for m in chunk_metas)
         results['chunked_python'] = {
             'quant_time': quant_time,
             'recon_time': recon_time,
@@ -167,6 +194,7 @@ def main():
             'd': args.d,
             'mojo_present': interface._mojo_quant is not None,
         }
+        os.remove(out_path)
 
     # If Mojo is present, run it; also run Python fallback for comparison
     mojo_available = interface._mojo_quant is not None
