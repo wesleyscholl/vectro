@@ -102,3 +102,4 @@ recon = reconstruct_embeddings(q, scales, dims)
 Notes:
 - For very large datasets, reconstruct vectors in streaming chunks to avoid memory pressure.
 - Another pattern: store compressed bytes as metadata in the vector DB and decompress on read for advanced workflows.
+- Ensure your vector DB supports the desired vector dimensionality and data types.
