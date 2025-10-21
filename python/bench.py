@@ -115,6 +115,7 @@ def main():
     parser.add_argument('--queries', type=int, default=100, help='number of queries')
     parser.add_argument('--k', type=int, default=10, help='recall@k')
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--chunk-size', type=int, default=0, help='Chunk size for streaming quantize (rows). 0 = no streaming')
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.seed)
@@ -123,6 +124,49 @@ def main():
     print(f"Dataset: n={args.n}, d={args.d}, queries={args.queries}, k={args.k}")
 
     results = {}
+
+    # If chunk_size specified, run stream-like chunked quantization to measure throughput
+    if args.chunk_size and args.chunk_size > 0:
+        print(f"Running chunked quantization with chunk_size={args.chunk_size} (Python fallback)...")
+        # simulate streaming by quantizing chunks sequentially
+        t0 = time.time()
+        q_chunks = []
+        scales_list = []
+        for start in range(0, args.n, args.chunk_size):
+            end = min(args.n, start + args.chunk_size)
+            chunk = emb[start:end]
+            out = interface.quantize_embeddings(chunk)
+            q_chunks.append(out['q'])
+            scales_list.append(out['scales'])
+        t1 = time.time()
+        quant_time = t1 - t0
+        # reconstruct all
+        t0 = time.time()
+        recon_chunks = []
+        for i, q_flat in enumerate(q_chunks):
+            scales = scales_list[i]
+            dims = args.d
+            recon_chunks.append(interface.reconstruct_embeddings(q_flat, scales, dims))
+        recon = np.vstack(recon_chunks)
+        t1 = time.time()
+        recon_time = t1 - t0
+        # aggregate scales and q for size
+        q_all = np.concatenate([np.asarray(x, dtype=np.int8) for x in q_chunks])
+        scales_all = np.concatenate([np.asarray(x, dtype=np.float32) for x in scales_list])
+        mean_cos = interface.mean_cosine_similarity(emb, recon)
+        orig_bytes = emb.nbytes
+        comp_bytes = q_all.nbytes + scales_all.nbytes
+        results['chunked_python'] = {
+            'quant_time': quant_time,
+            'recon_time': recon_time,
+            'mean_cos': mean_cos,
+            'orig_bytes': orig_bytes,
+            'comp_bytes': comp_bytes,
+            'recall@k': recall_at_k(emb, recon, np.random.default_rng(1).choice(args.n, size=min(args.queries,args.n), replace=False), args.k),
+            'n': args.n,
+            'd': args.d,
+            'mojo_present': interface._mojo_quant is not None,
+        }
 
     # If Mojo is present, run it; also run Python fallback for comparison
     mojo_available = interface._mojo_quant is not None
