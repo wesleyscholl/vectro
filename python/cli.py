@@ -97,56 +97,34 @@ def cmd_compress(args: argparse.Namespace):
         import tempfile
         mmap = np.load(args.infile, mmap_mode='r')
         n, d = mmap.shape
-        # write chunk bodies to a temp file and record per-chunk metadata
-        tmpfd, tmp_path = tempfile.mkstemp(prefix='vectro_chunks_', suffix='.bin')
-        os.close(tmpfd)
-        chunk_metas = []
-        offset = 0
-        with open(tmp_path, 'wb') as tmpf:
-            for start in range(0, n, args.chunk_size):
-                end = min(n, start + args.chunk_size)
-                chunk = np.asarray(mmap[start:end], dtype=np.float32)
+        # Use streaming writer that writes header last (VTRB02 container)
+        from python.storage import VectroStreamingWriter
+        writer = VectroStreamingWriter(args.outfile, codec='zstd:3')
+        # if backend is PQ, train global codebooks on entire dataset and set them
+        if args.backend == 'pq':
+            # train PQ on full dataset (small datasets only) -- simple default
+            from python.pq import train_pq
+            print('Training PQ codebooks (m=%d ks=%d) ...' % (args.pq_m, args.pq_ks))
+            full = np.asarray(mmap, dtype=np.float32)
+            codebooks = train_pq(full, args.pq_m, args.pq_ks, iters=10)
+            writer.set_codebooks(codebooks)
+
+        for start in range(0, n, args.chunk_size):
+            end = min(n, start + args.chunk_size)
+            chunk = np.asarray(mmap[start:end], dtype=np.float32)
+            if args.backend == 'pq':
+                from python.pq import encode_pq
+                codes = encode_pq(chunk, codebooks)
+                # serialize codes as int32 bytes
+                codes_b = codes.astype(np.int32).tobytes()
+                writer.write_chunk(start, end, codes_bytes=codes_b, backend='pq')
+            else:
                 out = quantize_embeddings(chunk)
                 q_arr = np.asarray(out['q'], dtype=np.int8)
                 scales_arr = np.asarray(out['scales'], dtype=np.float32)
-                q_bytes = q_arr.tobytes()
-                scales_bytes = scales_arr.tobytes()
-                # record metadata relative to chunk_data start
-                meta = {
-                    'start': int(start),
-                    'end': int(end),
-                    'offset': int(offset),
-                    'q_len': len(q_bytes),
-                    'scales_len': len(scales_bytes),
-                }
-                chunk_metas.append(meta)
-                tmpf.write(q_bytes)
-                tmpf.write(scales_bytes)
-                offset += len(q_bytes) + len(scales_bytes)
-
-        header = {
-            'version': 2,
-            'n': int(n),
-            'd': int(d),
-            'q_dtype': 'int8',
-            'scales_dtype': 'float32',
-            'chunk_size': int(args.chunk_size),
-            'chunks': chunk_metas,
-        }
-        header_bytes = json.dumps(header).encode('utf-8')
-        with open(args.outfile, 'wb') as out_f:
-            out_f.write(b'VECTRO2')
-            out_f.write(len(header_bytes).to_bytes(4, 'little'))
-            out_f.write(header_bytes)
-            # copy chunk data
-            with open(tmp_path, 'rb') as tmpf:
-                while True:
-                    data = tmpf.read(1 << 20)
-                    if not data:
-                        break
-                    out_f.write(data)
-        os.remove(tmp_path)
-        print(f"Wrote streaming compressed file (VECTRO2): {args.outfile}")
+                writer.write_chunk(start, end, q_bytes=q_arr.tobytes(), scales_bytes=scales_arr.tobytes(), backend='int8')
+        writer.finalize()
+        print(f"Wrote streaming compressed file (VTRB02): {args.outfile}")
         return
 
     # non-streaming (legacy) behavior
@@ -232,8 +210,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_compress = sub.add_parser('compress', help='Compress embeddings (.npy)')
     p_compress.add_argument('--in', dest='infile', required=True, help='Input embeddings (.npy)')
     p_compress.add_argument('--out', dest='outfile', required=True, help='Output compressed (.npz)')
+    p_compress.add_argument('--backend', dest='backend', choices=['python', 'pq'], default='python', help='Compression backend')
+    p_compress.add_argument('--pq-m', dest='pq_m', type=int, default=8, help='PQ subquantizers (m)')
+    p_compress.add_argument('--pq-ks', dest='pq_ks', type=int, default=256, help='PQ codebook size (ks)')
     p_compress.add_argument('--chunk-size', dest='chunk_size', type=int, default=0, help='Stream compress chunk size (rows). 0 = no streaming')
     p_compress.set_defaults(func=cmd_compress)
+
+    p_peek = sub.add_parser('peek', help='Print metadata for VTRB02/VECTRO2 files')
+    p_peek.add_argument('--file', required=True, help='File to inspect')
+    p_peek.set_defaults(func=lambda args: __import__('python.storage').storage.peek(args.file))
 
     p_eval = sub.add_parser('eval', help='Evaluate compression quality')
     p_eval.add_argument('--orig', required=True, help='Original embeddings (.npy)')
