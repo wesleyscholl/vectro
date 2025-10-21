@@ -8,7 +8,18 @@ API:
  - mean_cosine_similarity(orig, recon) -> float
 """
 from __future__ import annotations
+import importlib
 import numpy as np
+
+
+# Try to import the high-performance Mojo backend if available. The Mojo build
+# should expose a Python module at `vectro.src.quantizer` or similar. If it
+# isn't present, we'll fall back to the pure-NumPy implementation below.
+_mojo_quant = None
+try:
+    _mojo_quant = importlib.import_module("vectro.src.quantizer")
+except Exception:
+    _mojo_quant = None
 
 
 def quantize_embeddings(embeddings: np.ndarray) -> dict:
@@ -20,6 +31,17 @@ def quantize_embeddings(embeddings: np.ndarray) -> dict:
     if embeddings.ndim != 2:
         raise ValueError("embeddings must be 2D array of shape (n, d)")
     n, d = embeddings.shape
+
+    # If Mojo backend available, use it for quantization (expects flat arrays)
+    if _mojo_quant is not None:
+        emb_flat = embeddings.astype(np.float32).ravel()
+        # Mojo signature: quantize_int8(emb_flat: [f32], n: i32, d: i32) -> (q: [i8], scales: [f32])
+        q_flat, scales = _mojo_quant.quantize_int8(emb_flat, int(n), int(d))
+        # q_flat is expected to be a flat array of length n*d; ensure numpy types
+        q_np = np.asarray(q_flat, dtype=np.int8)
+        scales_np = np.asarray(scales, dtype=np.float32)
+        return {"q": q_np, "scales": scales_np, "dims": d, "n": n}
+
     emb = embeddings.astype(np.float32)
     scales = np.empty((n,), dtype=np.float32)
     q = np.empty((n, d), dtype=np.int8)
@@ -42,6 +64,12 @@ def reconstruct_embeddings(q_flat: np.ndarray, scales: np.ndarray, dims: int) ->
     """Reconstruct embeddings from flattened int8 q and per-vector scales."""
     q = np.asarray(q_flat, dtype=np.int8)
     n = int(len(q) // dims)
+    # If Mojo backend exists, use its reconstruct function
+    if _mojo_quant is not None:
+        # Mojo signature: reconstruct_int8(q_flat: [i8], scales: [f32], n: i32, d: i32) -> [f32]
+        out_flat = _mojo_quant.reconstruct_int8(q.tolist(), scales.tolist(), int(n), int(dims))
+        return np.asarray(out_flat, dtype=np.float32).reshape((n, dims))
+
     q2 = q.reshape((n, dims)).astype(np.float32)
     scales = np.asarray(scales, dtype=np.float32)
     if scales.shape[0] != n:

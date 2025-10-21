@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Minimal entrypoint for vectro CLI
+PYTHON="${VECTRO_PYTHON:-python}"
+# Run the module
+exec "$PYTHON" -c "import sys; from python.cli import main; sys.exit(main())" "$@"

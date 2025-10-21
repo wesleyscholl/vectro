@@ -21,3 +21,19 @@ pytest -q vectro/python/tests
 Notes:
 - The Mojo files are placeholders documenting the intended API. Once Mojo is available, replace the Python implementation with Mojo bindings for performance.
 - The quantizer uses per-vector scaling to maximize fidelity.
+
+CLI examples
+-----------
+
+Compress embeddings stored in a NumPy `.npy` file:
+
+```bash
+# create venv and install deps (see above)
+./bin/vectro compress --in embeddings.npy --out compressed.npz
+```
+
+Evaluate a compressed file (prints original bytes, compressed bytes, and mean cosine):
+
+```bash
+./bin/vectro eval --orig embeddings.npy --comp compressed.npz
+```
