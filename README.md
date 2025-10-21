@@ -1,105 +1,134 @@
-# Vectro — Embedding Compressor Prototype
+# Vectro — Embedding Compressor (MVP)
 
-This is an MVP layout for "Vectro", an embedding compressor prototype.
+Vectro is a small prototype and reference implementation for compressing embedding vectors
+used in retrieval / vector search pipelines. The goal is to provide a simple, extensible
+stack you can use to reduce embedding storage and transfer costs while maintaining
+retrieval quality.
 
-What is included:
-- Simple per-vector int8 quantizer implemented in Python as a fallback (`python/interface.py`).
-- Unit tests using pytest (`python/tests/test_quantization.py`).
-- Mojo stubs in `src/quantizer.mojo` for future high-performance reimplementation.
+This repo contains:
 
-How to run the tests locally:
+- A Python reference quantizer (per-vector int8) in `python/interface.py` (easy to run).
+- Mojo stubs in `src/quantizer.mojo` (intended for a future high-performance core).
+- A CLI (`bin/vectro`) with `compress` and `eval` commands.
+- A benchmark harness (`python/bench.py`) for throughput and quality metrics.
+- A small sample dataset generator (`data/generate_sample.py`) and example notebook.
 
-Create a virtualenv and install dependencies (example):
+Current functionality (MVP)
+---------------------------
+
+- Per-vector int8 quantization:
+	- For each vector v: scale = max_abs(v) / 127 (scale=1.0 for zero vectors).
+	- Quantized bytes: q = round(v / scale) cast to int8, stored as a flat array.
+	- Reconstruction: q * scale per-vector.
+- Python fallback implementation is the default. If a Mojo backend is compiled and
+	exposed as a Python module at `vectro.src.quantizer`, the code will automatically
+	use the Mojo implementation for quantize/reconstruct.
+- CLI features:
+	- `vectro compress --in embeddings.npy --out compressed.npz` — compress a `.npy` file.
+	- `vectro eval --orig embeddings.npy --comp compressed.npz` — reconstruct and print bytes + mean cosine.
+- Benchmarking:
+	- `python python/bench.py` will run Python (and Mojo if available) backends and report throughput, mean cosine, and recall@k.
+
+Quickstart
+----------
+
+Create a virtualenv, install the minimal dependencies and run tests:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -r vectro/requirements.txt
-pytest -q vectro/python/tests
+pip install -r requirements.txt
+pytest -q python/tests
 ```
 
-Notes:
-- The Mojo files are placeholders documenting the intended API. Once Mojo is available, replace the Python implementation with Mojo bindings for performance.
-- The quantizer uses per-vector scaling to maximize fidelity.
-
-CLI examples
------------
-
-Compress embeddings stored in a NumPy `.npy` file:
+Compress and evaluate an embeddings file:
 
 ```bash
-# create venv and install deps (see above)
-./bin/vectro compress --in embeddings.npy --out compressed.npz
+# compress
+./bin/vectro compress --in data/sample_embeddings.npy --out data/sample_compressed.npz
+
+# evaluate
+./bin/vectro eval --orig data/sample_embeddings.npy --comp data/sample_compressed.npz
 ```
 
-Evaluate a compressed file (prints original bytes, compressed bytes, and mean cosine):
+Benchmarks
+----------
 
-```bash
-./bin/vectro eval --orig embeddings.npy --comp compressed.npz
-```
-
-Benchmarking
-------------
-
-There's a small benchmark harness at `python/bench.py` that measures compression time, reconstruction time, mean cosine similarity, recall@k, and a simple bytes comparison. Example:
+Run the lightweight benchmark (default uses the Python fallback):
 
 ```bash
 python python/bench.py --n 2000 --d 128 --queries 100 --k 10
 ```
 
-Note: By default the benchmark uses the Python fallback quantizer. If you compile and expose the Mojo backend at `vectro.src.quantizer`, the harness will automatically run Mojo-backed quantization as well and report both results.
+If you build and expose the Mojo backend the harness will also run the Mojo-backed
+implementation and compare throughput and quality.
+
+Sample data and notebook
+------------------------
+
+Generate a small sample dataset:
+
+```bash
+python data/generate_sample.py --n 500 --d 128 --out data/sample_embeddings.npy
+./bin/vectro compress --in data/sample_embeddings.npy --out data/sample_compressed.npz
+```
+
+Open `notebooks/example_visualization.ipynb` to see a simple PCA visualization of the reconstructed vectors.
 
 Integrations: Qdrant and Weaviate (pre-compress before indexing)
 -------------------------------------------------------------
 
-Pre-compressing embeddings before indexing can save storage costs and reduce network transfer. The simplest pattern is:
+Pre-compressing embeddings before indexing can reduce storage and network costs. Common patterns:
 
-1. Generate or obtain embeddings as a NumPy array `embeddings.npy` (shape [n, d]).
-2. Compress with Vectro: `./bin/vectro compress --in embeddings.npy --out compressed.npz`.
-3. When indexing, reconstruct on the client side (or in a pre-processing step) to float vectors and push to the vector DB. Alternatively, store compressed payloads in metadata and decompress at query time.
+1. Compress on ingest: generate embeddings, compress them with Vectro, store compressed bytes in object store or as metadata.
+2. Decompress before indexing: on the ingestion pipeline reconstruct in memory (streamed) and push floats to the vector DB (Qdrant/Weaviate).
+3. Decompress at query time: store compressed vectors and decompress the small set of candidates when answering queries.
 
-Qdrant example (pre-compress, decompress then index):
+Qdrant (decompress then index) — pseudo-code:
 
 ```python
 import numpy as np
-from vectro.python.interface import reconstruct_embeddings
-import qdrant_client
-
+from python.interface import reconstruct_embeddings
 # load compressed
 npz = np.load('compressed.npz')
 q = npz['q']
 scales = npz['scales']
 dims = int(npz['dims'])
-
-# reconstruct to floats
 recon = reconstruct_embeddings(q, scales, dims)
-
-# index into Qdrant (pseudo-code)
-# client = qdrant_client.QdrantClient(url='http://localhost:6333')
-# client.upload_collection(collection_name='my_collection', vectors=recon.tolist())
+# Upload recon (as lists) to Qdrant via its client (not shown).
 ```
 
-Weaviate example (uploading reconstructed vectors):
+Weaviate (similar approach) — pseudo-code included in the earlier examples.
 
-```python
-import numpy as np
-from vectro.python.interface import reconstruct_embeddings
-import weaviate
+Roadmap
+-------
 
-# load compressed
-npz = np.load('compressed.npz')
-q = npz['q']
-scales = npz['scales']
-dims = int(npz['dims'])
+Short-term (MVP → Alpha)
+- Implement and test Mojo core with parallel loops / SIMD for quantize & reconstruct.
+- Add a small build or packaging story to produce a Python-importable Mojo module (so `vectro.src.quantizer` becomes available).
+- Add chunked streaming I/O to `bin/vectro` and `python/bench.py` to handle datasets larger than memory.
 
-recon = reconstruct_embeddings(q, scales, dims)
+Mid-term (Beta)
+- Implement product quantization (PQ) and optimized PQ (OPQ) backends.
+- Add benchmarks vs FAISS and report recall/throughput trade-offs.
+- Provide a compact on-disk compressed format and fast random access API.
 
-# weaviate_client = weaviate.Client('http://localhost:8080')
-# for i, vec in enumerate(recon):
-#     weaviate_client.data_object.create({'id': str(i)}, 'EmbeddingClass', vector=vec.tolist())
-```
+Long-term (1.0+)
+- Training-aware learned compression (autoencoder or vector quantization).
+- Hosted API/service and dashboard showing compression vs retrieval quality tradeoffs.
+- Integrations/adapters for Qdrant, Weaviate, Milvus and LangChain/LlamaIndex.
 
-Notes:
-- For very large datasets, reconstruct vectors in streaming chunks to avoid memory pressure.
-- Another pattern: store compressed bytes as metadata in the vector DB and decompress on read for advanced workflows.
-- Ensure your vector DB supports the desired vector dimensionality and data types.
+Contribution & License
+----------------------
+
+This project is MIT-licensed. Contributions welcome — open a PR with small, focused changes. If you add a Mojo backend, include tests that compare to the Python fallback and verify numeric parity for basic metrics.
+
+Contact / Next steps
+--------------------
+
+If you'd like I can:
+- Add Mojo build bindings and a simple `make` or `python setup` step to compile the backend.
+- Implement streaming/chunked CLI operations for large datasets.
+- Prototype PQ in Python and compare it against the per-vector int8 baseline.
+
+Pick the next feature and I’ll implement it.
