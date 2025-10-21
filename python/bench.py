@@ -15,6 +15,13 @@ import sys
 import time
 import argparse
 import numpy as np
+import time
+import os
+try:
+    import psutil
+    _PSUTIL = True
+except Exception:
+    _PSUTIL = False
 
 # Ensure project root is importable when running this script directly
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -72,19 +79,32 @@ def run_once(embeddings: np.ndarray, k: int, queries: int, force_python=False):
         saved = interface._mojo_quant
         interface._mojo_quant = None
 
+    def rss_mb():
+        if _PSUTIL:
+            p = psutil.Process(os.getpid())
+            return p.memory_info().rss / (1024 * 1024)
+        else:
+            return float('nan')
+
     t0 = time.time()
+    mem_before = rss_mb()
     out = interface.quantize_embeddings(embeddings)
+    mem_after = rss_mb()
     t1 = time.time()
     q = out['q']
     scales = out['scales']
     dims = out['dims']
     nvecs = out['n']
     quant_time = t1 - t0
+    quant_mem_delta_mb = mem_after - mem_before
 
     t0 = time.time()
+    mem_before = rss_mb()
     recon = interface.reconstruct_embeddings(q, scales, dims)
+    mem_after = rss_mb()
     t1 = time.time()
     recon_time = t1 - t0
+    recon_mem_delta_mb = mem_after - mem_before
 
     mean_cos = interface.mean_cosine_similarity(embeddings, recon)
     orig_bytes = embeddings.nbytes
@@ -101,6 +121,8 @@ def run_once(embeddings: np.ndarray, k: int, queries: int, force_python=False):
     return {
         'quant_time': quant_time,
         'recon_time': recon_time,
+        'quant_mem_mb': quant_mem_delta_mb,
+        'recon_mem_mb': recon_mem_delta_mb,
         'mean_cos': mean_cos,
         'orig_bytes': orig_bytes,
         'comp_bytes': comp_bytes,
@@ -211,12 +233,19 @@ def main():
     for k, v in results.items():
         print('\nBackend:', k)
         print(f"  mojo_present: {v['mojo_present']}")
-        print(f"  quant_time: {v['quant_time']:.4f}s ({v['n']/max(v['quant_time'],1e-9):.0f} vec/s)")
-        print(f"  recon_time: {v['recon_time']:.4f}s ({v['n']/max(v['recon_time'],1e-9):.0f} vec/s)")
+        quant_vps = v['n'] / max(v['quant_time'], 1e-9)
+        recon_vps = v['n'] / max(v['recon_time'], 1e-9)
+        ratio = v['comp_bytes'] / max(v['orig_bytes'], 1)
+        print(f"  quant_time: {v['quant_time']:.4f}s ({quant_vps:.0f} vec/s)")
+        print(f"  recon_time: {v['recon_time']:.4f}s ({recon_vps:.0f} vec/s)")
+        print(f"  quant_mem_delta_MB: {v.get('quant_mem_mb', float('nan')):.2f}")
+        print(f"  recon_mem_delta_MB: {v.get('recon_mem_mb', float('nan')):.2f}")
         print(f"  orig_bytes: {v['orig_bytes']:,}")
         print(f"  comp_bytes: {v['comp_bytes']:,}")
+        print(f"  compression_ratio (comp/orig): {ratio:.4f}")
         print(f"  mean_cosine: {v['mean_cos']:.6f}")
         print(f"  recall@{args.k}: {v['recall@k']:.4f}")
+        print(f"  storage_model: {k}")
 
 
 if __name__ == '__main__':

@@ -13,6 +13,7 @@ import numpy as np
 from python.interface import quantize_embeddings, reconstruct_embeddings, mean_cosine_similarity
 import json
 import struct
+from python import storage
 
 
 def read_vectro_header(fp):
@@ -151,44 +152,74 @@ def cmd_compress(args: argparse.Namespace):
     # non-streaming (legacy) behavior
     emb = np.load(args.infile)
     out = quantize_embeddings(emb)
-    # Save compressed data as a small npz file (q as int8 bytes, scales as float32, dims, n)
     q = np.asarray(out['q'], dtype=np.int8)
     scales = np.asarray(out['scales'], dtype=np.float32)
-    np.savez_compressed(args.outfile, q=q, scales=scales, dims=out['dims'], n=out['n'])
-    print(f"Wrote compressed file: {args.outfile}")
+    # Write using VTRB01 binary container for lower overhead than npz
+    arrays = {'q': q, 'scales': scales, 'dims': np.array([out['dims']], dtype=np.int32), 'n': np.array([out['n']], dtype=np.int32)}
+    storage.write_arrays(args.outfile, arrays, compress=True)
+    print(f"Wrote compressed file (VTRB01): {args.outfile}")
 
 
 def cmd_eval(args: argparse.Namespace):
     import json
     orig = np.load(args.orig)
     # detect streaming format by header
+    # Try VECTRO streaming or VTRB01 binary container
     with open(args.comp, 'rb') as f:
         magic = f.read(7)
-        if magic == b'VECTRO1':
-            header_len = int.from_bytes(f.read(4), 'little')
-            header = json.loads(f.read(header_len).decode('utf-8'))
-            n = header['n']
-            d = header['d']
-            # read q bytes
-            q_bytes = f.read(n * d)
-            q = np.frombuffer(q_bytes, dtype=np.int8)
-            scales_bytes = f.read(n * 4)
-            scales = np.frombuffer(scales_bytes, dtype=np.float32)
-            dims = d
+    if magic == b'VECTRO1' or magic == b'VECTRO2':
+        # existing streaming files (VECTRO1/VECTRO2)
+        with open(args.comp, 'rb') as f:
+            header = None
+            # reuse existing detection path
+            if magic == b'VECTRO1':
+                f.seek(0)
+                f.read(7)
+                header_len = int.from_bytes(f.read(4), 'little')
+                header = json.loads(f.read(header_len).decode('utf-8'))
+                n = header['n']
+                d = header['d']
+                q_bytes = f.read(n * d)
+                q = np.frombuffer(q_bytes, dtype=np.int8)
+                scales_bytes = f.read(n * 4)
+                scales = np.frombuffer(scales_bytes, dtype=np.float32)
+                dims = d
+            else:
+                # VECTRO2: use helpers
+                header = read_vectro_header(f)
+                # reconstruct all by iterating chunks
+                d = header['d']
+                n = header['n']
+                recon = np.empty((n, d), dtype=np.float32)
+                for meta, q_bytes, scales_bytes in iter_vectro_chunks(f, header):
+                    q_arr = np.frombuffer(q_bytes, dtype=np.int8).reshape((meta['end'] - meta['start'], d))
+                    scales_arr = np.frombuffer(scales_bytes, dtype=np.float32)
+                    recon_chunk = reconstruct_embeddings(q_arr.ravel(), scales_arr, d)
+                    recon[meta['start']:meta['end']] = recon_chunk
+                mcos = mean_cosine_similarity(orig, recon)
+                orig_size = orig.nbytes
+                comp_size = sum(m['q_len'] + m['scales_len'] for m in header['chunks'])
+                print(f"Original bytes: {orig_size}")
+                print(f"Compressed bytes (raw arrays): {comp_size}")
+                print(f"Mean cosine similarity: {mcos:.6f}")
+                return
+        recon = reconstruct_embeddings(q, scales, dims)
+        mcos = mean_cosine_similarity(orig, recon)
+        orig_size = orig.nbytes
+        comp_size = q.nbytes + scales.nbytes
+    else:
+        # Try VTRB01 binary container
+        hdr = storage.read_header(args.comp)
+        if 'q' in hdr['arrays'] and 'scales' in hdr['arrays']:
+            q = storage.read_array(args.comp, 'q')
+            scales = storage.read_array(args.comp, 'scales')
+            dims = int(storage.read_array(args.comp, 'dims')[0])
             recon = reconstruct_embeddings(q, scales, dims)
             mcos = mean_cosine_similarity(orig, recon)
             orig_size = orig.nbytes
-            comp_size = len(q_bytes) + len(scales_bytes)
+            comp_size = hdr['arrays']['q']['length'] + hdr['arrays']['scales']['length']
         else:
-            f.seek(0)
-            npz = np.load(args.comp)
-            q = npz['q']
-            scales = npz['scales']
-            dims = int(npz['dims'])
-            recon = reconstruct_embeddings(q, scales, dims)
-            mcos = mean_cosine_similarity(orig, recon)
-            orig_size = orig.nbytes
-            comp_size = q.nbytes + scales.nbytes
+            raise ValueError('Unknown compressed file format')
     print(f"Original bytes: {orig_size}")
     print(f"Compressed bytes (raw arrays): {comp_size}")
     print(f"Mean cosine similarity: {mcos:.6f}")
