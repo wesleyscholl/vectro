@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel", "cython>=0.29", "numpy>=1.25"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vectro"
+version = "0.1.0"
+description = "High-performance LLM embedding compressor with Cython acceleration"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Wesley Scholl", email = "wesley.scholl@example.com"}
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "numpy>=1.25",
+    "cython>=0.29",
+    "click>=8.0",
+    "matplotlib>=3.5",
+    "scikit-learn>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+bench = [
+    "rich>=13.0",
+    "tqdm>=4.0",
+]
+
+[project.scripts]
+vectro = "python.cli:main"
+
+[tool.setuptools]
+packages = ["vectro", "python"]
+package-dir = {"" = "."}
+
+[tool.setuptools.package-data]
+vectro = ["*.pyx", "*.pxi"]
+
+[tool.cython]
+language_level = 3

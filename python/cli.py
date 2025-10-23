@@ -139,6 +139,40 @@ def cmd_compress(args: argparse.Namespace):
 
 
 def cmd_eval(args: argparse.Namespace):
+    """Evaluate compression quality."""
+    import numpy as np
+    from python import interface
+
+    # Load original embeddings
+    orig = np.load(args.orig)
+
+    # Load compressed data (assume legacy .npz format for now)
+    try:
+        npz = np.load(args.comp)
+        if 'q' in npz and 'scales' in npz:
+            q = npz['q']
+            scales = npz['scales']
+            dims = int(npz['dims'][0]) if 'dims' in npz else q.shape[1] if len(q.shape) > 1 else len(q) // orig.shape[0]
+            recon = interface.reconstruct_embeddings(q, scales, dims)
+            mcos = interface.mean_cosine_similarity(orig, recon)
+            orig_size = orig.nbytes
+            comp_size = q.nbytes + scales.nbytes
+        else:
+            raise ValueError('Compressed file missing required arrays')
+    except Exception as e:
+        raise ValueError(f'Failed to load compressed file: {e}')
+
+    print(f"Compression Evaluation:")
+    print(f"  Original size: {orig_size:,} bytes")
+    print(f"  Compressed size: {comp_size:,} bytes")
+    print(f"  Compression ratio: {comp_size / orig_size:.4f}")
+    print(f"  Mean cosine similarity: {mcos:.6f}")
+    print(f"  Quality retention: {(1 - (1 - mcos) * 100):.2f}%")
+
+
+def cmd_visualize(args: argparse.Namespace):
+    from python.visualize import visualize_compression_quality
+    visualize_compression_quality(args.embeddings, args.compressed, args.backend)
     import json
     orig = np.load(args.orig)
     # detect streaming format by header
@@ -186,18 +220,24 @@ def cmd_eval(args: argparse.Namespace):
         orig_size = orig.nbytes
         comp_size = q.nbytes + scales.nbytes
     else:
-        # Try VTRB01 binary container
-        hdr = storage.read_header(args.comp)
-        if 'q' in hdr['arrays'] and 'scales' in hdr['arrays']:
-            q = storage.read_array(args.comp, 'q')
-            scales = storage.read_array(args.comp, 'scales')
-            dims = int(storage.read_array(args.comp, 'dims')[0])
-            recon = reconstruct_embeddings(q, scales, dims)
-            mcos = mean_cosine_similarity(orig, recon)
-            orig_size = orig.nbytes
-            comp_size = hdr['arrays']['q']['length'] + hdr['arrays']['scales']['length']
-        else:
-            raise ValueError('Unknown compressed file format')
+        # Try VTRB01 binary container (.npz)
+        try:
+            npz = np.load(args.comp)
+            if 'q' in npz and 'scales' in npz:
+                q = npz['q']
+                scales = npz['scales']
+                dims = int(npz['dims'][0])
+                recon = reconstruct_embeddings(q, scales, dims)
+                mcos = mean_cosine_similarity(orig, recon)
+                orig_size = orig.nbytes
+                comp_size = q.nbytes + scales.nbytes
+                print(f"Original bytes: {orig_size}")
+                print(f"Compressed bytes (raw arrays): {comp_size}")
+                print(f"Mean cosine similarity: {mcos:.6f}")
+                return
+        except Exception:
+            pass
+        raise ValueError('Unknown compressed file format')
     print(f"Original bytes: {orig_size}")
     print(f"Compressed bytes (raw arrays): {comp_size}")
     print(f"Mean cosine similarity: {mcos:.6f}")
@@ -224,6 +264,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_eval.add_argument('--orig', required=True, help='Original embeddings (.npy)')
     p_eval.add_argument('--comp', required=True, help='Compressed file (.npz)')
     p_eval.set_defaults(func=cmd_eval)
+
+    p_vis = sub.add_parser('visualize', help='Visualize compression quality')
+    p_vis.add_argument('--embeddings', required=True, help='Original embeddings (.npy)')
+    p_vis.add_argument('--compressed', help='Compressed file (optional, will compress on-the-fly)')
+    p_vis.add_argument('--backend', default='python', choices=['python', 'pq'], help='Compression backend')
+    p_vis.set_defaults(func=cmd_visualize)
 
     return parser
 

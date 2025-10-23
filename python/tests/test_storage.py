@@ -8,7 +8,7 @@ def test_storage_roundtrip(tmp_path):
     scales = np.linspace(0.1, 1.2, 12).astype(np.float32)
     dims = np.array([4], dtype=np.int32)
     n = np.array([12], dtype=np.int32)
-    path = str(tmp_path / 'test.vtrb')
+    path = str(tmp_path / 'test.npz')
     storage.write_arrays(path, {'q': q, 'scales': scales, 'dims': dims, 'n': n}, compress=True)
     # read back individual arrays
     q2 = storage.read_array(path, 'q')

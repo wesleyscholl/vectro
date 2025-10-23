@@ -6,6 +6,13 @@ __pycache__/
 # C extensions
 *.so
 
+# Figure files
+Figure*
+
+# Pixi virtual environment
+.pixi/*
+!.pixi/config.tom
+
 # Distribution / packaging
 .Python
 build/

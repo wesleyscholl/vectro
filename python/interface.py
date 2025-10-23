@@ -12,9 +12,13 @@ import importlib
 import numpy as np
 
 
-# Try to import the high-performance Mojo backend if available. The Mojo build
-# should expose a Python module at `vectro.src.quantizer` or similar. If it
-# isn't present, we'll fall back to the pure-NumPy implementation below.
+# Try to import the high-performance backends if available
+_cython_quant = None
+try:
+    _cython_quant = importlib.import_module("vectro.quantizer_cython")
+except Exception:
+    _cython_quant = None
+
 _mojo_quant = None
 try:
     _mojo_quant = importlib.import_module("vectro.src.quantizer")
@@ -32,16 +36,17 @@ def quantize_embeddings(embeddings: np.ndarray) -> dict:
         raise ValueError("embeddings must be 2D array of shape (n, d)")
     n, d = embeddings.shape
 
-    # If Mojo backend available, use it for quantization (expects flat arrays)
+    # Priority: Mojo > Cython > NumPy
     if _mojo_quant is not None:
-        emb_flat = embeddings.astype(np.float32).ravel()
-        # Mojo signature: quantize_int8(emb_flat: [f32], n: i32, d: i32) -> (q: [i8], scales: [f32])
-        q_flat, scales = _mojo_quant.quantize_int8(emb_flat, int(n), int(d))
-        # q_flat is expected to be a flat array of length n*d; ensure numpy types
-        q_np = np.asarray(q_flat, dtype=np.int8)
-        scales_np = np.asarray(scales, dtype=np.float32)
-        return {"q": q_np, "scales": scales_np, "dims": d, "n": n}
+        # Convert to lists for Mojo
+        emb_list = embeddings.astype(np.float32).ravel().tolist()
+        q_list, scales_list = _mojo_quant.quantize_int8_py(emb_list, n, d)
+        return {"q": np.asarray(q_list, dtype=np.int8), "scales": np.asarray(scales_list, dtype=np.float32), "dims": d, "n": n}
+    elif _cython_quant is not None:
+        quantized, scales = _cython_quant.quantize_embeddings_cython(embeddings.astype(np.float32))
+        return {"q": quantized.ravel(), "scales": scales, "dims": d, "n": n}
 
+    # Fallback to NumPy implementation
     emb = embeddings.astype(np.float32)
     scales = np.empty((n,), dtype=np.float32)
     q = np.empty((n, d), dtype=np.int8)
@@ -64,13 +69,21 @@ def reconstruct_embeddings(q_flat: np.ndarray, scales: np.ndarray, dims: int) ->
     """Reconstruct embeddings from flattened int8 q and per-vector scales."""
     q = np.asarray(q_flat, dtype=np.int8)
     n = int(len(q) // dims)
-    # If Mojo backend exists, use its reconstruct function
-    if _mojo_quant is not None:
-        # Mojo signature: reconstruct_int8(q_flat: [i8], scales: [f32], n: i32, d: i32) -> [f32]
-        out_flat = _mojo_quant.reconstruct_int8(q.tolist(), scales.tolist(), int(n), int(dims))
-        return np.asarray(out_flat, dtype=np.float32).reshape((n, dims))
+    q_reshaped = q.reshape((n, dims))
 
-    q2 = q.reshape((n, dims)).astype(np.float32)
+    # Priority: Mojo > Cython > NumPy
+    if _mojo_quant is not None:
+        # Convert to lists for Mojo
+        q_list = q_flat.tolist() if hasattr(q_flat, 'tolist') else list(q_flat)
+        scales_list = scales.tolist() if hasattr(scales, 'tolist') else list(scales)
+        recon_list = _mojo_quant.reconstruct_int8_py(q_list, scales_list, n, d)
+        return np.asarray(recon_list, dtype=np.float32).reshape((n, d))
+    elif _cython_quant is not None:
+        q_reshaped = q.reshape((n, dims))
+        return _cython_quant.reconstruct_embeddings_cython(q_reshaped, scales.astype(np.float32))
+
+    # Fallback to NumPy implementation
+    q2 = q_reshaped.astype(np.float32)
     scales = np.asarray(scales, dtype=np.float32)
     if scales.shape[0] != n:
         raise ValueError("scales length must match number of vectors")
@@ -84,6 +97,12 @@ def mean_cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     b = b.astype(np.float32)
     if a.shape != b.shape:
         raise ValueError("shapes must match")
+
+    # If Cython backend available, use it for similarity calculation
+    if _cython_quant is not None:
+        return _cython_quant.mean_cosine_similarity_cython(a, b)
+
+    # Fallback to NumPy implementation
     # compute norms
     na = a
     nb = b

@@ -75,9 +75,12 @@ def run_once(embeddings: np.ndarray, k: int, queries: int, force_python=False):
     n, d = embeddings.shape
     # optionally force Python fallback
     mojo_present = interface._mojo_quant is not None
+    cython_present = interface._cython_quant is not None
     if force_python:
-        saved = interface._mojo_quant
+        saved_mojo = interface._mojo_quant
+        saved_cython = interface._cython_quant
         interface._mojo_quant = None
+        interface._cython_quant = None
 
     def rss_mb():
         if _PSUTIL:
@@ -116,7 +119,8 @@ def run_once(embeddings: np.ndarray, k: int, queries: int, force_python=False):
     recall = recall_at_k(embeddings, recon, queries_idx, k)
 
     if force_python:
-        interface._mojo_quant = saved
+        interface._mojo_quant = saved_mojo
+        interface._cython_quant = saved_cython
 
     return {
         'quant_time': quant_time,
@@ -128,6 +132,7 @@ def run_once(embeddings: np.ndarray, k: int, queries: int, force_python=False):
         'comp_bytes': comp_bytes,
         'recall@k': recall,
         'mojo_present': mojo_present and not force_python,
+        'cython_present': cython_present and not force_python,
         'n': n,
         'd': d,
     }
@@ -220,10 +225,16 @@ def main():
 
     # If Mojo is present, run it; also run Python fallback for comparison
     mojo_available = interface._mojo_quant is not None
+    cython_available = interface._cython_quant is not None
     if mojo_available:
         print("Running Mojo-backed quantization (if available)...")
         r_mojo = run_once(emb, args.k, args.queries, force_python=False)
         results['mojo'] = r_mojo
+
+    if cython_available:
+        print("Running Cython-backed quantization...")
+        r_cython = run_once(emb, args.k, args.queries, force_python=False)
+        results['cython'] = r_cython
 
     print("Running Python fallback quantization...")
     r_py = run_once(emb, args.k, args.queries, force_python=True)
@@ -233,6 +244,7 @@ def main():
     for k, v in results.items():
         print('\nBackend:', k)
         print(f"  mojo_present: {v['mojo_present']}")
+        print(f"  cython_present: {v.get('cython_present', False)}")
         quant_vps = v['n'] / max(v['quant_time'], 1e-9)
         recon_vps = v['n'] / max(v['recon_time'], 1e-9)
         ratio = v['comp_bytes'] / max(v['orig_bytes'], 1)

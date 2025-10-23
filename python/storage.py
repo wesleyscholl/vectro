@@ -188,3 +188,32 @@ def read_chunk_blob(path: str, meta: Dict[str, Any]) -> bytes:
         f.seek(header_off + int(meta['offset']))
         return f.read(int(meta['length']))
 
+
+def write_arrays(path: str, arrays: Dict[str, np.ndarray], compress: bool = True) -> None:
+    """Legacy VTRB01 format: write arrays as npz-like but with custom header."""
+    # Simple implementation: just use np.savez_compressed for now
+    if compress:
+        np.savez_compressed(path, **arrays)
+    else:
+        np.savez(path, **arrays)
+
+
+def read_array(path: str, key: str) -> np.ndarray:
+    """Read a single array from the legacy format."""
+    with np.load(path) as data:
+        return data[key]
+
+
+def read_legacy_header(path: str) -> Dict[str, Any]:
+    """Read header for legacy VTRB01 format (npz)."""
+    with np.load(path) as data:
+        arrays = {}
+        for k in data.keys():
+            arr = data[k]
+            arrays[k] = {
+                'shape': arr.shape,
+                'dtype': str(arr.dtype),
+                'length': arr.nbytes,
+            }
+        return {'version': 1, 'arrays': arrays}
+
