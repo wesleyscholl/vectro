@@ -1,36 +1,25 @@
-"""Mojo implementation of high-performance embedding quantization."""
-
-Mojo quantizer: per-vector int8 quantization and reconstruction.
+"""
+Mojo implementation of high-performance embedding quantization.
 
 This module provides SIMD-accelerated quantization and reconstruction
+for embedding vectors, targeting maximum performance for production use.
 
-for embedding vectors, targeting maximum performance for production use.This file implements a simple per-vector int8 quantizer:
+Per-vector int8 quantization algorithm:
+- For each vector v (length d): scale = max_abs(v) / 127 (or 1.0 if zero)
+- Quantized value q = round(v / scale) clamped to int8 range [-127,127]
+- Reconstruction: v_reconstructed = q * scale
 
-""" - For each vector v (length d): scale = max_abs(v) / 127 (or 1.0 if zero)
+The functions operate on flat row-major arrays for easy Python interop.
+"""
 
- - Quantized value q = round(v / scale) clamped to int8 range [-127,127]
-
-from collections import InlineArray
-
-from math import max, absThe functions operate on flat row-major arrays so they are easy to call from
-
-from memory import memset_zeroPython bindings. This implementation uses plain loops but is written so it can
-
-from sys import sizeofbe optimized further with Mojo parallel constructs when available.
-
-from utils import StringSlice"""
-
+from algorithm import vectorize, parallelize
+from math import abs as math_abs, sqrt
+from memory import memset_zero
+from python import Python, PythonObject
+from sys.info import simdwidthof
 
 
-# Simple Mojo implementation for quantization
-
-struct Quantizer:# Note: This is a basic implementation - full optimization would require
-
-    """High-performance embedding quantizer using SIMD operations."""# understanding the current Mojo API better
-
-
-
-    @staticmethoddef quantize_int8(emb_flat: List[Float32], n: Int, d: Int) -> (List[Int8], List[Float32]):
+fn quantize_int8(emb_flat: List[Float32], n: Int, d: Int) -> (List[Int8], List[Float32]):
 
     fn quantize_int8(emb_flat: List[Float32], n: Int, d: Int) -> (List[Int8], List[Float32]):    """Quantize a flat embeddings array (row-major) to int8 with per-vector scales.
 
