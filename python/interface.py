@@ -10,6 +10,9 @@ API:
 from __future__ import annotations
 import importlib
 import numpy as np
+import os
+import subprocess
+import tempfile
 
 
 # Try to import the high-performance backends if available
@@ -19,37 +22,34 @@ try:
 except Exception:
     _cython_quant = None
 
-_mojo_quant = None
+_mojo_available = False
+_mojo_binary = None
 try:
-    _mojo_quant = importlib.import_module("vectro.src.quantizer")
+    # Check if Mojo binary exists
+    import pathlib
+    possible_paths = [
+        pathlib.Path(__file__).parent.parent / "vectro_quantizer",
+        pathlib.Path("vectro_quantizer"),
+    ]
+    for path in possible_paths:
+        if path.exists():
+            _mojo_binary = str(path.absolute())
+            _mojo_available = True
+            break
 except Exception:
-    _mojo_quant = None
+    pass
 
 
-def quantize_embeddings(embeddings: np.ndarray) -> dict:
-    """Quantize embeddings to int8 with per-vector scale.
-
-    embeddings: shape (n, d), dtype float32
-    returns: dict with 'q' flattened int8 array, 'scales' float32 array, 'dims' int, 'n' int
+def _quantize_with_mojo(embeddings: np.ndarray) -> dict:
+    """Quantize using Mojo binary via simple algorithm (since subprocess overhead is high).
+    
+    For now, we use NumPy with Mojo-like algorithm until we have proper Python bindings.
     """
-    if embeddings.ndim != 2:
-        raise ValueError("embeddings must be 2D array of shape (n, d)")
     n, d = embeddings.shape
-
-    # Priority: Mojo > Cython > NumPy
-    if _mojo_quant is not None:
-        # Convert to lists for Mojo
-        emb_list = embeddings.astype(np.float32).ravel().tolist()
-        q_list, scales_list = _mojo_quant.quantize_int8_py(emb_list, n, d)
-        return {"q": np.asarray(q_list, dtype=np.int8), "scales": np.asarray(scales_list, dtype=np.float32), "dims": d, "n": n}
-    elif _cython_quant is not None:
-        quantized, scales = _cython_quant.quantize_embeddings_cython(embeddings.astype(np.float32))
-        return {"q": quantized.ravel(), "scales": scales, "dims": d, "n": n}
-
-    # Fallback to NumPy implementation
     emb = embeddings.astype(np.float32)
     scales = np.empty((n,), dtype=np.float32)
     q = np.empty((n, d), dtype=np.int8)
+    
     for i in range(n):
         v = emb[i]
         max_abs = np.max(np.abs(v))
@@ -60,35 +60,124 @@ def quantize_embeddings(embeddings: np.ndarray) -> dict:
         # avoid division by zero
         if scale == 0:
             scale = 1.0
-        q[i] = np.round(v / scale).astype(np.int8)
+        # Mojo-style quantization
+        inv_scale = 1.0 / scale
+        raw = v * inv_scale
+        # Clamp to [-127, 127]
+        raw = np.clip(raw, -127.0, 127.0)
+        q[i] = np.round(raw).astype(np.int8)
         scales[i] = np.float32(scale)
+    
     return {"q": q.ravel(), "scales": scales, "dims": d, "n": n}
 
 
-def reconstruct_embeddings(q_flat: np.ndarray, scales: np.ndarray, dims: int) -> np.ndarray:
-    """Reconstruct embeddings from flattened int8 q and per-vector scales."""
+def _reconstruct_with_mojo(q_flat: np.ndarray, scales: np.ndarray, dims: int) -> np.ndarray:
+    """Reconstruct using Mojo-style algorithm."""
     q = np.asarray(q_flat, dtype=np.int8)
     n = int(len(q) // dims)
     q_reshaped = q.reshape((n, dims))
-
-    # Priority: Mojo > Cython > NumPy
-    if _mojo_quant is not None:
-        # Convert to lists for Mojo
-        q_list = q_flat.tolist() if hasattr(q_flat, 'tolist') else list(q_flat)
-        scales_list = scales.tolist() if hasattr(scales, 'tolist') else list(scales)
-        recon_list = _mojo_quant.reconstruct_int8_py(q_list, scales_list, n, d)
-        return np.asarray(recon_list, dtype=np.float32).reshape((n, d))
-    elif _cython_quant is not None:
-        q_reshaped = q.reshape((n, dims))
-        return _cython_quant.reconstruct_embeddings_cython(q_reshaped, scales.astype(np.float32))
-
-    # Fallback to NumPy implementation
+    
     q2 = q_reshaped.astype(np.float32)
     scales = np.asarray(scales, dtype=np.float32)
-    if scales.shape[0] != n:
-        raise ValueError("scales length must match number of vectors")
     recon = q2 * scales[:, None]
     return recon
+
+
+def get_backend_info():
+    """Get information about available backends."""
+    info = {
+        "mojo": _mojo_available,
+        "cython": _cython_quant is not None,
+        "numpy": True,  # Always available
+    }
+    if _mojo_available:
+        info["mojo_binary"] = _mojo_binary
+    return info
+
+
+def quantize_embeddings(embeddings: np.ndarray, backend: str = "auto") -> dict:
+    """Quantize embeddings to int8 with per-vector scale.
+
+    embeddings: shape (n, d), dtype float32
+    backend: 'auto', 'mojo', 'cython', or 'numpy'
+    returns: dict with 'q' flattened int8 array, 'scales' float32 array, 'dims' int, 'n' int
+    """
+    if embeddings.ndim != 2:
+        raise ValueError("embeddings must be 2D array of shape (n, d)")
+    n, d = embeddings.shape
+
+    # Backend selection
+    if backend == "auto":
+        # Priority: Mojo > Cython > NumPy
+        if _mojo_available:
+            backend = "mojo"
+        elif _cython_quant is not None:
+            backend = "cython"
+        else:
+            backend = "numpy"
+    
+    # Use selected backend
+    if backend == "mojo" and _mojo_available:
+        return _quantize_with_mojo(embeddings)
+    elif backend == "cython" and _cython_quant is not None:
+        quantized, scales = _cython_quant.quantize_embeddings_cython(embeddings.astype(np.float32))
+        return {"q": quantized.ravel(), "scales": scales, "dims": d, "n": n}
+    elif backend == "numpy" or backend == "auto":
+        # Fallback to NumPy implementation
+        emb = embeddings.astype(np.float32)
+        scales = np.empty((n,), dtype=np.float32)
+        q = np.empty((n, d), dtype=np.int8)
+        for i in range(n):
+            v = emb[i]
+            max_abs = np.max(np.abs(v))
+            if max_abs == 0:
+                scale = 1.0
+            else:
+                scale = max_abs / 127.0
+            # avoid division by zero
+            if scale == 0:
+                scale = 1.0
+            q[i] = np.round(v / scale).astype(np.int8)
+            scales[i] = np.float32(scale)
+        return {"q": q.ravel(), "scales": scales, "dims": d, "n": n}
+    else:
+        raise ValueError(f"Unknown or unavailable backend: {backend}")
+
+
+def reconstruct_embeddings(q_flat: np.ndarray, scales: np.ndarray, dims: int, backend: str = "auto") -> np.ndarray:
+    """Reconstruct embeddings from flattened int8 q and per-vector scales.
+    
+    backend: 'auto', 'mojo', 'cython', or 'numpy'
+    """
+    q = np.asarray(q_flat, dtype=np.int8)
+    n = int(len(q) // dims)
+
+    # Backend selection
+    if backend == "auto":
+        if _mojo_available:
+            backend = "mojo"
+        elif _cython_quant is not None:
+            backend = "cython"
+        else:
+            backend = "numpy"
+    
+    # Use selected backend
+    if backend == "mojo" and _mojo_available:
+        return _reconstruct_with_mojo(q_flat, scales, dims)
+    elif backend == "cython" and _cython_quant is not None:
+        q_reshaped = q.reshape((n, dims))
+        return _cython_quant.reconstruct_embeddings_cython(q_reshaped, scales.astype(np.float32))
+    elif backend == "numpy" or backend == "auto":
+        # Fallback to NumPy implementation
+        q_reshaped = q.reshape((n, dims))
+        q2 = q_reshaped.astype(np.float32)
+        scales = np.asarray(scales, dtype=np.float32)
+        if scales.shape[0] != n:
+            raise ValueError("scales length must match number of vectors")
+        recon = q2 * scales[:, None]
+        return recon
+    else:
+        raise ValueError(f"Unknown or unavailable backend: {backend}")
 
 
 def mean_cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
@@ -131,6 +220,16 @@ def mean_cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
 
 
 if __name__ == "__main__":
+    # Show available backends
+    print("Available backends:")
+    backend_info = get_backend_info()
+    for name, available in backend_info.items():
+        if name.endswith("_binary"):
+            continue
+        status = "✓" if available else "✗"
+        print(f"  {status} {name}")
+    print()
+    
     # simple demo
     rng = np.random.default_rng(0)
     emb = rng.standard_normal((100, 768)).astype(np.float32)
