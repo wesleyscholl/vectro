@@ -55,8 +55,7 @@ mojo build src/vectro_standalone.mojo -o vectro_quantizer
 ./vectro_quantizer
 ```
 
-<details>
-<summary>📸 Click to see demo output preview</summary>
+### 📸 Click to see demo output preview
 
 ```
 ╦  ╦╔═╗╔═╗╔╦╗╦═╗╔═╗
@@ -71,7 +70,6 @@ mojo build src/vectro_standalone.mojo -o vectro_quantizer
 ✅ Quality: 100% test coverage
 ```
 
-</details>
 
 ## 📦 What's Included
 
@@ -133,7 +131,7 @@ Zero warnings
 </tr>
 </table>
 
-## �📖 Documentation
+## 📖 Documentation
 
 - [RELEASE_v1.0.0.md](RELEASE_v1.0.0.md) - Release notes and instructions
 - [TEST_COVERAGE_REPORT.md](TEST_COVERAGE_REPORT.md) - Complete coverage analysis
@@ -168,8 +166,7 @@ mojo run tests/run_all_tests.mojo
 mojo run demos/quick_demo.mojo
 ```
 
-<details>
-<summary>📋 View test categories</summary>
+### 📋 View test categories
 
 - ✅ **Core Operations** - All vector ops with edge cases
 - ✅ **Quantization** - Basic, reconstruction, batches, 768D/1536D
@@ -208,8 +205,7 @@ mojo run demos/quick_demo.mojo
 ╚══════════════════════════════════════════════════════════════════╝
 ```
 
-<details>
-<summary>📈 View detailed benchmarks by dimension</summary>
+### 📈 View detailed benchmarks by dimension
 
 ```ascii
 ┌─────────────┬───────────────┬─────────┬─────────────┬─────────┐
@@ -228,8 +224,6 @@ mojo run demos/quick_demo.mojo
 │             │  █████████░░░ │         │             │         │
 └─────────────┴───────────────┴─────────┴─────────────┴─────────┘
 ```
-
-</details>
 
 </div>
 
