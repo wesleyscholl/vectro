@@ -71,7 +71,7 @@ class BuildPyWithMojo(build_py):
 # Cython extension for high-performance quantization
 extensions = [
     Extension(
-        "vectro.quantizer_cython",
+        "python.quantizer_cython",
         ["src/quantizer_cython.pyx"],
         include_dirs=[np.get_include()],
     )

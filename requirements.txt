@@ -1,6 +1,0 @@
-numpy>=1.25
-pytest>=7.0
-matplotlib>=3.5
-scikit-learn>=1.0
-cython>=0.29
-click>=8.0

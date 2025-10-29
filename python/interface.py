@@ -2,9 +2,8 @@
 Python fallback quantizer for Vectro MVP.
 This provides a simple per-vector int8 quantizer and reconstruction.
 API:
- - quantize_embeddings(embeddings: np.ndarray) -> dict with keys:
-    'q': np.ndarray (int8, flat), 'scales': np.ndarray (float32), 'dims': int, 'n': int
- - reconstruct_embeddings(q_flat, scales, dims) -> np.ndarray of shape (n, dims)
+ - quantize_embeddings(embeddings: np.ndarray) -> QuantizationResult
+ - reconstruct_embeddings(result: QuantizationResult) -> np.ndarray
  - mean_cosine_similarity(orig, recon) -> float
 """
 from __future__ import annotations
@@ -13,14 +12,27 @@ import numpy as np
 import os
 import subprocess
 import tempfile
+from typing import NamedTuple
+
+
+class QuantizationResult(NamedTuple):
+    """Result of quantization operation."""
+    quantized: np.ndarray  # int8 array, shape (n, d)
+    scales: np.ndarray     # float32 array, shape (n,)
+    dims: int             # dimension d
+    n: int                # number of vectors
 
 
 # Try to import the high-performance backends if available
 _cython_quant = None
 try:
-    _cython_quant = importlib.import_module("vectro.quantizer_cython")
+    _cython_quant = importlib.import_module("python.quantizer_cython")
 except Exception:
-    _cython_quant = None
+    try:
+        # Fallback for development/local install
+        _cython_quant = importlib.import_module("quantizer_cython")
+    except Exception:
+        _cython_quant = None
 
 _mojo_available = False
 _mojo_binary = None
@@ -40,7 +52,7 @@ except Exception:
     pass
 
 
-def _quantize_with_mojo(embeddings: np.ndarray) -> dict:
+def _quantize_with_mojo(embeddings: np.ndarray) -> QuantizationResult:
     """Quantize using Mojo binary via simple algorithm (since subprocess overhead is high).
     
     For now, we use NumPy with Mojo-like algorithm until we have proper Python bindings.
@@ -68,16 +80,17 @@ def _quantize_with_mojo(embeddings: np.ndarray) -> dict:
         q[i] = np.round(raw).astype(np.int8)
         scales[i] = np.float32(scale)
     
-    return {"q": q.ravel(), "scales": scales, "dims": d, "n": n}
+    return QuantizationResult(quantized=q, scales=scales, dims=d, n=n)
 
 
-def _reconstruct_with_mojo(q_flat: np.ndarray, scales: np.ndarray, dims: int) -> np.ndarray:
+def _reconstruct_with_mojo(result: QuantizationResult) -> np.ndarray:
     """Reconstruct using Mojo-style algorithm."""
-    q = np.asarray(q_flat, dtype=np.int8)
-    n = int(len(q) // dims)
-    q_reshaped = q.reshape((n, dims))
+    q = result.quantized
+    scales = result.scales
+    dims = result.dims
+    n = result.n
     
-    q2 = q_reshaped.astype(np.float32)
+    q2 = q.astype(np.float32)
     scales = np.asarray(scales, dtype=np.float32)
     recon = q2 * scales[:, None]
     return recon
@@ -95,12 +108,12 @@ def get_backend_info():
     return info
 
 
-def quantize_embeddings(embeddings: np.ndarray, backend: str = "auto") -> dict:
+def quantize_embeddings(embeddings: np.ndarray, backend: str = "auto") -> QuantizationResult:
     """Quantize embeddings to int8 with per-vector scale.
 
     embeddings: shape (n, d), dtype float32
     backend: 'auto', 'mojo', 'cython', or 'numpy'
-    returns: dict with 'q' flattened int8 array, 'scales' float32 array, 'dims' int, 'n' int
+    returns: QuantizationResult with quantized int8 array, scales, dims, n
     """
     if embeddings.ndim != 2:
         raise ValueError("embeddings must be 2D array of shape (n, d)")
@@ -121,7 +134,7 @@ def quantize_embeddings(embeddings: np.ndarray, backend: str = "auto") -> dict:
         return _quantize_with_mojo(embeddings)
     elif backend == "cython" and _cython_quant is not None:
         quantized, scales = _cython_quant.quantize_embeddings_cython(embeddings.astype(np.float32))
-        return {"q": quantized.ravel(), "scales": scales, "dims": d, "n": n}
+        return QuantizationResult(quantized=quantized, scales=scales, dims=d, n=n)
     elif backend == "numpy" or backend == "auto":
         # Fallback to NumPy implementation
         emb = embeddings.astype(np.float32)
@@ -139,19 +152,16 @@ def quantize_embeddings(embeddings: np.ndarray, backend: str = "auto") -> dict:
                 scale = 1.0
             q[i] = np.round(v / scale).astype(np.int8)
             scales[i] = np.float32(scale)
-        return {"q": q.ravel(), "scales": scales, "dims": d, "n": n}
+        return QuantizationResult(quantized=q, scales=scales, dims=d, n=n)
     else:
         raise ValueError(f"Unknown or unavailable backend: {backend}")
 
 
-def reconstruct_embeddings(q_flat: np.ndarray, scales: np.ndarray, dims: int, backend: str = "auto") -> np.ndarray:
-    """Reconstruct embeddings from flattened int8 q and per-vector scales.
+def reconstruct_embeddings(result: QuantizationResult, backend: str = "auto") -> np.ndarray:
+    """Reconstruct embeddings from QuantizationResult.
     
     backend: 'auto', 'mojo', 'cython', or 'numpy'
     """
-    q = np.asarray(q_flat, dtype=np.int8)
-    n = int(len(q) // dims)
-
     # Backend selection
     if backend == "auto":
         if _mojo_available:
@@ -163,16 +173,14 @@ def reconstruct_embeddings(q_flat: np.ndarray, scales: np.ndarray, dims: int, ba
     
     # Use selected backend
     if backend == "mojo" and _mojo_available:
-        return _reconstruct_with_mojo(q_flat, scales, dims)
+        return _reconstruct_with_mojo(result)
     elif backend == "cython" and _cython_quant is not None:
-        q_reshaped = q.reshape((n, dims))
-        return _cython_quant.reconstruct_embeddings_cython(q_reshaped, scales.astype(np.float32))
+        return _cython_quant.reconstruct_embeddings_cython(result.quantized, result.scales.astype(np.float32))
     elif backend == "numpy" or backend == "auto":
         # Fallback to NumPy implementation
-        q_reshaped = q.reshape((n, dims))
-        q2 = q_reshaped.astype(np.float32)
-        scales = np.asarray(scales, dtype=np.float32)
-        if scales.shape[0] != n:
+        q2 = result.quantized.astype(np.float32)
+        scales = np.asarray(result.scales, dtype=np.float32)
+        if scales.shape[0] != result.n:
             raise ValueError("scales length must match number of vectors")
         recon = q2 * scales[:, None]
         return recon
@@ -233,6 +241,6 @@ if __name__ == "__main__":
     # simple demo
     rng = np.random.default_rng(0)
     emb = rng.standard_normal((100, 768)).astype(np.float32)
-    out = quantize_embeddings(emb)
-    recon = reconstruct_embeddings(out['q'], out['scales'], out['dims'])
+    result = quantize_embeddings(emb)
+    recon = reconstruct_embeddings(result)
     print("Mean cosine:", mean_cosine_similarity(emb, recon))

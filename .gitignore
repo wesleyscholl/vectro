@@ -217,3 +217,37 @@ data/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Vectro specific
+# Compiled Mojo binaries
+vectro_quantizer
+quality_metrics_test
+quantizer_test
+streaming_test
+vector_ops_test
+
+# Development documentation (internal)
+MOJO_COMPLETE.md
+MOJO_INTEGRATION.md
+MOJO_PACKAGE_BUILD.md
+NEXT_STEPS.md
+PYPI_DISTRIBUTION.md
+RELEASE_v0.2.0.md
+STATUS_FINAL.md
+WARNINGS_FIXED.md
+
+# Demo and test data
+demo_data.npy
+demo_compressed.npz
+
+# Test scripts in root
+test_*.sh
+test_*.py
+compare_*.sh
+
+# Cython generated C files (keep .pyx source)
+src/*.c
+src/*.html
+
+# Animation output
+animated_demo/

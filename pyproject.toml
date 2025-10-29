@@ -68,21 +68,21 @@ mojo = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/vectro"
-Documentation = "https://github.com/yourusername/vectro#readme"
-Repository = "https://github.com/yourusername/vectro"
-Issues = "https://github.com/yourusername/vectro/issues"
+Homepage = "https://github.com/wesleyscholl/vectro"
+Documentation = "https://github.com/wesleyscholl/vectro#readme"
+Repository = "https://github.com/wesleyscholl/vectro"
+Issues = "https://github.com/wesleyscholl/vectro/issues"
 
 [project.scripts]
 vectro = "python.cli:main"
 
 [tool.setuptools]
-packages = ["vectro", "python"]
-package-dir = {"" = "."}
+packages = ["python"]
+package-dir = {"python" = "python"}
 
 [tool.setuptools.package-data]
-vectro = ["*.pyx", "*.pxi"]
-"*" = ["vectro_quantizer*", "src/*.mojo"]
+python = ["*.pyx"]
+"*" = ["src/*.mojo"]
 
 [tool.cython]
 language_level = 3
