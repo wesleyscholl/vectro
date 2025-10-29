@@ -4,11 +4,9 @@ High-performance vector operations for similarity and distance computations.
 
 fn cosine_similarity(vec1: List[Float32], vec2: List[Float32]) -> Float32:
     """Compute cosine similarity between two vectors.
-    
     Args:
         vec1: First vector.
         vec2: Second vector.
-        
     Returns:
         Cosine similarity value between -1 and 1.
     """
@@ -37,11 +35,9 @@ fn cosine_similarity(vec1: List[Float32], vec2: List[Float32]) -> Float32:
 
 fn euclidean_distance(vec1: List[Float32], vec2: List[Float32]) -> Float32:
     """Compute Euclidean (L2) distance between two vectors.
-    
     Args:
         vec1: First vector.
         vec2: Second vector.
-        
     Returns:
         L2 distance value.
     """
@@ -62,11 +58,9 @@ fn euclidean_distance(vec1: List[Float32], vec2: List[Float32]) -> Float32:
 
 fn manhattan_distance(vec1: List[Float32], vec2: List[Float32]) -> Float32:
     """Compute Manhattan (L1) distance between two vectors.
-    
     Args:
         vec1: First vector.
         vec2: Second vector.
-        
     Returns:
         L1 distance value.
     """
@@ -87,11 +81,9 @@ fn manhattan_distance(vec1: List[Float32], vec2: List[Float32]) -> Float32:
 
 fn dot_product(vec1: List[Float32], vec2: List[Float32]) -> Float32:
     """Compute dot product of two vectors.
-    
     Args:
         vec1: First vector.
         vec2: Second vector.
-        
     Returns:
         Dot product value.
     """
@@ -110,10 +102,8 @@ fn dot_product(vec1: List[Float32], vec2: List[Float32]) -> Float32:
 
 fn vector_norm(vec: List[Float32]) -> Float32:
     """Compute L2 norm of a vector.
-    
     Args:
         vec: Input vector.
-        
     Returns:
         L2 norm value.
     """
@@ -129,17 +119,18 @@ fn vector_norm(vec: List[Float32]) -> Float32:
 
 fn normalize_vector(var vec: List[Float32]) -> List[Float32]:
     """Normalize a vector to unit length.
-    
     Args:
         vec: Input vector.
-        
     Returns:
         Normalized vector.
     """
     var norm = vector_norm(vec)
     
     if norm < 1e-10:
-        return vec
+        var result = List[Float32]()
+        for i in range(len(vec)):
+            result.append(vec[i])
+        return result^
     
     var inv_norm = 1.0 / norm
     var result = List[Float32]()
@@ -159,11 +150,9 @@ struct VectorOps:
         vectors2: List[List[Float32]]
     ) -> List[Float32]:
         """Compute cosine similarities for batches of vectors.
-        
         Args:
             vectors1: First batch of vectors.
             vectors2: Second batch of vectors.
-            
         Returns:
             List of similarity scores.
         """
@@ -181,11 +170,9 @@ struct VectorOps:
         vectors2: List[List[Float32]]
     ) -> List[Float32]:
         """Compute Euclidean distances for batches of vectors.
-        
         Args:
             vectors1: First batch of vectors.
             vectors2: Second batch of vectors.
-            
         Returns:
             List of distance values.
         """
