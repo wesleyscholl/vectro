@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vectro"
-version = "0.1.0"
-description = "High-performance LLM embedding compressor with Cython acceleration"
+version = "0.2.0"
+description = "Ultra-high-performance LLM embedding compressor with Mojo and Cython backends"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
@@ -22,7 +22,9 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+keywords = ["embeddings", "quantization", "compression", "llm", "mojo", "performance"]
 requires-python = ">=3.8"
 dependencies = [
     "numpy>=1.25",
@@ -41,6 +43,16 @@ bench = [
     "rich>=13.0",
     "tqdm>=4.0",
 ]
+mojo = [
+    # Mojo SDK is required for building from source with Mojo backend
+    # Install from: https://www.modular.com/mojo
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/vectro"
+Documentation = "https://github.com/yourusername/vectro#readme"
+Repository = "https://github.com/yourusername/vectro"
+Issues = "https://github.com/yourusername/vectro/issues"
 
 [project.scripts]
 vectro = "python.cli:main"
@@ -51,6 +63,7 @@ package-dir = {"" = "."}
 
 [tool.setuptools.package-data]
 vectro = ["*.pyx", "*.pxi"]
+"*" = ["vectro_quantizer*", "src/*.mojo"]
 
 [tool.cython]
 language_level = 3
