@@ -179,10 +179,10 @@ mojo run demos/quick_demo.mojo
 ║                      Performance Metrics                         ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║                                                                  ║
-║  Throughput:       787K-1.04M vecs/sec  ████████████████████░   ║
-║  Latency:          1.18-1.24 µs/vec     ███████████████████░    ║
-║  Compression:      3.98x (75% savings)  ████████████████░       ║
-║  Accuracy:         99.97% preserved     ████████████████████░   ║
+║  Throughput:       787K-1.04M vecs/sec  ████████████████████░    ║
+║  Latency:          1.18-1.24 µs/vec     ███████████████████░     ║
+║  Compression:      3.98x (75% savings)  ████████████████░        ║
+║  Accuracy:         99.97% preserved     ████████████████████░    ║
 ║                                                                  ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║                      Quality Dashboard                           ║
@@ -191,7 +191,7 @@ mojo run demos/quick_demo.mojo
 ║  Mean Absolute Error:    0.00068                                 ║
 ║  Mean Squared Error:     0.0000011                               ║
 ║  99.9th Percentile:      0.0036                                  ║
-║  Signal Preservation:    99.97%        ████████████████████░    ║
+║  Signal Preservation:    99.97%        ████████████████████░     ║
 ║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
 ```
