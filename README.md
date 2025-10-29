@@ -55,7 +55,7 @@ mojo build src/vectro_standalone.mojo -o vectro_quantizer
 ./vectro_quantizer
 ```
 
-### 📸 Click to see demo output preview
+### Demo output preview
 
 ```
 ╦  ╦╔═╗╔═╗╔╦╗╦═╗╔═╗
@@ -73,8 +73,6 @@ mojo build src/vectro_standalone.mojo -o vectro_quantizer
 
 ## 📦 What's Included
 
-<div align="center">
-
 ```ascii
 ┌───────────────────────────────────────────────────────────────┐
 │                    Vectro Package Contents                    │
@@ -88,7 +86,6 @@ mojo build src/vectro_standalone.mojo -o vectro_quantizer
 └───────────────────────────────────────────────────────────────┘
 ```
 
-</div>
 
 ## 🎯 Key Features
 
