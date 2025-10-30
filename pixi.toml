@@ -3,7 +3,7 @@ authors = ["Wesley Scholl <128409641+wesleyscholl@users.noreply.github.com>"]
 channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
 name = "mojo"
 platforms = ["osx-arm64"]
-version = "0.1.0"
+version = "1.0.0"
 
 [tasks]
 
