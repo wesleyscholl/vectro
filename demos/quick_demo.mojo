@@ -23,9 +23,9 @@ fn print_progress_bar(percentage: Float32, width: Int = 40):
     var empty = width - filled
     
     print("    [", end="")
-    for i in range(filled):
+    for _ in range(filled):
         print("█", end="")
-    for i in range(empty):
+    for _ in range(empty):
         print("░", end="")
     print("] ", Int(percentage * 100.0), "%")
 
@@ -132,7 +132,7 @@ fn demo_compression_ratio():
         # Visual savings bar
         print("  │  Savings: ", end="")
         var bar_width = Int(savings / 2.5)  # Scale to ~30 chars max
-        for j in range(bar_width):
+        for _ in range(bar_width):
             print("█", end="")
         print(" ", savings, "%")
         
