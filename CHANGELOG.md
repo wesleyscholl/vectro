@@ -5,6 +5,29 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Multi-Dataset Benchmarking Suite** - SIFT1M, GloVe-100, and SBERT-1M comprehensive benchmarks
+- **demos/benchmark_sift1m.mojo** - SIFT1M (1M vectors, 128D) benchmark demo
+- **demos/benchmark_glove.mojo** - GloVe-100 (100K vectors, 100D) benchmark demo  
+- **demos/benchmark_sbert.mojo** - SBERT-1M (1M vectors, 384D) benchmark demo
+- **demos/compare_datasets.mojo** - Cross-dataset performance comparison tool
+- **Project Status & Roadmap** - Added comprehensive status section to README
+  - v1.1 roadmap: Python bindings, REST API, streaming support
+  - v1.2 roadmap: GPU acceleration, distributed compression
+  - v2.0 roadmap: Multi-language bindings, cloud deployment, enterprise features
+
+### Changed
+- Enhanced README with production status badges and multi-dataset documentation
+- Added benchmark result tables for SIFT1M, GloVe, and SBERT datasets
+- Improved documentation structure with roadmap and next steps
+
+### Performance
+- Validated throughput across multiple embedding types (vision, text, semantic)
+- Confirmed consistent compression ratios across diverse datasets
+- Demonstrated production readiness with real-world benchmark scenarios
+
 ## [1.0.0] - 2025-10-29
 
 ### 🎉 Production Ready Release
