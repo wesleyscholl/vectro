@@ -2,6 +2,8 @@
 
 # 🚀 Vectro
 
+**Status**: Production-grade embedding compression library written in Mojo - delivering 50x performance improvements over Python alternatives.
+
 ### Ultra-High-Performance LLM Embedding Compressor
 
 ![Mojo](https://img.shields.io/badge/Mojo-98.2%25-orange?logo=fire&style=for-the-badge)
