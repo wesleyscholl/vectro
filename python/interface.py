@@ -34,6 +34,13 @@ except Exception:
     except Exception:
         _cython_quant = None
 
+# Rust-based squish_quant backend (highest throughput — built via maturin)
+_squish_quant = None
+try:
+    import squish_quant as _squish_quant
+except ImportError:
+    _squish_quant = None
+
 _mojo_available = False
 _mojo_binary = None
 try:
@@ -52,35 +59,117 @@ except Exception:
     pass
 
 
-def _quantize_with_mojo(embeddings: np.ndarray) -> QuantizationResult:
-    """Quantize using Mojo binary via simple algorithm (since subprocess overhead is high).
-    
-    For now, we use NumPy with Mojo-like algorithm until we have proper Python bindings.
+def _quantize_with_squish(embeddings: np.ndarray, group_size: int = 0) -> QuantizationResult:
+    """Quantize using the Rust squish_quant extension (6+ GB/s on Apple Silicon).
+
+    group_size=0  → per-row quantization (1 scale per row)
+    group_size=N  → per-group-N quantization (higher accuracy, more scales)
     """
-    n, d = embeddings.shape
-    emb = embeddings.astype(np.float32)
-    scales = np.empty((n,), dtype=np.float32)
-    q = np.empty((n, d), dtype=np.int8)
-    
-    for i in range(n):
-        v = emb[i]
-        max_abs = np.max(np.abs(v))
-        if max_abs == 0:
-            scale = 1.0
-        else:
-            scale = max_abs / 127.0
-        # avoid division by zero
-        if scale == 0:
-            scale = 1.0
-        # Mojo-style quantization
-        inv_scale = 1.0 / scale
-        raw = v * inv_scale
-        # Clamp to [-127, 127]
-        raw = np.clip(raw, -127.0, 127.0)
-        q[i] = np.round(raw).astype(np.int8)
-        scales[i] = np.float32(scale)
-    
+    emb = np.ascontiguousarray(embeddings, dtype=np.float32)
+    n, d = emb.shape
+
+    if group_size <= 0 or group_size >= d:
+        q, scales = _squish_quant.quantize_int8_f32(emb)       # scales: (n,)
+    else:
+        q, scales = _squish_quant.quantize_int8_grouped(emb, group_size)  # scales: (n, n_groups)
+
     return QuantizationResult(quantized=q, scales=scales, dims=d, n=n)
+
+
+def _dequantize_with_squish(result: QuantizationResult) -> np.ndarray:
+    """Dequantize using the Rust squish_quant extension.
+
+    Chooses grouped or per-row dequantize based on scales shape.
+    Significantly faster than NumPy broadcast on large matrices.
+    """
+    q = np.ascontiguousarray(result.quantized, dtype=np.int8)
+    s = result.scales
+    if s.ndim == 1:
+        return _squish_quant.dequantize_int8_f32(q, s)
+    else:
+        # scales is (n, n_groups) — derive group_size from shape
+        group_size = result.dims // s.shape[1]
+        return _squish_quant.dequantize_int8_grouped(q, np.ascontiguousarray(s, dtype=np.float32), group_size)
+
+
+def quantize_int4(
+    embeddings: np.ndarray,
+    group_size: int = 64,
+) -> tuple[np.ndarray, np.ndarray]:
+    """INT4 nibble-packed quantization — 50% disk vs INT8, requires squish_quant.
+
+    Returns (packed_uint8, scales_float32) — packed has shape (n, d//2).
+    Use dequantize_int4() to reconstruct.
+    Requires squish_quant Rust extension (built with maturin).
+    """
+    if _squish_quant is None:
+        raise RuntimeError("squish_quant Rust extension required for INT4.  Run: cd squish_quant_rs && python3 -m maturin build --release")
+    emb = np.ascontiguousarray(embeddings, dtype=np.float32)
+    return _squish_quant.quantize_int4_grouped(emb, group_size)
+
+
+def dequantize_int4(
+    packed: np.ndarray,
+    scales: np.ndarray,
+    group_size: int = 64,
+) -> np.ndarray:
+    """Reconstruct float32 from nibble-packed INT4 weights.
+
+    packed: (n, d//2) uint8  — from quantize_int4()
+    scales: (n, d//group_size) float32
+    Returns: (n, d) float32
+    """
+    if _squish_quant is None:
+        raise RuntimeError("squish_quant Rust extension required for INT4.")
+    return _squish_quant.dequantize_int4_grouped(
+        np.ascontiguousarray(packed, dtype=np.uint8),
+        np.ascontiguousarray(scales, dtype=np.float32),
+        group_size,
+    )
+
+
+def _quantize_vectorized(embeddings: np.ndarray, group_size: int = 0) -> QuantizationResult:
+    """Fully vectorized per-row (or per-group) INT8 quantization.
+
+    Replaces the original Python for-loop with numpy broadcast ops running in
+    native C/BLAS — typically 20-50x faster for large weight matrices.
+
+    group_size=0  → per-row quantization (1 scale per row, classic approach)
+    group_size=N  → per-group-N quantization (better accuracy, more scales)
+                    Each row is split into ceil(d/N) groups of ≤N elements.
+    """
+    emb = np.ascontiguousarray(embeddings, dtype=np.float32)
+    n, d = emb.shape
+
+    if group_size <= 0 or group_size >= d:
+        # ---- per-row -------------------------------------------------------
+        row_max = np.max(np.abs(emb), axis=1)          # (n,)
+        scales  = np.where(row_max == 0, 1.0, row_max / 127.0).astype(np.float32)
+        q = np.clip(np.round(emb / scales[:, None]), -127, 127).astype(np.int8)
+        return QuantizationResult(quantized=q, scales=scales, dims=d, n=n)
+    else:
+        # ---- per-group -----------------------------------------------------
+        # Pad columns to a multiple of group_size.
+        pad = (-d) % group_size
+        if pad:
+            emb = np.pad(emb, ((0, 0), (0, pad)))
+        n_groups = emb.shape[1] // group_size
+        # Reshape to (n * n_groups, group_size) for vectorized scale computation.
+        grouped = emb.reshape(n * n_groups, group_size)
+        gmax   = np.max(np.abs(grouped), axis=1)       # (n*n_groups,)
+        gscale = np.where(gmax == 0, 1.0, gmax / 127.0).astype(np.float32)
+        q_groups = np.clip(
+            np.round(grouped / gscale[:, None]), -127, 127
+        ).astype(np.int8)
+        # Trim padding, return flat (n, d) int8 + (n, n_groups) scales
+        q = q_groups.reshape(n, -1)[:, :d]
+        scales = gscale.reshape(n, n_groups).astype(np.float32)
+        return QuantizationResult(quantized=q, scales=scales, dims=d, n=n)
+
+
+def _quantize_with_mojo(embeddings: np.ndarray) -> QuantizationResult:
+    """Quantize using Mojo binary (falls through to vectorized NumPy)."""
+    return _quantize_vectorized(embeddings)
 
 
 def _reconstruct_with_mojo(result: QuantizationResult) -> np.ndarray:
@@ -99,6 +188,7 @@ def _reconstruct_with_mojo(result: QuantizationResult) -> np.ndarray:
 def get_backend_info():
     """Get information about available backends."""
     info = {
+        "squish_quant_rust": _squish_quant is not None,
         "mojo": _mojo_available,
         "cython": _cython_quant is not None,
         "numpy": True,  # Always available
@@ -121,8 +211,10 @@ def quantize_embeddings(embeddings: np.ndarray, backend: str = "auto") -> Quanti
 
     # Backend selection
     if backend == "auto":
-        # Priority: Mojo > Cython > NumPy
-        if _mojo_available:
+        # Priority: squish_quant (Rust) > Mojo > Cython > NumPy
+        if _squish_quant is not None:
+            backend = "squish_quant"
+        elif _mojo_available:
             backend = "mojo"
         elif _cython_quant is not None:
             backend = "cython"
@@ -130,49 +222,38 @@ def quantize_embeddings(embeddings: np.ndarray, backend: str = "auto") -> Quanti
             backend = "numpy"
     
     # Use selected backend
-    if backend == "mojo" and _mojo_available:
+    if backend == "squish_quant" and _squish_quant is not None:
+        return _quantize_with_squish(embeddings)
+    elif backend == "mojo" and _mojo_available:
         return _quantize_with_mojo(embeddings)
     elif backend == "cython" and _cython_quant is not None:
         quantized, scales = _cython_quant.quantize_embeddings_cython(embeddings.astype(np.float32))
         return QuantizationResult(quantized=quantized, scales=scales, dims=d, n=n)
     elif backend == "numpy" or backend == "auto":
-        # Fallback to NumPy implementation
-        emb = embeddings.astype(np.float32)
-        scales = np.empty((n,), dtype=np.float32)
-        q = np.empty((n, d), dtype=np.int8)
-        for i in range(n):
-            v = emb[i]
-            max_abs = np.max(np.abs(v))
-            if max_abs == 0:
-                scale = 1.0
-            else:
-                scale = max_abs / 127.0
-            # avoid division by zero
-            if scale == 0:
-                scale = 1.0
-            q[i] = np.round(v / scale).astype(np.int8)
-            scales[i] = np.float32(scale)
-        return QuantizationResult(quantized=q, scales=scales, dims=d, n=n)
+        return _quantize_vectorized(embeddings)
     else:
         raise ValueError(f"Unknown or unavailable backend: {backend}")
 
 
 def reconstruct_embeddings(result: QuantizationResult, backend: str = "auto") -> np.ndarray:
     """Reconstruct embeddings from QuantizationResult.
-    
-    backend: 'auto', 'mojo', 'cython', or 'numpy'
+
+    backend: 'auto', 'squish_quant', 'mojo', 'cython', or 'numpy'
+    'auto' priority: squish_quant (Rust) > Cython > NumPy
     """
     # Backend selection
     if backend == "auto":
-        if _mojo_available:
-            backend = "mojo"
+        if _squish_quant is not None:
+            backend = "squish_quant"
         elif _cython_quant is not None:
             backend = "cython"
         else:
             backend = "numpy"
     
     # Use selected backend
-    if backend == "mojo" and _mojo_available:
+    if backend == "squish_quant" and _squish_quant is not None:
+        return _dequantize_with_squish(result)
+    elif backend == "mojo" and _mojo_available:
         return _reconstruct_with_mojo(result)
     elif backend == "cython" and _cython_quant is not None:
         return _cython_quant.reconstruct_embeddings_cython(result.quantized, result.scales.astype(np.float32))
