@@ -240,9 +240,9 @@ WARNINGS_FIXED.md
 demo_data.npy
 demo_compressed.npz
 
-# Test scripts in root
+# Test scripts in root (not in tests/ directory)
 test_*.sh
-test_*.py
+/test_*.py
 compare_*.sh
 
 # Cython generated C files (keep .pyx source)
