@@ -65,7 +65,7 @@ class TestPerformanceIntegration(unittest.TestCase):
         vectors_per_sec = (1000 * 5) / elapsed
         
         print(f"Medium batch throughput: {vectors_per_sec:.0f} vectors/sec")
-        self.assertGreater(vectors_per_sec, 70000)  # Keep CI-stable floor across hosts
+        self.assertGreater(vectors_per_sec, 50000)  # CI-stable floor (GitHub-hosted runners)
     
     def test_memory_efficiency_large_batches(self):
         """Test memory efficiency with large batches."""
