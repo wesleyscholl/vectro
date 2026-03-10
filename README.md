@@ -28,6 +28,14 @@ A Mojo-first vector quantization library with comprehensive Python bindings for 
 
 ---
 
+<div align="center">
+
+![Vectro 2.0 demo](demos/demo_v2.gif)
+
+</div>
+
+---
+
 ## ⚡ Quick Start
 
 <div align="center">
