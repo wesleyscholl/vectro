@@ -17,7 +17,7 @@ Type "cd /Users/wscholl/vectro"
 Enter
 Sleep 300ms
 
-Type "python demos/demo_v2.py --quick"
+Type "python3 demos/demo_v2.py --quick"
 Enter
 Sleep 500ms
 
