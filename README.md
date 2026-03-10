@@ -8,7 +8,7 @@
 
 ![Mojo](https://img.shields.io/badge/Mojo-98.2%25-orange?logo=fire&style=for-the-badge)
 ![Version](https://img.shields.io/badge/version-2.0.0-blue?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-158_passing-green?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-195_passing-green?style=for-the-badge)
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 
