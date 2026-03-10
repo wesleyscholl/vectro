@@ -1,12 +1,16 @@
 from setuptools import setup, Extension
 from setuptools.command.build_py import build_py
-from Cython.Build import cythonize
 import numpy as np
 import os
 import sys
 import subprocess
 import shutil
 from pathlib import Path
+
+try:
+    from Cython.Build import cythonize as _cythonize
+except ImportError:
+    _cythonize = None
 
 
 class BuildPyWithMojo(build_py):
@@ -68,17 +72,22 @@ class BuildPyWithMojo(build_py):
         super().run()
 
 
-# Cython extension for high-performance quantization
-extensions = [
-    Extension(
-        "python.quantizer_cython",
-        ["src/quantizer_cython.pyx"],
-        include_dirs=[np.get_include()],
-    )
-]
+# Cython extension — only built when both Cython and the .pyx source are present
+_pyx_file = "src/quantizer_cython.pyx"
+if _cythonize is not None and os.path.exists(_pyx_file):
+    extensions = [
+        Extension(
+            "python.quantizer_cython",
+            [_pyx_file],
+            include_dirs=[np.get_include()],
+        )
+    ]
+    ext_modules = _cythonize(extensions, language_level=3)
+else:
+    ext_modules = []
 
 setup(
-    ext_modules=cythonize(extensions, language_level=3),
+    ext_modules=ext_modules,
     cmdclass={
         'build_py': BuildPyWithMojo,
     },
