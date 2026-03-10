@@ -11,6 +11,8 @@ import numpy as np
 from typing import Dict, List, Optional, Tuple, Union, Any
 from pathlib import Path
 import warnings
+import json
+from datetime import datetime, timezone
 
 # Import Vectro modules
 from .interface import (
@@ -50,6 +52,9 @@ __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"
 
+_STORAGE_FORMAT_VERSION = 2
+_STORAGE_FORMAT_NAME = "vectro_npz"
+
 
 class Vectro:
     """
@@ -63,7 +68,8 @@ class Vectro:
         self, 
         backend: str = "auto",
         profile: str = "balanced",
-        enable_batch_optimization: bool = True
+        enable_batch_optimization: bool = True,
+        enable_experimental_precisions: bool = False,
     ):
         """Initialize Vectro compressor.
         
@@ -71,10 +77,12 @@ class Vectro:
             backend: Processing backend ("auto", "mojo", "cython", "python")
             profile: Default compression profile ("fast", "balanced", "quality")  
             enable_batch_optimization: Enable batch processing optimizations
+            enable_experimental_precisions: Allow low-bit modes like INT4 when available
         """
         self.backend = backend
         self.default_profile = profile
         self.enable_batch_optimization = enable_batch_optimization
+        self.enable_experimental_precisions = enable_experimental_precisions
         
         # Initialize components
         self.batch_processor = VectroBatchProcessor(backend=backend)
@@ -90,6 +98,7 @@ class Vectro:
         self,
         vectors: Union[np.ndarray, List[np.ndarray]],
         profile: Optional[str] = None,
+        precision_mode: Optional[str] = None,
         return_quality_metrics: bool = False
     ) -> Union[QuantizationResult, BatchQuantizationResult, Tuple[Any, QualityMetrics]]:
         """Compress vectors using quantization.
@@ -104,12 +113,36 @@ class Vectro:
         """
         if profile is None:
             profile = self.default_profile
+
+        selected_profile = get_compression_profile(profile)
+        requested_precision = precision_mode or selected_profile.precision_mode
+        requested_precision = requested_precision.lower()
+        group_size = 64
+
+        # Preserve v1 behavior unless explicitly opting into low-bit modes.
+        if requested_precision != "int8" and not self.enable_experimental_precisions:
+            warnings.warn(
+                f"Requested precision mode '{requested_precision}' requires enable_experimental_precisions=True. Falling back to INT8.",
+                RuntimeWarning,
+            )
+            requested_precision = "int8"
+
+        # INT4 currently depends on squish_quant; fallback keeps API usable.
+        if requested_precision == "int4" and not get_backend_info().get("squish_quant_rust", False):
+            warnings.warn(
+                "INT4 requested but squish_quant backend is unavailable. Falling back to INT8.",
+                RuntimeWarning,
+            )
+            requested_precision = "int8"
             
         # Convert input to numpy array
         if isinstance(vectors, list):
             vectors = np.array(vectors, dtype=np.float32)
         elif not isinstance(vectors, np.ndarray):
             raise ValueError("vectors must be numpy array or list")
+
+        if vectors.size == 0:
+            raise ValueError("vectors must be non-empty")
             
         vectors = vectors.astype(np.float32)
         
@@ -117,14 +150,23 @@ class Vectro:
         if vectors.ndim == 1:
             # Single vector
             vectors = vectors.reshape(1, -1)
-            result = self._compress_single_batch(vectors, profile)
-            
-            # Extract single result
+            quantized_result = quantize_embeddings(
+                vectors,
+                backend=self.backend,
+                precision_mode=requested_precision,
+                group_size=group_size,
+            )
+
+            single_scales = quantized_result.scales[0:1] if quantized_result.scales.ndim == 1 else quantized_result.scales[0:1, :]
+            single_quantized = quantized_result.quantized[0]
+
             single_result = QuantizationResult(
-                quantized=result.quantized_vectors[0],
-                scales=result.scales[0:1],
-                dims=result.vector_dim,
-                n=1
+                quantized=single_quantized,
+                scales=single_scales,
+                dims=quantized_result.dims,
+                n=1,
+                precision_mode=quantized_result.precision_mode,
+                group_size=quantized_result.group_size,
             )
             
             if return_quality_metrics:
@@ -138,10 +180,10 @@ class Vectro:
         elif vectors.ndim == 2:
             # Batch of vectors
             if self.enable_batch_optimization and len(vectors) > 1:
-                result = self._compress_single_batch(vectors, profile)
+                result = self._compress_single_batch(vectors, profile, requested_precision)
             else:
                 # Process individually for small batches
-                result = self._compress_individually(vectors, profile)
+                result = self._compress_individually(vectors, profile, requested_precision)
             
             if return_quality_metrics:
                 original = vectors
@@ -293,21 +335,41 @@ class Vectro:
     def save_compressed(
         self,
         result: Union[QuantizationResult, BatchQuantizationResult],
-        filepath: str
+        filepath: str,
+        metadata: Optional[Dict[str, Any]] = None
     ):
         """Save compressed vectors to file.
         
         Args:
             result: Compression result to save
             filepath: Output file path (.npz format)
+            metadata: Optional user metadata persisted in the artifact
         """
+        user_metadata = metadata or {}
+        file_metadata = {
+            "created_at_utc": datetime.now(timezone.utc).isoformat(),
+            "created_by": "vectro",
+            "vectro_version": __version__,
+            "storage_format": _STORAGE_FORMAT_NAME,
+            "storage_format_version": _STORAGE_FORMAT_VERSION,
+            "backend": self.backend,
+            "profile": self.default_profile,
+            "user_metadata": user_metadata,
+        }
+
         if isinstance(result, QuantizationResult):
             np.savez_compressed(
                 filepath,
                 quantized=result.quantized,
                 scales=result.scales,
                 dims=result.dims,
-                n=result.n
+                n=result.n,
+                artifact_type="single",
+                precision_mode=getattr(result, "precision_mode", "int8"),
+                group_size=getattr(result, "group_size", 0),
+                storage_format=_STORAGE_FORMAT_NAME,
+                storage_format_version=_STORAGE_FORMAT_VERSION,
+                metadata_json=json.dumps(file_metadata),
             )
         elif isinstance(result, BatchQuantizationResult):
             # Convert list of arrays to single array for storage
@@ -320,7 +382,13 @@ class Vectro:
                 vector_dim=result.vector_dim,
                 compression_ratio=result.compression_ratio,
                 total_original_bytes=result.total_original_bytes,
-                total_compressed_bytes=result.total_compressed_bytes
+                total_compressed_bytes=result.total_compressed_bytes,
+                artifact_type="batch",
+                precision_mode=result.precision_mode,
+                group_size=result.group_size,
+                storage_format=_STORAGE_FORMAT_NAME,
+                storage_format_version=_STORAGE_FORMAT_VERSION,
+                metadata_json=json.dumps(file_metadata),
             )
     
     def load_compressed(self, filepath: str) -> Union[QuantizationResult, BatchQuantizationResult]:
@@ -333,6 +401,13 @@ class Vectro:
             Loaded compression result
         """
         data = np.load(filepath)
+        format_version = int(data["storage_format_version"]) if "storage_format_version" in data else 1
+
+        if format_version > _STORAGE_FORMAT_VERSION:
+            raise ValueError(
+                f"Unsupported storage format version {format_version}. "
+                f"This Vectro build supports up to version {_STORAGE_FORMAT_VERSION}."
+            )
         
         if 'batch_size' in data:
             # BatchQuantizationResult
@@ -345,7 +420,9 @@ class Vectro:
                 vector_dim=int(data['vector_dim']),
                 compression_ratio=float(data['compression_ratio']),
                 total_original_bytes=int(data['total_original_bytes']),
-                total_compressed_bytes=int(data['total_compressed_bytes'])
+                total_compressed_bytes=int(data['total_compressed_bytes']),
+                precision_mode=str(data['precision_mode']) if 'precision_mode' in data else "int8",
+                group_size=int(data['group_size']) if 'group_size' in data else 0,
             )
         else:
             # QuantizationResult
@@ -353,31 +430,86 @@ class Vectro:
                 quantized=data['quantized'],
                 scales=data['scales'],
                 dims=int(data['dims']),
-                n=int(data['n'])
+                n=int(data['n']),
+                precision_mode=str(data['precision_mode']) if 'precision_mode' in data else "int8",
+                group_size=int(data['group_size']) if 'group_size' in data else 0,
             )
     
     def _compress_single_batch(
         self, 
         vectors: np.ndarray, 
-        profile: str
+        profile: str,
+        precision_mode: str = "int8",
     ) -> BatchQuantizationResult:
         """Compress vectors as a single batch."""
+        if precision_mode == "int4":
+            result = quantize_embeddings(
+                vectors,
+                backend=self.backend,
+                precision_mode="int4",
+                group_size=64,
+            )
+
+            quantized_vectors = [result.quantized[i] for i in range(result.n)]
+            original_bytes = vectors.size * 4
+            compressed_bytes = int(result.quantized.nbytes + result.scales.nbytes)
+            compression_ratio = float(original_bytes) / float(compressed_bytes) if compressed_bytes > 0 else 0.0
+
+            return BatchQuantizationResult(
+                quantized_vectors=quantized_vectors,
+                scales=result.scales,
+                batch_size=result.n,
+                vector_dim=result.dims,
+                compression_ratio=compression_ratio,
+                total_original_bytes=original_bytes,
+                total_compressed_bytes=compressed_bytes,
+                precision_mode="int4",
+                group_size=result.group_size,
+            )
+
         return self.batch_processor.quantize_batch(vectors, profile)
     
     def _compress_individually(
         self, 
         vectors: np.ndarray, 
-        profile: str
+        profile: str,
+        precision_mode: str = "int8",
     ) -> BatchQuantizationResult:
         """Compress vectors individually and combine results."""
         batch_size, vector_dim = vectors.shape
         quantized_vectors = []
+        scales_rows: List[np.ndarray] = []
         scales = np.zeros(batch_size, dtype=np.float32)
         
         for i in range(batch_size):
-            result = quantize_embeddings(vectors[i:i+1], backend=self.backend)
+            result = quantize_embeddings(
+                vectors[i:i+1],
+                backend=self.backend,
+                precision_mode=precision_mode,
+                group_size=64,
+            )
             quantized_vectors.append(result.quantized[0])
-            scales[i] = result.scales[0]
+            if precision_mode == "int4":
+                scales_rows.append(np.asarray(result.scales[0], dtype=np.float32))
+            else:
+                scales[i] = result.scales[0]
+
+        if precision_mode == "int4":
+            scales_final = np.asarray(scales_rows, dtype=np.float32)
+            original_bytes = batch_size * vector_dim * 4
+            compressed_bytes = int(np.asarray(quantized_vectors, dtype=np.uint8).nbytes + scales_final.nbytes)
+            compression_ratio = float(original_bytes) / float(compressed_bytes) if compressed_bytes > 0 else 0.0
+            return BatchQuantizationResult(
+                quantized_vectors=quantized_vectors,
+                scales=scales_final,
+                batch_size=batch_size,
+                vector_dim=vector_dim,
+                compression_ratio=compression_ratio,
+                total_original_bytes=original_bytes,
+                total_compressed_bytes=compressed_bytes,
+                precision_mode="int4",
+                group_size=64,
+            )
         
         # Calculate compression metrics
         original_bytes = batch_size * vector_dim * 4
@@ -391,7 +523,9 @@ class Vectro:
             vector_dim=vector_dim,
             compression_ratio=compression_ratio,
             total_original_bytes=original_bytes,
-            total_compressed_bytes=compressed_bytes
+            total_compressed_bytes=compressed_bytes,
+            precision_mode="int8",
+            group_size=0,
         )
     
     @property

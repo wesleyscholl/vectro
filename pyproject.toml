@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vectro"
-version = "0.3.0"
+version = "1.2.0"
 description = "Mojo-first ultra-high-performance LLM embedding compressor (98.2% Mojo, 8 production modules)"
 readme = "README.md"
 license = {text = "MIT"}
@@ -57,6 +57,15 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "pytest-cov",
+]
+integrations = [
+    "qdrant-client>=1.9",
+    "weaviate-client>=4.0",
+    "torch>=2.0",
+    "transformers>=4.36",
+]
+data = [
+    "pyarrow>=12.0",
 ]
 bench = [
     "rich>=13.0",

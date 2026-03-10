@@ -49,6 +49,27 @@ from .profiles_api import (
     create_custom_profile
 )
 
+from .integrations import (
+    StoredVectorBatch,
+    VectorDBConnector,
+    InMemoryVectorDBConnector,
+    QdrantConnector,
+    WeaviateConnector,
+    compress_tensor,
+    reconstruct_tensor,
+    HuggingFaceCompressor,
+    result_to_table,
+    table_to_result,
+    write_parquet,
+    read_parquet,
+    to_arrow_bytes,
+    from_arrow_bytes,
+)
+
+from .streaming import StreamingDecompressor
+from .quantization_extra import quantize_int2, dequantize_int2, quantize_adaptive
+from .migration import inspect_artifact, upgrade_artifact, validate_artifact
+
 __version__ = "1.2.0"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
@@ -92,7 +113,34 @@ __all__ = [
     "ProfileComparison",
     "get_compression_profile",
     "create_custom_profile",
-    
+
+    # Integrations
+    "StoredVectorBatch",
+    "VectorDBConnector",
+    "InMemoryVectorDBConnector",
+    "QdrantConnector",
+    "WeaviateConnector",
+    "compress_tensor",
+    "reconstruct_tensor",
+    "HuggingFaceCompressor",
+    # Arrow / Parquet bridge
+    "result_to_table",
+    "table_to_result",
+    "write_parquet",
+    "read_parquet",
+    "to_arrow_bytes",
+    "from_arrow_bytes",
+    # Streaming
+    "StreamingDecompressor",
+    # Advanced quantization
+    "quantize_int2",
+    "dequantize_int2",
+    "quantize_adaptive",
+    # Migration tooling
+    "inspect_artifact",
+    "upgrade_artifact",
+    "validate_artifact",
+
     # Utilities
     "get_version_info"
 ]

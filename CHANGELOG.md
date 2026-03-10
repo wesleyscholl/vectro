@@ -5,6 +5,173 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] — Vectro 2.0 Overdrive
+
+### Phase 4: Trust, Reproducibility, and Developer Experience
+
+#### Migration Tooling
+- **`python/migration.py`** — artifact inspection, validation, and version upgrade CLI:
+  - `inspect_artifact(path)` — returns version, type, dimensions, precision, compression
+    ratio, and provenance metadata for any `.npz` artifact
+  - `validate_artifact(path)` — structural integrity check with actionable error messages
+  - `upgrade_artifact(src, dst, *, dry_run=False)` — upgrades v1 → v2 format, writing a
+    `migration` record into `metadata_json` with timestamps and source field inventory
+  - CLI: `python -m python.migration inspect / upgrade / validate [--dry-run] [--json]`
+  - v1 artifacts are detected by the absence of `storage_format_version`
+  - Upgrade adds: `precision_mode`, `group_size`, `storage_format`,
+    `artifact_type`, `metadata_json`, `storage_format_version=2`
+  - `inspect_artifact`, `upgrade_artifact`, `validate_artifact` exported from top-level
+    `python` package
+
+#### Docs Hub
+- **`docs/getting-started.md`** — installation, compression quickstart, save/load,
+  profile selection, streaming, backend selection
+- **`docs/migration-guide.md`** — v1 → v2 breaking-change table, migration tool usage,
+  bulk upgrade script, API compatibility table
+- **`docs/integrations.md`** — Qdrant, Weaviate, PyTorch, HuggingFace, Arrow/Parquet,
+  StreamingDecompressor, INT2/adaptive quantization examples
+- **`docs/benchmark-methodology.md`** — metrics explained, reproducibility keys,
+  performance regression gates, dataset recommendations
+- **`docs/api-reference.md`** — complete public API: Vectro class, all free functions,
+  data classes, integration symbols, benchmark harness, compression profiles
+
+#### Onboarding Examples
+- **`examples/rag_quickstart.py`** — end-to-end RAG demo: encode → compress → store in
+  `InMemoryVectorDBConnector` → cosine search → artifact inspection
+- **`examples/vector_search_quickstart.py`** — dataset compression across profiles,
+  Recall@K comparison, streaming decompression, artifact validation,
+  and benchmark harness integration
+
+#### Release Automation
+- **`.github/workflows/release.yml`** — tagged release workflow (`v*`):
+  - Verifies tag version matches `pyproject.toml`
+  - Builds `sdist` + `wheel` with `python -m build`
+  - Validates distributions with `twine check`
+  - Generates `SHA256SUMS.txt` for all build artifacts
+  - Smoke-tests the wheel on Python 3.10, 3.11, 3.12
+  - Extracts matching CHANGELOG section as release notes
+  - Creates a GitHub Release with wheel, sdist, and checksums attached
+  - Publishes to PyPI via Twine (requires `PYPI_API_TOKEN` secret + `pypi` environment)
+  - Pre-release tags (`rc`, `alpha`, `beta`) are marked as pre-release on GitHub and
+    skipped for PyPI publication
+
+#### CI Update
+- `.github/workflows/ci.yml` now runs `tests.test_migration` in the Python matrix
+
+### Tests
+- **`tests/test_migration.py`** — 28 tests covering:
+  - v1 single and batch detection, v2 current detection
+  - `needs_upgrade` flag, default field values for v1
+  - Validation pass/fail with shape mismatch and missing field cases
+  - Upgrade round-trips: quantized/scales arrays preserved byte-for-byte
+  - Upgrade adds `precision_mode`, `group_size`, `metadata_json` with migration record
+  - Dry-run mode (no file written), parent directory creation
+  - Upgraded artifacts pass `validate_artifact`
+
+---
+
+### Phase 3: Integrations, Streaming, Quantization Extras
+
+#### Added
+
+#### Arrow / Parquet Bridge
+  for compressed vector batches:
+  - `result_to_table(result, ids)` — converts any Vectro result to a `pa.Table`
+  - `table_to_result(table)` — restores a `BatchQuantizationResult` from Arrow
+  - `write_parquet(result, path, compression="snappy")` / `read_parquet(path)`
+  - `to_arrow_bytes(result)` / `from_arrow_bytes(data)` — IPC stream wire encoding
+  - Optional dep: `pyarrow>=12.0` (lazy-imported with a clear error when absent)
+  - Install via `pip install "vectro[data]"`
+
+#### Streaming Decompressor
+- **`python/streaming.py`** — `StreamingDecompressor` — memory-efficient iterator
+  that reconstructs float32 vectors from a compressed artifact one chunk at a time.
+  - Accepts `BatchQuantizationResult` or `QuantizationResult` as input
+  - `chunk_size` controls peak memory; fully compatible with INT4 and INT8 modes
+  - Supports grouped-scale layouts; implements `__len__`
+  - Exported from top-level `python` package
+
+#### INT2 and Adaptive Quantization
+- **`python/quantization_extra.py`** — two new NumPy-only quantization methods:
+  - `quantize_int2(embeddings, group_size=32)` / `dequantize_int2(...)` — symmetric
+    ternary {-1, 0, +1} with 4 values packed per byte (8× smaller than float32)
+  - `quantize_adaptive(embeddings, bits=8, clip_ratio=3.0)` — MAD-based outlier
+    clipping before INT8. Protects precision when embeddings have heavy tails.
+  - All three functions (`quantize_int2`, `dequantize_int2`, `quantize_adaptive`)
+    exported from top-level `python` package
+
+#### Benchmark Harness
+- **`python/benchmark.py`** — `BenchmarkSuite` and `BenchmarkReport`:
+  - Captures throughput (vec/s, MB/s), compression ratio, cosine similarity,
+    median/p95 latency, and environment metadata (Python, NumPy, platform)
+  - `BenchmarkReport.save(path)` — writes JSON or CSV (format inferred from ext)
+  - `python -m python.benchmark --n 5000 --dim 384 --output results.json`
+
+#### Package Exports
+- `python/integrations/__init__.py`: arrow_bridge functions added to namespace
+- `python/__init__.py`: `StreamingDecompressor`, `quantize_int2`, `dequantize_int2`,
+  `quantize_adaptive`, and all arrow_bridge functions exported from top level
+- `pyproject.toml`: new `[data]` optional extra — `pyarrow>=12.0`
+
+#### CI
+- `.github/workflows/ci.yml` now runs `tests.test_arrow_bridge`,
+  `tests.test_streaming`, and `tests.test_quantization_extra` in the Python matrix
+
+### Tests
+- **`tests/test_arrow_bridge.py`** — 18 tests: column structure, IDs, binary
+  round-trips, IPC bytes — uses a zero-dependency pyarrow mock
+- **`tests/test_streaming.py`** — 14 tests: chunk shapes, total count, dtype,
+  reconstruction accuracy, iterator reuse, `QuantizationResult` path
+- **`tests/test_quantization_extra.py`** — 27 tests: pack/unpack losslessness,
+  INT2 cosine quality, adaptive scales, outlier handling
+- Total: **~88 tests · all passing**
+
+---
+
+
+- **`python/integrations/weaviate_connector.py`** — `WeaviateConnector` for storing
+  Vectro-compressed vectors as Weaviate v4 object properties. Supports INT8 and
+  INT4 (uint8-packed) payloads. Optional dep: `weaviate-client>=4.0`.
+- **`python/integrations/torch_bridge.py`** — PyTorch and HuggingFace Transformers
+  integration helpers:
+  - `compress_tensor(tensor)` — accepts a `torch.Tensor`, returns `QuantizationResult`
+  - `reconstruct_tensor(result)` — returns a `float32 torch.Tensor`
+  - `HuggingFaceCompressor.from_model(name)` — mean-pool encoder + compressor in one call
+- `WeaviateConnector`, `compress_tensor`, `reconstruct_tensor`, and
+  `HuggingFaceCompressor` exported from `python.integrations` and top-level `python`
+  package.
+
+#### Mojo Storage — Real I/O
+- **`src/storage_mojo.mojo`** — replaced TODO stubs in `save_quantized_binary` /
+  `load_quantized_binary` with working numpy-backed implementations using Mojo's
+  Python interop. Files are written as compressed NPZ archives aligned with the
+  Python layer's `vectro_npz` v2 format contract.
+
+#### Performance Regression Gates
+- `TestPerformanceRegression` suite in `tests/test_integration.py` with four
+  hard-floor assertions (run in CI):
+  - throughput ≥ 60K vec/sec (balanced and fast profiles, 1000 × 384)
+  - compression ratio ≥ 3.5× (int8 balanced)
+  - mean cosine similarity ≥ 0.99 (balanced, unit-norm inputs)
+
+#### Optional Dependencies
+- `pyproject.toml` `[integrations]` extra expanded: `weaviate-client>=4.0`,
+  `torch>=2.0`, `transformers>=4.36`
+
+#### CI
+- `.github/workflows/ci.yml` now runs `tests.test_weaviate_connector` and
+  `tests.test_torch_bridge` in the Python matrix (3.10 / 3.11 / 3.12)
+
+### Tests
+- **`tests/test_weaviate_connector.py`** — 7 tests covering upsert/fetch/delete,
+  INT4 payload, missing-ID handling, shape mismatch, and metadata merging — all
+  using a fake Weaviate v4 client stub (no weaviate-client required in CI)
+- **`tests/test_torch_bridge.py`** — 6 tests using a lightweight `_MockTensor`  
+  (no torch install required in CI)
+- Total: **63 tests · all passing**
+
+---
+
 ## [1.2.0] - 2025-01-03
 
 ### 🐍 **Python API Release - Major Milestone**

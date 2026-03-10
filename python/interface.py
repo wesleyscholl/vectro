@@ -21,6 +21,8 @@ class QuantizationResult(NamedTuple):
     scales: np.ndarray     # float32 array, shape (n,)
     dims: int             # dimension d
     n: int                # number of vectors
+    precision_mode: str = "int8"  # int8 | int4
+    group_size: int = 0
 
 
 # Try to import the high-performance backends if available
@@ -83,9 +85,15 @@ def _dequantize_with_squish(result: QuantizationResult) -> np.ndarray:
     Significantly faster than NumPy broadcast on large matrices.
     """
     q = np.ascontiguousarray(result.quantized, dtype=np.int8)
-    s = result.scales
+    if q.ndim == 1:
+        q = q.reshape(1, -1)
+
+    s = np.asarray(result.scales, dtype=np.float32)
+    if s.ndim == 0:
+        s = s.reshape(1)
+
     if s.ndim == 1:
-        return _squish_quant.dequantize_int8_f32(q, s)
+        return _squish_quant.dequantize_int8_f32(q, np.ascontiguousarray(s, dtype=np.float32))
     else:
         # scales is (n, n_groups) — derive group_size from shape
         group_size = result.dims // s.shape[1]
@@ -198,16 +206,38 @@ def get_backend_info():
     return info
 
 
-def quantize_embeddings(embeddings: np.ndarray, backend: str = "auto") -> QuantizationResult:
+def quantize_embeddings(
+    embeddings: np.ndarray,
+    backend: str = "auto",
+    precision_mode: str = "int8",
+    group_size: int = 64,
+) -> QuantizationResult:
     """Quantize embeddings to int8 with per-vector scale.
 
     embeddings: shape (n, d), dtype float32
     backend: 'auto', 'mojo', 'cython', or 'numpy'
+    precision_mode: 'int8' or 'int4'
+    group_size: group size used for grouped modes (currently int4)
     returns: QuantizationResult with quantized int8 array, scales, dims, n
     """
     if embeddings.ndim != 2:
         raise ValueError("embeddings must be 2D array of shape (n, d)")
     n, d = embeddings.shape
+
+    precision_mode = precision_mode.lower()
+    if precision_mode not in ("int8", "int4"):
+        raise ValueError(f"Unsupported precision_mode: {precision_mode}")
+
+    if precision_mode == "int4":
+        packed, scales = quantize_int4(embeddings, group_size=group_size)
+        return QuantizationResult(
+            quantized=packed,
+            scales=scales,
+            dims=d,
+            n=n,
+            precision_mode="int4",
+            group_size=group_size,
+        )
 
     # Backend selection
     if backend == "auto":
@@ -241,6 +271,13 @@ def reconstruct_embeddings(result: QuantizationResult, backend: str = "auto") ->
     backend: 'auto', 'squish_quant', 'mojo', 'cython', or 'numpy'
     'auto' priority: squish_quant (Rust) > Cython > NumPy
     """
+    if getattr(result, "precision_mode", "int8") == "int4":
+        return dequantize_int4(
+            result.quantized,
+            result.scales,
+            group_size=getattr(result, "group_size", 64) or 64,
+        )
+
     # Backend selection
     if backend == "auto":
         if _squish_quant is not None:
@@ -259,8 +296,14 @@ def reconstruct_embeddings(result: QuantizationResult, backend: str = "auto") ->
         return _cython_quant.reconstruct_embeddings_cython(result.quantized, result.scales.astype(np.float32))
     elif backend == "numpy" or backend == "auto":
         # Fallback to NumPy implementation
-        q2 = result.quantized.astype(np.float32)
+        q = result.quantized
+        if q.ndim == 1:
+            q = q.reshape(1, -1)
+
+        q2 = q.astype(np.float32)
         scales = np.asarray(result.scales, dtype=np.float32)
+        if scales.ndim == 0:
+            scales = scales.reshape(1)
         if scales.shape[0] != result.n:
             raise ValueError("scales length must match number of vectors")
         recon = q2 * scales[:, None]

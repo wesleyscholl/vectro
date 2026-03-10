@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
 from pathlib import Path
 
-from .interface import QuantizationResult
+from .interface import QuantizationResult, dequantize_int4
 
 
 @dataclass
@@ -25,20 +25,38 @@ class BatchQuantizationResult:
     compression_ratio: float             # Achieved compression ratio
     total_original_bytes: int            # Original size in bytes
     total_compressed_bytes: int          # Compressed size in bytes
+    precision_mode: str = "int8"        # int8 | int4
+    group_size: int = 0
     
-    def get_vector(self, index: int) -> Tuple[np.ndarray, float]:
+    def get_vector(self, index: int) -> Tuple[np.ndarray, Union[float, np.ndarray]]:
         """Get a specific quantized vector and its scale."""
         if index >= len(self.quantized_vectors):
             raise IndexError(f"Vector index {index} out of range")
-        return self.quantized_vectors[index], float(self.scales[index])
+        scale_value = self.scales[index]
+        if np.isscalar(scale_value):
+            return self.quantized_vectors[index], float(scale_value)
+        return self.quantized_vectors[index], np.asarray(scale_value, dtype=np.float32)
     
     def reconstruct_vector(self, index: int) -> np.ndarray:
         """Reconstruct a specific vector from quantized form."""
         quantized, scale = self.get_vector(index)
+        if self.precision_mode == "int4":
+            return dequantize_int4(
+                np.asarray([quantized], dtype=np.uint8),
+                np.asarray([self.scales[index]], dtype=np.float32),
+                group_size=self.group_size or 64,
+            )[0]
         return quantized.astype(np.float32) * scale
     
     def reconstruct_batch(self) -> np.ndarray:
         """Reconstruct all vectors in the batch."""
+        if self.precision_mode == "int4":
+            return dequantize_int4(
+                np.asarray(self.quantized_vectors, dtype=np.uint8),
+                np.asarray(self.scales, dtype=np.float32),
+                group_size=self.group_size or 64,
+            )
+
         reconstructed = np.zeros((self.batch_size, self.vector_dim), dtype=np.float32)
         for i in range(self.batch_size):
             reconstructed[i] = self.reconstruct_vector(i)

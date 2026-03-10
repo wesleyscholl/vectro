@@ -1,8 +1,17 @@
 """
 High-performance binary storage and loading for quantized vectors.
 Mojo implementation for efficient file I/O operations.
+
+The on-disk format is an NPZ archive (numpy's compressed array container)
+aligned with the Python layer's ``_STORAGE_FORMAT_NAME = "vectro_npz"`` contract.
+Required keys:
+  quantized  : int8 array of shape (num_vectors, dims)
+  scales     : float32 array of shape (num_vectors,)
+  dims       : int64 scalar — vector dimensions
+  n          : int64 scalar — number of vectors
+  metadata   : stored as a plain UTF-8 string in the "metadata" key
 """
-from pathlib import Path
+from python import Python, PythonObject
 
 
 struct QuantizedData:
@@ -35,7 +44,7 @@ struct QuantizedData:
         self.num_vectors = n
         self.metadata = meta
     
-    fn get_vector(self, index: Int) -> (List[Int8], Float32):
+    fn get_vector(self, index: Int) -> Tuple[List[Int8], Float32]:
         """Get a single quantized vector and its scale.
         Args:
             index: Vector index to retrieve.
@@ -71,49 +80,92 @@ struct QuantizedData:
         return Float32(original_size) / Float32(compressed_size)
 
 
-fn save_quantized_binary(data: QuantizedData, filepath: String) -> Bool:
-    """Save quantized data to binary file format.
+fn save_quantized_binary(data: QuantizedData, filepath: String) raises -> Bool:
+    """Save quantized data to an NPZ archive aligned with the vectro_npz format.
+
     Args:
         data: QuantizedData to save.
-        filepath: Path to output file.
+        filepath: Destination path.  A ``.npz`` suffix is appended by numpy
+            when it is not already present.
     Returns:
-        True if successful, False otherwise.
-    
-    Binary Format:
-        - Magic number (4 bytes): "VQNT"
-        - Version (4 bytes): 1
-        - Dimensions (4 bytes)
-        - Num vectors (4 bytes)
-        - Metadata length (4 bytes)
-        - Metadata (variable)
-        - Scales (num_vectors * 4 bytes)
-        - Quantized data (num_vectors * dims bytes)
+        True on success.
+
+    Raises:
+        Any exception propagated from numpy on I/O failure.
     """
-    print("Saving quantized data to:", filepath)
-    print("  Vectors:", data.num_vectors)
-    print("  Dimensions:", data.dims)
-    print("  Total size:", data.total_size_bytes(), "bytes")
+    var np = Python.import_module("numpy")
+    var builtins = Python.import_module("builtins")
+
+    # --- Build Python lists from Mojo containers ---
+    var py_q = builtins.list()
+    for i in range(len(data.quantized)):
+        _ = py_q.append(PythonObject(Int(data.quantized[i])))
+
+    var py_s = builtins.list()
+    for i in range(data.num_vectors):
+        _ = py_s.append(PythonObject(Float64(data.scales[i])))
+
+    # --- Convert to numpy arrays ---
+    var q_np = np.array(py_q, dtype="int8").reshape(
+        PythonObject(data.num_vectors), PythonObject(data.dims)
+    )
+    var s_np = np.array(py_s, dtype="float32")
+
+    # --- Write compressed archive ---
+    np.savez_compressed(
+        PythonObject(filepath),
+        quantized=q_np,
+        scales=s_np,
+        dims=np.array(PythonObject(data.dims), dtype="int64"),
+        n=np.array(PythonObject(data.num_vectors), dtype="int64"),
+        metadata=PythonObject(data.metadata),
+    )
+
+    print("Saved quantized data to:", filepath)
+    print("  Vectors:", data.num_vectors, "  Dims:", data.dims)
     print("  Compression ratio:", data.compression_ratio(), "x")
-    
-    # TODO: Implement actual binary write when Mojo file I/O is more mature
-    # For now, return success indicator
     return True
 
 
-fn load_quantized_binary(filepath: String) -> QuantizedData:
-    """Load quantized data from binary file format.
+fn load_quantized_binary(filepath: String) raises -> QuantizedData:
+    """Load quantized data from an NPZ archive written by :func:`save_quantized_binary`.
+
     Args:
-        filepath: Path to input file.
+        filepath: Path to the ``.npz`` archive (with or without the suffix).
     Returns:
-        Loaded QuantizedData.
+        Populated :struct:`QuantizedData`.
+
+    Raises:
+        Any exception propagated from numpy on I/O failure or format mismatch.
     """
-    print("Loading quantized data from:", filepath)
-    
-    # TODO: Implement actual binary read when Mojo file I/O is more mature
-    # For now, return empty data
-    var empty_q = List[Int8]()
-    var empty_s = List[Float32]()
-    return QuantizedData(empty_q^, empty_s^, 0, 0, "")
+    var np = Python.import_module("numpy")
+
+    # numpy appends .npz automatically; accept either form
+    var archive = np.load(PythonObject(filepath), allow_pickle=False)
+
+    var dims = Int(archive["dims"])
+    var n = Int(archive["n"])
+
+    # Flatten to 1-D Python lists for iteration
+    var q_py = archive["quantized"].flatten().tolist()
+    var s_py = archive["scales"].flatten().tolist()
+
+    var q = List[Int8](capacity=n * dims)
+    for i in range(n * dims):
+        q.append(Int8(Int(q_py[i])))
+
+    var s = List[Float32](capacity=n)
+    for i in range(n):
+        s.append(Float32(Float64(s_py[i])))
+
+    var metadata = String("")
+    if "metadata" in archive.files:
+        metadata = String(archive["metadata"])
+
+    print("Loaded quantized data from:", filepath)
+    print("  Vectors:", n, "  Dims:", dims)
+
+    return QuantizedData(q^, s^, dims, n, metadata)
 
 
 struct StorageStats:
@@ -218,7 +270,7 @@ fn calculate_storage_stats(data: QuantizedData) -> StorageStats:
     )
 
 
-fn main():
+fn main() raises:
     """Test storage functionality."""
     print("=" * 70)
     print("Vectro Storage Module (Mojo)")
