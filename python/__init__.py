@@ -70,7 +70,7 @@ from .streaming import StreamingDecompressor
 from .quantization_extra import quantize_int2, dequantize_int2, quantize_adaptive
 from .migration import inspect_artifact, upgrade_artifact, validate_artifact
 
-__version__ = "1.2.0"
+__version__ = "2.0.0"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"

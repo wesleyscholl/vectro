@@ -5,7 +5,7 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased] — Vectro 2.0 Overdrive
+## [2.0.0] — 2026-03-10  Vectro 2.0 Overdrive
 
 ### Phase 4: Trust, Reproducibility, and Developer Experience
 
@@ -54,6 +54,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Publishes to PyPI via Twine (requires `PYPI_API_TOKEN` secret + `pypi` environment)
   - Pre-release tags (`rc`, `alpha`, `beta`) are marked as pre-release on GitHub and
     skipped for PyPI publication
+
+#### Phase 5: Launch Readiness — v2.0.0 Release Package
+
+##### CLI Entry Point
+- **`python/cli.py`** — `vectro` command-line tool registered as a package script:
+  - `vectro compress <input.npy> <output.npz> [--profile PROFILE]`
+  - `vectro decompress <input.npz> <output.npy>`
+  - `vectro inspect <artifact.npz> [--json]`
+  - `vectro upgrade <src> <dst> [--dry-run]`
+  - `vectro validate <artifact.npz>`
+  - `vectro benchmark [--n N] [--dim D] [--runs R] [--seed S] [--output PATH]`
+  - `vectro info` — backend + environment summary
+  - Lazy imports; `main(argv=None)` callable from test harnesses
+
+##### Version Bump: 1.2.0 → 2.0.0
+- `pyproject.toml`, `pixi.toml`, `python/__init__.py`, `python/vectro.py`
+
+##### RC Hardening Test Suite
+- **`tests/test_release_candidate.py`** — 7 verification gates:
+  1. Quantization quality gates (cosine sim ≥ threshold per profile)
+  2. Compression ratio gates (≥ 3.5× per profile)
+  3. Throughput gates (≥ 50K vec/s compress + streaming)
+  4. Compatibility gates (v1 → v2 migration round-trip, dry-run, bulk)
+  5. Integration gates (in-memory connector, Arrow, streaming, benchmark)
+  6. Distribution gates (package exports audit, version consistency all 4 files)
+  7. Launch readiness (docs hub, CHANGELOG, README, release.yml, CI)
 
 #### CI Update
 - `.github/workflows/ci.yml` now runs `tests.test_migration` in the Python matrix
@@ -851,10 +877,13 @@ No security issues in this release. All code is memory-safe Mojo with zero unsaf
 
 ## Links
 
-- **Homepage**: https://github.com/yourusername/vectro
-- **Documentation**: See README.md and MOJO_MODULES.md
-- **Issues**: https://github.com/yourusername/vectro/issues
-- **PyPI**: https://pypi.org/project/vectro/ (coming soon)
+- **Homepage**: https://github.com/wesleyscholl/vectro
+- **Documentation**: See [docs/](docs/) for guides and API reference
+- **Issues**: https://github.com/wesleyscholl/vectro/issues
+- **PyPI**: https://pypi.org/project/vectro/
+
+[2.0.0]: https://github.com/wesleyscholl/vectro/releases/tag/v2.0.0
+[1.2.0]: https://github.com/wesleyscholl/vectro/releases/tag/v1.2.0
 
 ---
 

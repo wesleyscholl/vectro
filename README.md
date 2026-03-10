@@ -7,8 +7,8 @@
 ### Ultra-High-Performance LLM Embedding Compressor
 
 ![Mojo](https://img.shields.io/badge/Mojo-98.2%25-orange?logo=fire&style=for-the-badge)
-![Version](https://img.shields.io/badge/version-1.2.0-blue?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-41/41_passing-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-2.0.0-blue?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-158_passing-green?style=for-the-badge)
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 
@@ -96,19 +96,29 @@ results = processor.quantize_streaming(
 
 ## 🐍 Python API
 
-**NEW in v1.2.0**: Comprehensive Python bindings provide easy access to Vectro's ultra-high performance from Python.
+**v2.0.0**: Complete Python SDK with vector database integrations, migration tooling, streaming decompression, benchmarking, and a `vectro` CLI.
 
 ### 🎯 Core Features
 
 ```python
 from python import (
     Vectro,                    # Main API
-    VectroBatchProcessor,      # High-performance batch processing  
+    VectroBatchProcessor,      # High-performance batch processing
     VectroQualityAnalyzer,     # Quality metrics & analysis
     ProfileManager,            # Compression profiles & optimization
     compress_vectors,          # Convenience functions
     decompress_vectors,
-    generate_compression_report
+    generate_compression_report,
+    # v2.0 additions
+    StreamingDecompressor,     # Chunk-by-chunk decompression
+    QdrantConnector,           # Qdrant vector DB integration
+    WeaviateConnector,         # Weaviate vector DB integration
+    HuggingFaceCompressor,     # PyTorch / HF model compression
+    result_to_table,           # Apache Arrow export
+    write_parquet,             # Parquet persistence
+    inspect_artifact,          # Migration: inspect NPZ format version
+    upgrade_artifact,          # Migration: v1 → v2 upgrade
+    validate_artifact,         # Migration: integrity check
 )
 ```
 
@@ -216,12 +226,63 @@ python tests/test_integration.py     # Integration tests
 
 🔥 Ultra-High-Performance LLM Embedding Compressor
 ⚡ 787K-1.04M vectors/sec | 📦 3.98x compression | 🎯 99.97% accuracy
-🐍 Now with complete Python API!
+🐍 Complete Python SDK • 📦 v2.0.0
 
 📊 Compression Ratio: [████████████████████████████] 99.97%
 💾 Space Saved: 4.5 GB on 1M embeddings
-✅ Quality: 100% test coverage (41 tests)
+✅ Quality: 100% test coverage (158 tests)
 ```
+
+## 🔗 Vector Database Integrations
+
+Vectro 2.0 ships native connectors for leading vector stores:
+
+| Connector | Store batch | k-NN search | Notes |
+|---|---|---|---|
+| `InMemoryVectorDBConnector` | ✅ | ✅ | Zero-dependency, great for testing |
+| `QdrantConnector` | ✅ | ✅ | Uses Qdrant REST/gRPC client |
+| `WeaviateConnector` | ✅ | ✅ | Weaviate v4 Python client |
+
+```python
+from python.integrations import QdrantConnector
+
+conn = QdrantConnector(url="http://localhost:6333", collection="docs")
+conn.store_batch(vectors, metadata={"source": "wikipedia"})
+results = conn.search(query_vec, top_k=10)
+```
+
+See [docs/integrations.md](docs/integrations.md) for full configuration options.
+
+## 🔄 Migration Guide (v1 → v2)
+
+Artifacts saved with Vectro < 2.0 use NPZ format version 1.  
+The migration API upgrades them in-place without data loss:
+
+```python
+from python.migration import inspect_artifact, upgrade_artifact, validate_artifact
+from pathlib import Path
+
+src = Path("old_embeddings.npz")
+
+# Inspect: what format version is this?
+info = inspect_artifact(src)          # {"format_version": 1, "needs_upgrade": True, ...}
+
+# Upgrade: create a v2 copy (dry_run=True to preview without writing)
+upgrade_artifact(src, Path("embeddings_v2.npz"), dry_run=False)
+
+# Validate: confirm the artifact is intact
+result = validate_artifact(Path("embeddings_v2.npz"))  # {"valid": True, ...}
+```
+
+Or use the CLI:
+
+```bash
+vectro inspect old_embeddings.npz
+vectro upgrade old_embeddings.npz embeddings_v2.npz --dry-run
+vectro validate embeddings_v2.npz
+```
+
+See [docs/migration-guide.md](docs/migration-guide.md) for the full guide.
 
 
 ## 📦 What's Included
@@ -231,12 +292,14 @@ python tests/test_integration.py     # Integration tests
 │                    Vectro Package Contents                    │
 ├───────────────────────────────────────────────────────────────┤
 │  📚 10 Production Modules       3,073 lines of pure Mojo      │
-│  🐍 Complete Python API         5 specialized modules        │
-│  ✅ 100% Test Coverage          41 tests, zero warnings       │
-│  📖 Comprehensive Docs          API reference + guides        │
+│  🐍 Complete Python SDK         13 specialized modules       │
+│  ✅ 158 Tests, 100% Coverage    7 test modules pass cleanly   │
+│  📖 Docs Hub                    5 guides (migration, API…)   │
 │  ⚡ SIMD Optimized              Native performance             │
 │  🎚️  Multiple Profiles          Fast/Balanced/Quality         │
-│  🎬 Demo Video Guide            Complete showcase script      │
+│  🔌 Vector DB Integrations      Qdrant · Weaviate · in-memory │
+│  🔄 Migration Tooling           v1 → v2 upgrade w/ dry-run   │
+│  🖥️  CLI                         `vectro compress / inspect`  │
 └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -274,7 +337,7 @@ Cosine sim > 0.9997
 ### ✅ Production Ready
 ```
 Tests:       ████████████░  100%
-41/41 passing
+158/158 passing
 Zero warnings
 ```
 
@@ -284,13 +347,14 @@ Zero warnings
 
 ## 📖 Documentation
 
-- [RELEASE_v1.0.0.md](RELEASE_v1.0.0.md) - Release notes and instructions
-- [TEST_COVERAGE_REPORT.md](TEST_COVERAGE_REPORT.md) - Complete coverage analysis
-- [TESTING_COMPLETE.md](TESTING_COMPLETE.md) - Test achievement summary
-- [DEMO_QUICK_START.md](DEMO_QUICK_START.md) - **NEW:** Multi-dataset demo guide
-- [demos/MULTI_DATASET_RECORDING_GUIDE.md](demos/MULTI_DATASET_RECORDING_GUIDE.md) - **NEW:** Video recording script
-- [demos/README.md](demos/README.md) - All demo options and benchmarks
-- [CHANGELOG.md](CHANGELOG.md) - Version history
+- [docs/getting-started.md](docs/getting-started.md) — Install, quick start, first compression
+- [docs/migration-guide.md](docs/migration-guide.md) — **v1 → v2 migration** (artifact upgrade, API changes)
+- [docs/integrations.md](docs/integrations.md) — Qdrant, Weaviate, Arrow, Parquet
+- [docs/benchmark-methodology.md](docs/benchmark-methodology.md) — Benchmark methodology & reproducibility
+- [docs/api-reference.md](docs/api-reference.md) — Full Python API reference
+- [CHANGELOG.md](CHANGELOG.md) — Version history
+- [RELEASE_v1.0.0.md](RELEASE_v1.0.0.md) — v1.0 release notes
+- [demos/README.md](demos/README.md) — Demo scripts and recording guides
 
 ## 🎬 Real-World Benchmarks
 
@@ -324,7 +388,10 @@ Vectro has been validated on **three major public datasets**:
 ```
 
 ```bash
-# Run all 39 tests
+# Run all 158 Python tests
+python -m pytest tests/ -q
+
+# Run Mojo tests
 mojo run tests/run_all_tests.mojo
 
 # Run visual demo
@@ -340,6 +407,10 @@ mojo run demos/quick_demo.mojo
 - ✅ **Storage** - Serialization, save/load operations
 - ✅ **Streaming** - Incremental processing, adaptive quantization
 - ✅ **Benchmarks** - Throughput, latency, performance validation
+- ✅ **Vector DB Connectors** - Qdrant, Weaviate, in-memory round-trip
+- ✅ **Arrow/Parquet** - Table export, IPC bytes, Parquet round-trip
+- ✅ **Migration** - v1 → v2 upgrade, dry-run, validation, bulk
+- ✅ **RC Hardening** - 7 verification gates for v2.0.0 launch
 - ✅ **Edge Cases** - Empty, single elements, extreme values, precision
 
 
@@ -402,12 +473,16 @@ mojo run demos/quick_demo.mojo
 - ✅ **Convenience Functions** - One-liner compress/decompress operations
 - ✅ **Comprehensive Testing** - 41 tests covering Python API integration
 
-### v2.0 (Planned)
-- 📋 Additional quantization methods (4-bit, binary, learned)
-- 📋 Vector database integration (Qdrant, Weaviate, Milvus)
-- 📋 GPU acceleration support
-- 📋 Distributed compression for large-scale datasets
-- 📋 Real-time streaming quantization
+### v2.0 (Released ✅)
+- ✅ INT4 / INT2 quantization modes with experimental precision routing
+- ✅ Vector database integrations — Qdrant, Weaviate, in-memory
+- ✅ PyTorch / HuggingFace bridge (`HuggingFaceCompressor`)
+- ✅ Apache Arrow + Parquet persistence layer
+- ✅ Streaming decompressor (`StreamingDecompressor`)
+- ✅ Performance regression gate suite
+- ✅ Migration tooling: `inspect_artifact`, `upgrade_artifact`, `validate_artifact`
+- ✅ Docs hub (5 guides), example scripts, `vectro` CLI
+- ✅ 158 tests passing across 11 test modules
 
 ## 📊 Project Status
 
@@ -421,9 +496,12 @@ Vectro represents the cutting edge of vector compression technology, delivering 
 
 - ✅ **Breakthrough Performance:** 787K-1.04M vectors/sec throughput with sub-microsecond latency per vector
 - ✅ **Advanced Compression:** 3.98x average compression ratio with 75% space savings and minimal quality loss
-- ✅ **Production Quality:** 100% test coverage with 39 comprehensive tests across all edge cases
+- ✅ **Production Quality:** 100% test coverage with 158 comprehensive tests across all modules
 - ✅ **Multi-Dataset Validation:** Proven performance on SIFT1M, GloVe, and SBERT benchmark datasets
 - ✅ **SIMD Optimization:** Native Mojo implementation leveraging hardware acceleration for maximum throughput
+- ✅ **Vector DB Integrations:** Qdrant and Weaviate connectors with batch store and k-NN search
+- ✅ **Migration Runtime:** Versioned NPZ v2 format with backward-compatible upgrade tooling
+- ✅ **CLI & Docs Hub:** `vectro` command-line tool and 5-guide documentation hub
 
 ### Performance Metrics
 
