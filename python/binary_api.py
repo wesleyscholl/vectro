@@ -15,12 +15,24 @@ from __future__ import annotations
 import numpy as np
 from typing import Tuple, List, Optional
 
+try:
+    from . import _mojo_bridge
+except ImportError:
+    import importlib.util as _ilu, pathlib as _pl
+    _spec = _ilu.spec_from_file_location(
+        "_mojo_bridge", _pl.Path(__file__).parent / "_mojo_bridge.py"
+    )
+    _mojo_bridge = _ilu.module_from_spec(_spec)  # type: ignore[assignment]
+    _spec.loader.exec_module(_mojo_bridge)  # type: ignore[union-attr]
+
 
 def quantize_binary(
     vectors: np.ndarray,
     normalize: bool = True,
 ) -> np.ndarray:
     """Encode float32 vectors to binary (sign bit), packed 8 per byte.
+
+    Uses the compiled Mojo binary when available; falls back to NumPy.
 
     Args:
         vectors:   Shape (n, d), float32.
@@ -38,6 +50,9 @@ def quantize_binary(
         norms = np.linalg.norm(vectors, axis=1, keepdims=True)
         safe = np.where(norms == 0, 1.0, norms)
         vectors = vectors / safe
+
+    if _mojo_bridge.is_available():
+        return _mojo_bridge.bin_encode(vectors)
 
     bits = (vectors > 0.0).astype(np.uint8)  # (n, d)
 
@@ -58,6 +73,8 @@ def dequantize_binary(
 ) -> np.ndarray:
     """Decode binary packed bytes to {-1, +1} float32 vectors.
 
+    Uses the compiled Mojo binary when available; falls back to NumPy.
+
     Args:
         packed: Shape (n, ceil(d/8)), dtype uint8.
         d:      Original vector dimension.
@@ -65,6 +82,9 @@ def dequantize_binary(
     Returns:
         Float32 array of shape (n, d); each element is +1.0 or -1.0.
     """
+    if _mojo_bridge.is_available():
+        return _mojo_bridge.bin_decode(packed, d)
+
     packed = np.ascontiguousarray(packed, dtype=np.uint8)
     n, bytes_per_vec = packed.shape
 

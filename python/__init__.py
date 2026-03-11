@@ -90,7 +90,7 @@ from .codebook_api import Codebook
 from .auto_quantize_api import auto_quantize
 from .storage_v3 import save_vqz, load_vqz
 
-__version__ = "3.0.0"
+__version__ = "3.0.1"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"

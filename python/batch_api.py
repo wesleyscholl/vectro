@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .interface import QuantizationResult, dequantize_int4
+from . import _mojo_bridge
 
 
 @dataclass
@@ -121,14 +122,28 @@ class VectroBatchProcessor:
             return self._quantize_batch_python(vectors, profile)
     
     def _quantize_batch_mojo(
-        self, 
-        vectors: np.ndarray, 
+        self,
+        vectors: np.ndarray,
         profile: str
     ) -> BatchQuantizationResult:
-        """Quantize batch using Mojo backend."""
-        # For now, fall back to Python implementation
-        # In future versions, this would call the Mojo binary
-        return self._quantize_batch_python(vectors, profile)
+        """Quantize batch using the compiled Mojo binary (INT8 symmetric abs-max)."""
+        batch_size, vector_dim = vectors.shape
+
+        q, scales = _mojo_bridge.int8_quantize(vectors)
+
+        original_bytes    = batch_size * vector_dim * 4
+        compressed_bytes  = batch_size * vector_dim * 1 + batch_size * 4
+        compression_ratio = original_bytes / compressed_bytes
+
+        return BatchQuantizationResult(
+            quantized_vectors=list(q),
+            scales=scales,
+            batch_size=batch_size,
+            vector_dim=vector_dim,
+            compression_ratio=compression_ratio,
+            total_original_bytes=original_bytes,
+            total_compressed_bytes=compressed_bytes,
+        )
     
     def _quantize_batch_python(
         self, 

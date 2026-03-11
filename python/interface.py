@@ -14,6 +14,8 @@ import subprocess
 import tempfile
 from typing import NamedTuple
 
+from . import _mojo_bridge
+
 
 class QuantizationResult(NamedTuple):
     """Result of quantization operation."""
@@ -43,22 +45,8 @@ try:
 except ImportError:
     _squish_quant = None
 
-_mojo_available = False
-_mojo_binary = None
-try:
-    # Check if Mojo binary exists
-    import pathlib
-    possible_paths = [
-        pathlib.Path(__file__).parent.parent / "vectro_quantizer",
-        pathlib.Path("vectro_quantizer"),
-    ]
-    for path in possible_paths:
-        if path.exists():
-            _mojo_binary = str(path.absolute())
-            _mojo_available = True
-            break
-except Exception:
-    pass
+_mojo_available: bool = _mojo_bridge.is_available()
+_mojo_binary: str | None = _mojo_bridge._binary_path
 
 
 def _quantize_with_squish(embeddings: np.ndarray, group_size: int = 0) -> QuantizationResult:
@@ -176,21 +164,15 @@ def _quantize_vectorized(embeddings: np.ndarray, group_size: int = 0) -> Quantiz
 
 
 def _quantize_with_mojo(embeddings: np.ndarray) -> QuantizationResult:
-    """Quantize using Mojo binary (falls through to vectorized NumPy)."""
-    return _quantize_vectorized(embeddings)
+    """Quantize using the compiled Mojo binary (INT8 symmetric abs-max)."""
+    q, scales = _mojo_bridge.int8_quantize(embeddings)
+    n, d = q.shape
+    return QuantizationResult(quantized=q, scales=scales, dims=d, n=n)
 
 
 def _reconstruct_with_mojo(result: QuantizationResult) -> np.ndarray:
-    """Reconstruct using Mojo-style algorithm."""
-    q = result.quantized
-    scales = result.scales
-    dims = result.dims
-    n = result.n
-    
-    q2 = q.astype(np.float32)
-    scales = np.asarray(scales, dtype=np.float32)
-    recon = q2 * scales[:, None]
-    return recon
+    """Reconstruct float32 from INT8 + scales using the compiled Mojo binary."""
+    return _mojo_bridge.int8_reconstruct(result.quantized, result.scales, result.dims)
 
 
 def get_backend_info():
@@ -282,6 +264,8 @@ def reconstruct_embeddings(result: QuantizationResult, backend: str = "auto") ->
     if backend == "auto":
         if _squish_quant is not None:
             backend = "squish_quant"
+        elif _mojo_available:
+            backend = "mojo"
         elif _cython_quant is not None:
             backend = "cython"
         else:

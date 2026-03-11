@@ -7,8 +7,8 @@
 ### Ultra-High-Performance LLM Embedding Compressor
 
 ![Mojo](https://img.shields.io/badge/Mojo-first-orange?logo=fire&style=for-the-badge)
-![Version](https://img.shields.io/badge/version-3.0.0-blue?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-445_passing-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-3.0.1-blue?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-390_passing-green?style=for-the-badge)
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 
@@ -16,7 +16,7 @@
 ╦  ╦╔═╗╔═╗╔╦╗╦═╗╔═╗
 ╚╗╔╝║╣ ║   ║ ╠╦╝║ ║
  ╚╝ ╚═╝╚═╝ ╩ ╩╚═╚═╝
-  v3.0.0 — Extreme Compression Without Loss
+  v3.0.1 — Mojo-First Runtime (all hot paths dispatch to compiled Mojo binary)
 ```
 
 **⚡ INT8 · NF4 · PQ-96 · Binary · HNSW · RQ · AutoQuantize · VQZ**
@@ -53,9 +53,9 @@ python demos/demo_v3.py
 # 3. Run the test suite (445 tests)
 python -m pytest tests/ -q
 
-# 4. Build standalone binary
-mojo build src/vectro_standalone.mojo -o vectro_quantizer
-./vectro_quantizer
+# 4. Build and verify the Mojo binary
+pixi run build-mojo   # builds vectro_quantizer at project root
+pixi run selftest     # verifies INT8/NF4/Binary correctness
 ```
 
 ### Python API (Easy Integration)
@@ -568,6 +568,13 @@ Test categories:
 ---
 
 ## 🗺️ Roadmap
+
+### v3.0.1 (Released)
+- ✅ Mojo-first runtime: all INT8/NF4/Binary hot paths dispatch to compiled binary
+- ✅ `python/_mojo_bridge.py` — unified subprocess dispatch helper
+- ✅ `pixi run build-mojo` / `selftest` / `benchmark` tasks
+- ✅ NF4 codebook aligned to Python float32 constants (consistent round-trip)
+- ✅ 26 new Mojo dispatch tests (390 passing total)
 
 ### v3.0.0 (Released)
 - ✅ SIMD-vectorized quantization

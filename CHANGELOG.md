@@ -5,6 +5,83 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1] — 2026-03-11  Mojo-First Runtime Fix
+
+### Problem Resolved
+
+`v3.0.0` advertised itself as "Mojo-first" but every quantization call silently
+fell through to Python/NumPy at runtime:
+
+- `_quantize_with_mojo()` in `interface.py` called `_quantize_vectorized()` (NumPy) directly
+- `_quantize_batch_mojo()` in `batch_api.py` called `_quantize_batch_python()` directly
+- `quantize_nf4` / `dequantize_nf4` in `nf4_api.py` — pure NumPy, no Mojo dispatch
+- `quantize_binary` / `dequantize_binary` in `binary_api.py` — pure NumPy, no Mojo dispatch
+
+### Changes
+
+#### `src/vectro_standalone.mojo` — Unified CLI binary (v3.0.1)
+
+Rewrote the file as a complete data-exchange CLI compiled to `vectro_quantizer`:
+
+- Full command dispatcher: `int8 quantize|recon`, `nf4 encode|decode`, `bin encode|decode`, `benchmark`, `selftest`
+- Native binary file I/O via `write_bytes` / `read_bytes` (no libpython dependency)
+- Float32 ↔ bytes via `bitcast[DType.uint32/float32]` from `memory`
+- Struct return types (`QuantResult`, `PackedResult`) instead of tuples (Mojo 0.25.7 compatible)
+- NF4 codebook aligned to Python `NF4_LEVELS` float32 values (QLoRA / nf4_api.py compatible)
+- Self-test passes: INT8 MAE < 0.02, NF4 MAE < 0.10, Binary decode all ±1, file round-trip exact
+
+#### `python/_mojo_bridge.py` — New unified subprocess helper
+
+Single module that all Python hot paths use to call `vectro_quantizer`:
+
+- `is_available()` — discovers binary at project root or CWD
+- `int8_quantize(vectors)` / `int8_reconstruct(q, scales)` — INT8 round-trip via Mojo
+- `nf4_encode(vectors)` / `nf4_decode(packed, scales, d)` — NF4 round-trip via Mojo
+- `bin_encode(vectors)` / `bin_decode(packed, d)` — Binary round-trip via Mojo
+- Data exchange: raw little-endian binary tempfiles (numpy-compatible `tofile` / `fromfile`)
+
+#### `python/interface.py` — Mojo hot path wired
+
+- `_quantize_with_mojo()` now calls `_mojo_bridge.int8_quantize()`
+- `_reconstruct_with_mojo()` now calls `_mojo_bridge.int8_reconstruct()`
+- `reconstruct_embeddings()` auto-selection: squish_quant > **Mojo** > Cython > NumPy
+
+#### `python/batch_api.py` — Mojo hot path wired
+
+- `_quantize_batch_mojo()` now calls `_mojo_bridge.int8_quantize()` instead of falling to Python
+
+#### `python/nf4_api.py` — Mojo hot path wired
+
+- `quantize_nf4()` calls `_mojo_bridge.nf4_encode()` when binary is available
+- `dequantize_nf4()` calls `_mojo_bridge.nf4_decode()` when binary is available
+- Import pattern handles both package import and direct `python/` path import
+
+#### `python/binary_api.py` — Mojo hot path wired
+
+- `quantize_binary()` calls `_mojo_bridge.bin_encode()` after optional L2 normalisation
+- `dequantize_binary()` calls `_mojo_bridge.bin_decode()` when binary is available
+
+#### `pixi.toml` — Build tasks added
+
+```toml
+[tasks]
+build-mojo = "mojo build src/vectro_standalone.mojo -o vectro_quantizer"
+selftest    = { cmd = "./vectro_quantizer selftest", depends-on = ["build-mojo"] }
+benchmark   = { cmd = "./vectro_quantizer benchmark 10000 768", depends-on = ["build-mojo"] }
+```
+
+#### `tests/test_mojo_bridge.py` — New test file (26 tests)
+
+Covers binary availability, INT8/NF4/Binary shapes, accuracy, edge cases,
+and end-to-end dispatch verification through the high-level Python APIs.
+
+### Performance (Apple M-series, d=768)
+
+| Operation | Throughput |
+|-----------|-----------|
+| INT8 quantize | ~427k vec/s |
+| INT8 reconstruct | ~1.19M vec/s |
+
 ## [3.0.0] — 2026-03-11  Vectro 3.0 — SIMD Core + Advanced Quantization
 
 ### Phase 0 — Correctness Bug Fixes (7 bugs)

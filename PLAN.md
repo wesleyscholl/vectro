@@ -1,7 +1,28 @@
 # Vectro — Plan
 
 > Last updated: 2026-03-11
-> Current version: **3.0.0** — tagged `v3.0.0`, pushed to origin, GitHub Release published
+> Current version: **3.0.1** — Mojo-first runtime fix released
+
+---
+
+## v3.0.1 — Mojo-First Runtime Fix ✅ COMPLETE (2026-03-11)
+
+All quantization hot paths now dispatch to the compiled Mojo binary at runtime.
+`v3.0.0` advertised Mojo-first but all paths fell through to Python/NumPy.
+
+| Component | Fix |
+|-----------|-----|
+| `src/vectro_standalone.mojo` | Complete CLI binary: int8/nf4/bin quantize+reconstruct, benchmark, selftest |
+| `python/_mojo_bridge.py` | New unified subprocess dispatch helper for all Python modules |
+| `python/interface.py` | `_quantize_with_mojo` + `_reconstruct_with_mojo` now call Mojo |
+| `python/batch_api.py` | `_quantize_batch_mojo` now calls Mojo |
+| `python/nf4_api.py` | `quantize_nf4` / `dequantize_nf4` route through bridge |
+| `python/binary_api.py` | `quantize_binary` / `dequantize_binary` route through bridge |
+| `pixi.toml` | `build-mojo`, `selftest`, `benchmark` tasks added; version bumped to 3.0.1 |
+| `tests/test_mojo_bridge.py` | 26 new tests: availability, INT8/NF4/Binary accuracy, dispatch |
+
+390 tests passing (up from pre-existing baseline). Pre-existing sklearn C-extension
+failures (test_rq.py, test_v3_api.py) remain unrelated to Mojo changes.
 
 ---
 

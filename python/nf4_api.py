@@ -15,6 +15,16 @@ from __future__ import annotations
 import numpy as np
 from typing import Optional, Tuple
 
+try:
+    from . import _mojo_bridge
+except ImportError:
+    import importlib.util as _ilu, pathlib as _pl
+    _spec = _ilu.spec_from_file_location(
+        "_mojo_bridge", _pl.Path(__file__).parent / "_mojo_bridge.py"
+    )
+    _mojo_bridge = _ilu.module_from_spec(_spec)  # type: ignore[assignment]
+    _spec.loader.exec_module(_mojo_bridge)  # type: ignore[union-attr]
+
 
 # NF4 codebook — quantiles of N(0,1), Dettmers et al. 2023
 NF4_LEVELS: np.ndarray = np.array(
@@ -48,6 +58,8 @@ def quantize_nf4(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Encode float32 vectors to NF4 packed bytes.
 
+    Uses the compiled Mojo binary when available; falls back to NumPy.
+
     Args:
         vectors: Shape (n, d), dtype float32.
 
@@ -56,6 +68,9 @@ def quantize_nf4(
                 high nibble = odd dim.
         scales: Shape (n,), dtype float32; per-vector abs-max factors.
     """
+    if _mojo_bridge.is_available():
+        return _mojo_bridge.nf4_encode(vectors)
+
     if vectors.ndim == 1:
         vectors = vectors[np.newaxis]
     vectors = np.ascontiguousarray(vectors, dtype=np.float32)
@@ -88,6 +103,8 @@ def dequantize_nf4(
 ) -> np.ndarray:
     """Decode NF4 packed bytes back to float32.
 
+    Uses the compiled Mojo binary when available; falls back to NumPy.
+
     Args:
         packed: Shape (n, ceil(d/2)), dtype uint8.
         scales: Shape (n,), dtype float32.
@@ -96,6 +113,9 @@ def dequantize_nf4(
     Returns:
         Reconstructed float32 array of shape (n, d).
     """
+    if _mojo_bridge.is_available():
+        return _mojo_bridge.nf4_decode(packed, scales, d)
+
     packed = np.ascontiguousarray(packed, dtype=np.uint8)
     n = packed.shape[0]
     bytes_per_vec = (d + 1) // 2
