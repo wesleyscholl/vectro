@@ -1,7 +1,7 @@
 # Vectro — Plan
 
 > Last updated: 2026-03-11
-> Current version: **3.0.1** — Mojo-first runtime fix released
+> Current version: **3.0.1** — tagged `v3.0.1`, pushed to origin, GitHub Release published at https://github.com/wesleyscholl/vectro/releases/tag/v3.0.1
 
 ---
 
