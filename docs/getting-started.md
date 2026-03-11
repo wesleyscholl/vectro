@@ -1,8 +1,8 @@
 # Getting Started with Vectro
 
 Vectro is an ultra-high-performance LLM embedding compressor. It compresses floating-point
-embedding vectors to INT8 or INT4 using scalar quantization, achieving 4–8× storage savings
-with minimal semantic quality loss.
+embedding vectors using nine quantization strategies, achieving 4–32× storage savings
+with configurable quality trade-offs.
 
 ---
 
@@ -80,19 +80,97 @@ print(restored.shape)   # (1000, 768)
 
 Vectro ships with pre-tuned profiles that trade quality for speed and size:
 
-| Profile | Precision | Group size | Compression | Use case |
-|---------|-----------|------------|-------------|----------|
-| `speed` | INT8 | 0 | ~4× | Real-time inference |
-| `balanced` | INT8 | 32 | ~4× | General purpose |
-| `quality` | INT8 | 16 | ~4× | Maximum recall |
-| `extreme` | INT4 | 64 | ~8× | Storage-constrained |
-| `adaptive` | INT8+INT4 | auto | 4–8× | Mixed workloads |
+| Profile | Precision | Compression | Cosine sim | Use case |
+|---------|-----------|-------------|------------|----------|
+| `speed` | INT8 | ~4× | 99.97% | Real-time inference |
+| `balanced` | INT8 | ~4× | 99.97% | General purpose |
+| `quality` | INT8 | ~4× | 99.99% | Maximum recall |
+| `extreme` | INT4 | ~8× | 97%+ | Storage-constrained |
+| `adaptive` | INT8+INT4 | 4–8× | 97%+ | Mixed workloads |
 
 ```python
 from python import get_compression_profile
 
 profile = get_compression_profile("quality")
 result = vectro.compress_batch(embeddings, profile=profile)
+```
+
+---
+
+## v3 Quickstart: Advanced Compression
+
+### Product Quantization (32× compression)
+
+```python
+from python.v3_api import VectroV3
+
+v3 = VectroV3(profile="pq-96")
+
+# train_data should be at least 256 * n_subspaces vectors
+result = v3.compress(embeddings)   # trains internally on first call
+restored = v3.decompress(result)
+
+print(f"Ratio : {result.compression_ratio:.0f}×")
+print(f"Cosine: {result.mean_cosine:.4f}")
+```
+
+### HNSW Approximate Nearest-Neighbour Index
+
+```python
+from python.v3_api import HNSWIndex
+
+index = HNSWIndex(dim=768, quantization="int8", M=16, ef_construction=200)
+index.add(database_vectors)            # INT8 internal storage — 4× memory savings
+
+# k-NN query
+indices, distances = index.search(query_vector, k=10, ef=50)
+
+# Persist the index
+index.save("index.hnsw")
+index2 = HNSWIndex.load("index.hnsw")
+```
+
+### AutoQuantize (choose the best strategy automatically)
+
+```python
+from python.auto_quantize_api import auto_quantize
+
+result = auto_quantize(
+    embeddings,
+    target_cosine=0.97,        # minimum acceptable cosine similarity
+    target_compression=8.0,    # minimum acceptable compression ratio
+)
+print(f"Chosen : {result['strategy']}")
+print(f"Ratio  : {result['compression_ratio']:.1f}×")
+print(f"Cosine : {result['mean_cosine']:.4f}")
+```
+
+---
+
+## VQZ Storage Format
+
+Vectro v3 introduces the `.vqz` binary container — a 64-byte header followed by a
+ZSTD/zlib-compressed body. It replaces `.npz` for v3 data and supports S3/GCS/Azure
+via `fsspec`.
+
+```python
+from python.storage_v3 import save_vqz, load_vqz
+
+# Save with ZSTD compression (default)
+save_vqz(result.quantized, result.scales, dims=768, path="embeddings.vqz")
+
+# Load back
+data = load_vqz("embeddings.vqz")
+print(data["n_vectors"], data["dims"])   # e.g. 1000 768
+```
+
+Cloud storage (requires `pip install fsspec s3fs`):
+
+```python
+from python.storage_v3 import S3Backend
+
+s3 = S3Backend(bucket="my-bucket", prefix="vectro/")
+s3.save_vqz(result.quantized, result.scales, dims=768, remote_name="embeddings.vqz")
 ```
 
 ---
@@ -134,7 +212,7 @@ vectro = Vectro(backend="python")    # pure-Python fallback
 
 ## Next Steps
 
-* [Migration Guide](migration-guide.md) — upgrading from v1
+* [API Reference](api-reference.md) — full Python API including v3 classes
+* [Migration Guide](migration-guide.md) — upgrading from v1/v2
 * [Integrations](integrations.md) — Qdrant, Weaviate, PyTorch, Arrow/Parquet
 * [Benchmark Methodology](benchmark-methodology.md) — measuring compression quality
-* [API Reference](api-reference.md) — complete public API

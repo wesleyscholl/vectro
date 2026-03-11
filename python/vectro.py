@@ -65,24 +65,22 @@ class Vectro:
     """
     
     def __init__(
-        self, 
+        self,
         backend: str = "auto",
         profile: str = "balanced",
         enable_batch_optimization: bool = True,
-        enable_experimental_precisions: bool = False,
     ):
         """Initialize Vectro compressor.
-        
+
         Args:
             backend: Processing backend ("auto", "mojo", "cython", "python")
-            profile: Default compression profile ("fast", "balanced", "quality")  
+            profile: Default compression profile ("fast", "balanced", "quality",
+                     "ultra", "binary")
             enable_batch_optimization: Enable batch processing optimizations
-            enable_experimental_precisions: Allow low-bit modes like INT4 when available
         """
         self.backend = backend
         self.default_profile = profile
         self.enable_batch_optimization = enable_batch_optimization
-        self.enable_experimental_precisions = enable_experimental_precisions
         
         # Initialize components
         self.batch_processor = VectroBatchProcessor(backend=backend)
@@ -118,14 +116,6 @@ class Vectro:
         requested_precision = precision_mode or selected_profile.precision_mode
         requested_precision = requested_precision.lower()
         group_size = 64
-
-        # Preserve v1 behavior unless explicitly opting into low-bit modes.
-        if requested_precision != "int8" and not self.enable_experimental_precisions:
-            warnings.warn(
-                f"Requested precision mode '{requested_precision}' requires enable_experimental_precisions=True. Falling back to INT8.",
-                RuntimeWarning,
-            )
-            requested_precision = "int8"
 
         # INT4 currently depends on squish_quant; fallback keeps API usable.
         if requested_precision == "int4" and not get_backend_info().get("squish_quant_rust", False):

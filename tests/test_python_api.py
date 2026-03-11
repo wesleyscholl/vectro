@@ -114,17 +114,13 @@ class TestVectroCore(unittest.TestCase):
         self.assertGreater(quality.mean_cosine_similarity, 0.99)
 
     def test_ultra_profile_precision_mode(self):
-        """Ultra profile uses INT8 by default and INT4 when explicitly enabled."""
+        """Ultra profile falls through to INT4 if squish_quant is available, INT8 otherwise."""
         backend_info = get_backend_info()
-        default_result = self.vectro.compress(self.batch_vectors, profile="ultra")
-        self.assertEqual(default_result.precision_mode, "int8")
-
-        low_bit_vectro = Vectro(enable_experimental_precisions=True)
-        low_bit_result = low_bit_vectro.compress(self.batch_vectors, profile="ultra")
+        result = self.vectro.compress(self.batch_vectors, profile="ultra")
         if backend_info.get("squish_quant_rust", False):
-            self.assertEqual(low_bit_result.precision_mode, "int4")
+            self.assertEqual(result.precision_mode, "int4")
         else:
-            self.assertEqual(low_bit_result.precision_mode, "int8")
+            self.assertEqual(result.precision_mode, "int8")
 
 
 class TestBatchProcessing(unittest.TestCase):

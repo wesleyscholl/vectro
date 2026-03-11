@@ -5,7 +5,7 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [3.0.0-dev] — Unreleased  Vectro 3.0 — SIMD Core + Advanced Quantization
+## [3.0.0] — 2026-03-11  Vectro 3.0 — SIMD Core + Advanced Quantization
 
 ### Phase 0 — Correctness Bug Fixes (7 bugs)
 
@@ -80,14 +80,123 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Hamming identity, flipped-all-bits, self-search recall, Matryoshka shapes,
   compression ratio.
 
+### Phase 5 — HNSW Approximate Nearest-Neighbour Index
+
+- **`src/hnsw_index.mojo` (new):** Full HNSW implementation (Malkov & Yashunin 2018)
+  in Mojo; INT8 quantised internal storage with per-vector abs-max scales (4×
+  memory reduction); cosine distance via pre-normalised inner product; configurable
+  M / ef_construction / ef_search; `perf_counter_ns` timing; save/load via Python
+  pickle interop.
+- **`python/hnsw_api.py` (new):** `HNSWIndex(M, ef_construction, space)` —
+  `add(vector | vectors)`, `search(query, k, ef)` → `(indices, distances)`,
+  `save(path)`, `HNSWIndex.load(path)`; helpers `build_hnsw_index`,
+  `hnsw_search`, `recall_at_k`, `hnsw_compression_info`.
+- **`tests/test_hnsw.py` (new):** 28 tests — construction defaults, single/batch
+  add, shape assertions, recall@1 ≥ 0.90 on 200 × 64 Gaussian vectors,
+  persistence round-trip, `recall_at_k` ≥ 0.65 at k=5 ef=50,
+  `hnsw_compression_info` keys.
+
+### Phase 6 — GPU / MAX Engine Quantization
+
+- **`src/gpu_quantizer.mojo` (new):** GPU-aware batch INT8 quantizer dispatched
+  through Mojo's MAX Engine; graceful CPU SIMD fallback when no GPU is present;
+  `perf_counter_ns` throughput benchmark.
+- **`python/gpu_api.py` (new):** `gpu_available()`, `gpu_device_info()` (returns
+  backend, device_name, simd_width, unified_memory flags);
+  `quantize_int8_batch` / `reconstruct_int8_batch`;
+  `batch_cosine_similarity`, `batch_cosine_int8`, `batch_cosine_query`;
+  `batch_topk_int8`; `gpu_benchmark()` (throughput vec/s, latency_us,
+  cosine_sim, backend).
+- **`tests/test_gpu.py` (new):** 26 tests — device detection types, quantize
+  shape/dtype/range, roundtrip cosine ≥ 0.98, zero-vector safety, top-k
+  ordering, benchmark dict keys.
+
+### Phase 7 — Learned Quantization (RQ · Codebook · AutoQuantize)
+
+- **`python/rq_api.py` (new):** `ResidualQuantizer(n_passes, n_subspaces,
+  n_centroids)` — chains *n* PQ codebooks, each encoding the residual left by
+  the previous pass; `train`, `encode` → list of per-pass code arrays,
+  `decode`, `mean_cosine`.  Requires `scikit-learn`.
+- **`python/codebook_api.py` (new):** `Codebook(target_dim, hidden, l2_reg)` —
+  pure-NumPy autoencoder (Encoder d→hidden→target_dim, Decoder symmetric);
+  mini-batch SGD with cosine loss and L2 regularisation; Xavier init; encoder
+  output scaled and rounded to INT8; `train`, `encode`, `decode`, `mean_cosine`,
+  `save`/`load`.
+- **`python/auto_quantize_api.py` (new):** `auto_quantize(embeddings,
+  target_cosine, target_compression)` — strategy cascade NF4 → NF4-mixed →
+  PQ-96 → PQ-48 → binary; short-circuits on first strategy that satisfies both
+  quality and compression constraints; uses `scipy.stats.kurtosis` to route
+  heavy-tailed inputs to NF4-mixed before the generic sequence.
+- **`tests/test_rq.py` (new):** 20 tests — train / encode / decode shapes,
+  cosine ≥ 0.80 at 3-pass d=64, untrained guard, single-pass consistency.
+- **`tests/test_codebook.py` (new):** 22 tests — train returns self, encode
+  dtype INT8, decode shape, untrained guards, cosine ≥ 0.60 at d=64
+  target_dim=16, save/load round-trip.
+- **`tests/test_auto_quantize.py` (new):** 26 tests — `_cosine_sim_mean` on
+  identical inputs = 1, `_compute_kurtosis` Gaussian ≈ 3, strategy selection
+  under various constraints, fallback path, result dict keys.
+
+### Phase 8 — Storage v3: VQZ Container + mmap Bulk I/O
+
+- **`src/storage_v3.mojo` (new):** Mojo VQZ reader/writer; 64-byte header
+  (magic `VECTRO\x03\x00`, version uint16, comp_flag uint16, n_vectors uint64,
+  dims uint32, n_subspaces uint16, metadata_len uint32, 8-byte blake2b
+  checksum); body = flat int8 quantized concat float32 scales; ZSTD/zlib
+  second-pass compression.
+- **`python/storage_v3.py` (new):** `save_vqz(quantized, scales, dims, path,
+  compression, metadata, level, n_subspaces)` / `load_vqz(path)` with blake2b
+  checksum verification on load; `S3Backend`, `GCSBackend`, `AzureBlobBackend`
+  using `fsspec` (optional dep; `ImportError` raised with install hint when absent).
+- **`tests/test_storage_v3.py` (new):** 35 tests — magic mismatch, header
+  parse round-trip, checksum verification and corruption detection, zlib/zstd
+  compression round-trips, metadata bytes preservation, shape + dtype assertions,
+  cloud backend ImportError guard.
+
+### Phase 9 — Unified v3 API (PQCodebook · HNSWIndex · VectroV3)
+
+- **`python/v3_api.py` (new, 864 lines):** Public surface of the entire v3
+  stack:
+  - `PQCodebook.train(vectors, n_subspaces, n_centroids)` / `.encode` /
+    `.decode` / `.save` / `.load` — thin wrapper around `pq_api` with VQZ
+    persistence.
+  - `HNSWIndex(dim, quantization, M, ef_construction)` — wraps `hnsw_api`
+    with VQZ persistence and cloud URI support.
+  - `V3Result` dataclass — `quantized`, `scales`, `codes`, `profile`,
+    `compression_ratio`, `mean_cosine`.
+  - `VectroV3(profile)` — single compressed-embedding entry-point; profiles:
+    `"int8"`, `"nf4"`, `"nf4-mixed"`, `"pq-96"`, `"pq-48"`, `"binary"`,
+    `"rq-3pass"`.  Methods: `compress`, `decompress`, `save`, `load` (local
+    path or cloud URI).
+- **`tests/test_v3_api.py` (new, 439 lines):** 80 tests — `PQCodebook`
+  round-trip quality ≥ 0.90, `HNSWIndex` add/search/recall ≥ 0.65, `VectroV3`
+  compress/decompress cosine ≥ 0.98 for int8/nf4/pq-96/binary, VQZ save/load,
+  cloud URI helper, profile listing, `V3Result` field checks.
+
+### Phase 10 — v3.0.0 Release Hardening
+
+- **`python/vectro.py`:** Removed `enable_experimental_precisions` parameter and its
+  gate — INT4 is GA in v3.0.0.  INT4 now passes directly to the backend availability
+  check (squish_quant); on machines where squish_quant is not present it falls back to
+  INT8 with a warning.  `Vectro.__init__` signature simplified to `(backend, profile,
+  enable_batch_optimization)`.
+- **`tests/test_python_api.py`:** Updated `test_ultra_profile_precision_mode` to
+  reflect INT4-GA behavior; removed `Vectro(enable_experimental_precisions=True)` call.
+- **`tests/test_integration.py`:** Updated `test_quality_preservation_across_profiles`
+  assertion for the `ultra` (INT4) profile from `> 0.999` to `> 0.92`, matching the
+  v3 acceptance criterion for INT4 (cosine_sim ≥ 0.92).
+- **`python/integrations/torch_bridge.py`:** Removed stale reference to
+  `enable_experimental_precisions` in docstring.
+
 ### Test counts
 
 | Milestone | Tests |
 |-----------|-------|
-| v2.0.0 baseline | 158 |
-| + Phase 2 NF4    | +19 → **177** |
-| + Phase 3 PQ     | +12 → **189** |
-| + Phase 4 Binary | +19 → **208** |
+| v2.0.0 baseline | 208 |
+| + Phase 5 HNSW   | +28 → **236** |
+| + Phase 6 GPU    | +26 → **262** |
+| + Phase 7 Learned (RQ + Codebook + AutoQuantize) | +68 → **330** |
+| + Phase 8 Storage v3 | +35 → **365** |
+| + Phase 9 Unified v3 API | +80 → **445** |
 
 ---
 
@@ -968,6 +1077,7 @@ No security issues in this release. All code is memory-safe Mojo with zero unsaf
 - **Issues**: https://github.com/wesleyscholl/vectro/issues
 - **PyPI**: https://pypi.org/project/vectro/
 
+[3.0.0]: https://github.com/wesleyscholl/vectro/releases/tag/v3.0.0
 [2.0.0]: https://github.com/wesleyscholl/vectro/releases/tag/v2.0.0
 [1.2.0]: https://github.com/wesleyscholl/vectro/releases/tag/v1.2.0
 

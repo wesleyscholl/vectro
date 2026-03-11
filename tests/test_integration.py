@@ -212,8 +212,9 @@ class TestQualityIntegration(unittest.TestCase):
             qualities[profile] = quality.mean_cosine_similarity
         
         # Quality order should generally be preserved (may have some variance)
-        # Ultra and quality should be top performers
-        self.assertGreater(qualities["ultra"], 0.999)
+        # INT8 profiles (fast/balanced/quality) should have very high cosine similarity.
+        # Ultra uses INT4 (now GA in v3) which achieves ≥ 0.92 per v3 acceptance criteria.
+        self.assertGreater(qualities["ultra"], 0.92)
         self.assertGreater(qualities["quality"], 0.999)
         
         print("\nProfile Quality Comparison:")

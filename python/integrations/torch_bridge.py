@@ -38,9 +38,8 @@ def compress_tensor(
     Args:
         tensor: Float tensor of shape ``(n_vectors, dim)`` or ``(dim,)`` for a
             single vector (auto-promoted to 2-D).
-        precision_mode: ``"int8"`` (default) or ``"int4"`` (requires
-            ``squish_quant`` backend and ``enable_experimental_precisions=True``
-            on the :class:`~vectro.Vectro` instance).
+        precision_mode: ``"int8"`` (default) or ``"int4"`` (requires the
+            ``squish_quant`` backend).
         group_size: Group size for INT4 grouped quantization.
         backend: Force a specific quantization backend (``None`` = auto).
 
