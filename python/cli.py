@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Optional
 
 
-_VERSION = "3.2.0"
+_VERSION = "3.3.0"
 
 
 # ---------------------------------------------------------------------------

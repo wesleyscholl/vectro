@@ -7,8 +7,8 @@
 ### Ultra-High-Performance LLM Embedding Compressor
 
 ![Mojo](https://img.shields.io/badge/Mojo-first-orange?logo=fire&style=for-the-badge)
-![Version](https://img.shields.io/badge/version-3.2.0-blue?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-506_passing-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-3.3.0-blue?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-575_passing-green?style=for-the-badge)
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 
@@ -16,7 +16,7 @@
 ╦  ╦╔═╗╔═╗╔╦╗╦═╗╔═╗
 ╚╗╔╝║╣ ║   ║ ╠╦╝║ ║
  ╚╝ ╚═╝╚═╝ ╩ ╩╚═╚═╝
-  v3.2.0 — Performance & Research (ONNX export, PineconeConnector, GPU equivalence tests)
+  v3.3.0 — Runtime Hardening & Test Completeness (575 tests, JS scaffold, ONNX Runtime)
 ```
 
 **⚡ INT8 · NF4 · PQ-96 · Binary · HNSW · RQ · AutoQuantize · VQZ**
@@ -609,10 +609,17 @@ Test categories:
 - ✅ JavaScript/WASM ADR (`docs/adr-001-javascript-bindings.md`)
 - ✅ 506 tests, 100% coverage
 
-### v3.3.0 (Q4 2026)
-- 📋 N-API native addon for Node.js `.vqz` reader (ADR-001 Phase 1)
-- 📋 ONNX Runtime integration test (`pip install onnxruntime`)
-- 📋 GPU runner provisioning
+### v3.3.0 (2026-03-11) ✅
+- ✅ Test coverage for `batch_api`, `quality_api`, `profiles_api`, `benchmark` (68 new tests)
+- ✅ ONNX Runtime integration test — `pip install 'vectro[inference]'`
+- ✅ N-API JavaScript scaffold (`js/`, ADR-001 Phase 1; `@vectro/core` npm package stub)
+- ✅ `inference = ["onnxruntime>=1.17"]` optional dep group
+- ✅ 575 tests, 100% module coverage
+
+### v3.4.0 (Q1 2027)
+- 📋 ADR-001 Phase 2: full N-API implementation (`.vqz` reader, SIMD dequantize)
+- 📋 GPU runner provisioning (CUDA self-hosted CI)
+- 📋 ONNX Runtime promoted to non-conditional (always-on CI lane)
 
 ---
 

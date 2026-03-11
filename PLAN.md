@@ -1,7 +1,7 @@
 # Vectro — Plan
 
 > Last updated: 2026-03-11
-> Current version: **3.2.0** — tagged `v3.2.0`, pushed to origin
+> Current version: **3.3.0** — tagged `v3.3.0`, pushed to origin
 
 ---
 
@@ -243,13 +243,33 @@ making the CLI immediately useful for evaluating hardware capability.
 
 ---
 
+## Phase 13 — v3.3.0: Runtime Hardening & Test Completeness  ✅ COMPLETE (2026-03-11)
+
+| Step | Deliverable | Status |
+|------|-------------|--------|
+| 13a | `tests/test_batch_api.py` — 18 tests for `VectroBatchProcessor`, `BatchQuantizationResult`, `BatchCompressionAnalyzer` | ✅ |
+| 13b | `tests/test_quality_api.py` — 20 tests for `QualityMetrics`, `VectroQualityAnalyzer`, `QualityBenchmark`, `QualityReport` | ✅ |
+| 13c | `tests/test_profiles_api.py` — 18 tests for `ProfileManager`, `CompressionProfile`, `CompressionOptimizer`, `ProfileComparison` | ✅ |
+| 13d | `tests/test_benchmark_suite.py` — 12 tests for `BenchmarkSuite`, `BenchmarkReport`, `BenchmarkEntry` | ✅ |
+| 13e | `tests/test_onnx_runtime.py` — 10 tests (onnxruntime-conditional); round-trip via `InferenceSession` | ✅ |
+| 13f | `js/` N-API scaffold: `package.json`, `index.d.ts`, `binding.gyp`, `src/vectro_napi.cpp`, `README.md` (ADR-001 Phase 1) | ✅ |
+| 13g | `pyproject.toml`: `inference = ["onnxruntime>=1.17"]` dep group; `all` now 15 packages | ✅ |
+| 13h | Version bumped to **3.3.0**; CHANGELOG/PLAN/README updated; stubs regenerated | ✅ |
+| 13i | v3.3.0 tagged and pushed to origin | ✅ |
+
+**Test count:** 575 passing (≥ 560 ✅).
+**tag:** `v3.3.0` pushed to origin.
+
+---
+
 ## Immediate Next Actions (Ordered)
 
-1. **Plan Phase 13** — determine v3.3.0 scope (N-API JS addon, WASM research, perf tuning).
+1. **Plan Phase 14** — determine v3.4.0 scope (ADR-001 Phase 2 N-API full implementation,
+   ONNX Runtime promotion to non-conditional, perf profiler module).
 2. **Provision GPU runner** — uncomment the `gpu-throughput` CI job in `.github/workflows/ci.yml`
    when a CUDA self-hosted runner is available.
-3. **ONNX Runtime integration test** — add `tests/test_onnx_runtime.py` once `onnxruntime` is
-   added to the dev dependencies.
+3. **ADR-001 Phase 2** — implement `js/src/vectro_napi.cpp` for real: `.vqz` header parser,
+   zstd decompressor, SIMD dequantize kernel; `npm run build` should succeed on macOS-arm64.
 
 ---
 

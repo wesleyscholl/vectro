@@ -5,6 +5,53 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] — 2026-03-11  Runtime Hardening & Test Completeness (Phase 13)
+
+### Added
+
+#### Test Coverage — Previously Untested Modules
+- **`tests/test_batch_api.py`** (18 tests): covers `VectroBatchProcessor`, `BatchQuantizationResult`,
+  `BatchCompressionAnalyzer`, and module-level convenience functions. Key: all three profiles,
+  silent unknown-profile fallback to "balanced", `IndexError` on OOB `get_vector`,
+  `reconstruct_batch` shape/dtype, streaming chunk count, `analyze_batch_result`/`compare_profiles`.
+- **`tests/test_quality_api.py`** (20 tests): covers `QualityMetrics` (all 7 grade thresholds,
+  `passes_quality_threshold`, `to_dict`), `VectroQualityAnalyzer` (shape mismatch `ValueError`,
+  perfect reconstruction, zero-vector handling, provided vs. estimated compression ratio),
+  `QualityBenchmark`, `QualityReport` (sorted comparison table), and module-level functions.
+- **`tests/test_profiles_api.py`** (18 tests): covers `ProfileManager` (five built-in profiles,
+  add/remove/save/load custom profiles with class-state cleanup), `CompressionProfile` validation
+  (`ValueError` for out-of-range bits/range_factor/clipping/threshold), round-trip dict,
+  `CompressionOptimizer.auto_optimize_profile`, and `ProfileComparison`.
+- **`tests/test_benchmark_suite.py`** (12 tests): covers `BenchmarkSuite.run()`, entry values
+  (throughput > 0, ratio > 1, cosine ∈ [0.9, 1.0]), `BenchmarkReport` JSON/CSV serialisation,
+  `ValueError` for unknown format, environment field population.
+
+#### ONNX Runtime Integration Test
+- **`tests/test_onnx_runtime.py`** (10 tests, conditional on `onnx` + `onnxruntime`):
+  round-trip through `to_onnx_model()` → `onnxruntime.InferenceSession`; output shape, dtype,
+  numerical match (atol=1e-5), single-vector, large-batch, all-zero, max-value, file-load, input names.
+
+#### JavaScript N-API Scaffold (ADR-001 Phase 1)
+- **`js/`** directory established per `docs/adr-001-javascript-bindings.md`:
+  - `js/package.json` — `@vectro/core` npm package (1.0.0), `node-gyp-build` dep
+  - `js/index.d.ts` — TypeScript definitions for `dequantize`, `readVqz`, `VqzReader`
+  - `js/binding.gyp` — node-gyp build config (darwin/linux/win32, arm64+x64)
+  - `js/src/vectro_napi.cpp` — N-API C++ stub throwing "not yet implemented — see ADR-001"
+  - `js/README.md` — installation, API reference, phase roadmap
+
+#### pyproject.toml
+- Added `inference = ["onnxruntime>=1.17"]` optional dep group.
+- Added `"onnxruntime>=1.17"` to `all` extras (now 15 packages).
+
+### Test Counts
+
+| Version | Tests |
+|---------|-------|
+| v3.0.0  | 390   |
+| v3.1.0  | 471   |
+| v3.2.0  | 506   |
+| v3.3.0  | 575   |
+
 ## [3.2.0] — 2026-03-11  Performance & Research (Phase 12)
 
 ### Added
