@@ -127,9 +127,23 @@ Once all prior steps are green:
 
 ---
 
-## Phase 11 — v3.1.0: Enterprise & Ecosystem Expansion
+## Phase 11 — v3.1.0: Enterprise & Ecosystem Expansion  ✅ COMPLETE (2026-03-11)
 
-**Target:** Q2 2026
+**Released:** v3.1.0 — 2026-03-11
+
+All 9 sub-steps delivered and tagged. 471 tests passing.
+
+| Step | Deliverable | Status |
+|------|-------------|--------|
+| 1 | CI + scikit-learn fix; full pytest matrix | ✅ |
+| 2 | Cloud backend tests + CLI cloud URI dispatch | ✅ |
+| 3 | `MilvusConnector` + 15 tests | ✅ |
+| 4 | `ChromaConnector` + 16 tests | ✅ |
+| 5 | `save_compressed`/`load_compressed`/`VQZResult` + 9 tests | ✅ |
+| 6 | `AsyncStreamingDecompressor` + 13 tests | ✅ |
+| 7 | `vectro info --benchmark` + 7 tests | ✅ |
+| 8 | `.pre-commit-config.yaml`, mypy stubs, Codecov, pytest-benchmark | ✅ |
+| 9 | Dead code cleanup: 8 scratch Mojo files removed from `src/` | ✅ |
 
 Items drawn from `BACKLOG_v2.1.md` and the README 2026-2027 roadmap.
 

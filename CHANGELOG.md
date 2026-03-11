@@ -5,6 +5,73 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] — 2026-03-11  Enterprise & Ecosystem Expansion (Phase 11)
+
+### Added
+
+#### Vector Database Connectors
+- **`MilvusConnector`** (`python/integrations/milvus_connector.py`): payload-centric
+  connector using `MilvusClient.upsert/get/delete`; injectable client for testing;
+  mirrors `QdrantConnector` pattern exactly.
+- **`ChromaConnector`** (`python/integrations/chroma_connector.py`): connector
+  serialising quantized bytes as base64 and scales as JSON in Chroma metadata;
+  user metadata flattened with `vectro_meta__` prefix to satisfy primitive-only
+  constraint; injectable client for testing.
+- Both exported from `python/integrations/__init__.py` and top-level `python/__init__.py`.
+
+#### Cloud Storage
+- **`save_compressed(result, filepath, codec, level)`** / **`load_compressed(filepath)`**
+  in `python/storage_v3.py`: convenience wrappers around `save_vqz`/`load_vqz` that
+  accept/return a `VQZResult` namedtuple (mirrors `QuantizationResult` interface).
+- **`VQZResult`** namedtuple defined in `storage_v3.py`; self-contained, no
+  cross-package relative imports.
+- Mock-based round-trip tests for all three cloud backends (S3, GCS, Azure);
+  `# pragma: no cover` removed from `_CloudBackendBase` methods.
+- CLI `vectro compress … --lossless-pass {zstd,zlib,none}` flag: `.vqz` outputs
+  route through `storage_v3.save_compressed`; cloud URIs forward `compression=` kwarg.
+
+#### Async Streaming
+- **`AsyncStreamingDecompressor`** (`python/streaming.py`): async iterator wrapping
+  `StreamingDecompressor`; numpy reconstruction runs in a background daemon thread;
+  bounded `asyncio.Queue` provides backpressure; supports `BatchQuantizationResult`
+  and `QuantizationResult` paths.
+
+#### CLI Benchmark
+- **`vectro info --benchmark`**: 5-second throughput estimation on synthetic 768-dim
+  float32 data; prints INT8 vec/s throughput, INT8 MAE, and NF4 MAE (graceful
+  fallback when NF4 backend unavailable).
+
+### Infrastructure
+
+#### CI / DX
+- **CI overhaul** (`.github/workflows/ci.yml`): all 30+ Phase 3–10 test files now
+  run in CI; `scikit-learn>=1.3`, `pytest-cov`, `pytest-benchmark` installed;
+  Codecov upload step added (Python 3.12 only, `fail_ci_if_error=false`).
+- **`.pre-commit-config.yaml`**: ruff (lint + format), mypy (`--ignore-missing-imports`,
+  `python/` scope), pre-commit-hooks (trailing-whitespace, EOF, YAML, large-files).
+- **Type stubs**: `mypy stubgen` run over all 30 public modules; `.pyi` files
+  committed for `python/` and `python/integrations/`.
+- **`pyproject.toml`** optional dep groups: `learned`, `cloud`, `integrations`, `all`.
+
+#### Dead Code Cleanup
+Deleted 8 experimental/scratch Mojo files from `src/`:
+`quantizer_new.mojo`, `quantizer_simple.mojo`, `quantizer_working.mojo`,
+`quantizer_test.mojo`, `test.mojo`, `test_basic.mojo`, `test_tuple.mojo`,
+`simple_test.mojo`.
+
+### Tests Added
+| Test file | New tests |
+|------|-----------|
+| `tests/test_milvus_connector.py` | 15 (upsert, fetch, delete, dtype, round-trip) |
+| `tests/test_chroma_connector.py` | 16 (base64 round-trip, primitive-only meta, etc.) |
+| `tests/test_storage_v3.py` | +9 (TestSaveLoadCompressed) |
+| `tests/test_streaming.py` | +13 (TestAsyncStreamingDecompressor) |
+| `tests/test_cli_info.py` | 7 (--benchmark flag, timing mock) |
+
+**Total: 471 tests passing** (up from 390 at start of Phase 11).
+
+---
+
 ## [3.0.1] — 2026-03-11  Mojo-First Runtime Fix
 
 ### Problem Resolved
