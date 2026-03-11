@@ -38,7 +38,7 @@ All steps verified and committed in `6c5a5f9`.
 | 10c README | v3.0.0 badges, 7 profiles, HNSW, AutoQuantize, VQZ, roadmap |
 | 10d Cloud backends | S3Backend, GCSBackend, AzureBlobBackend implemented via fsspec |
 | 10e docs/ | api-reference, getting-started, benchmark-methodology updated |
-| 10f Video demo | `demos/video_demo_v3.py` — 9 sections, paced pauses, runs cleanly |
+| 10f Video demo | `demos/demo_v3.py` — 12 sections, all API signatures verified, runs cleanly end-to-end |
 | INT4 GA | Removed `enable_experimental_precisions` gate; INT4 is production in v3 |
 
 ### 10a. Test Suite Audit (prerequisite)

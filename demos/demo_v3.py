@@ -432,7 +432,7 @@ def demo_learned(vectors: np.ndarray) -> None:
 
     target_dim = 16
     print(f"  Training 2-layer autoencoder: {vectors.shape[1]}D → {target_dim}D …")
-    cb = Codebook(target_dim=target_dim, hidden=64, seed=42)
+    cb = Codebook(target_dim=target_dim, seed=42)
     t0 = time.perf_counter()
     cb.train(vectors, n_epochs=20, lr=0.01, batch_size=128)
     train_time = time.perf_counter() - t0
@@ -459,11 +459,11 @@ def demo_learned(vectors: np.ndarray) -> None:
     result = auto_quantize(vectors, target_cosine=0.97, target_compression=6.0)
     elapsed = time.perf_counter() - t0
 
-    print(f"\n  Strategy chosen  : {result['strategy']}")
+    print(f"\n  Strategy chosen  : {result['mode']}")
     print(f"  Compression      : {result['compression_ratio']:.2f}×")
-    print(f"  Cosine sim       : {result['mean_cosine']:.4f}")
+    print(f"  Cosine sim       : {result['cosine_sim']:.4f}")
     print(f"  Decision time    : {elapsed * 1000:.1f} ms")
-    progress_bar("Meets quality target (>=0.97)", result['mean_cosine'])
+    progress_bar("Meets quality target (>=0.97)", result['cosine_sim'])
     pause(1.5)
 
 
@@ -478,6 +478,8 @@ def demo_storage(vectors: np.ndarray) -> None:
 
     vectro = Vectro(profile="balanced")
     result = vectro.compress(vectors)
+    # BatchQuantizationResult stores vectors as a list; convert to 2-D array for save_vqz
+    quantized = np.stack(result.quantized_vectors).astype(np.int8)
 
     subsection("Write VQZ file  (64-byte header + ZSTD body + blake2b checksum)")
 
@@ -487,7 +489,7 @@ def demo_storage(vectors: np.ndarray) -> None:
     try:
         t0 = time.perf_counter()
         save_vqz(
-            result.quantized,
+            quantized,
             result.scales,
             dims=vectors.shape[1],
             path=path,
@@ -497,7 +499,7 @@ def demo_storage(vectors: np.ndarray) -> None:
         write_time = time.perf_counter() - t0
 
         file_size = os.path.getsize(path)
-        raw_bytes = result.quantized.nbytes + result.scales.nbytes
+        raw_bytes = quantized.nbytes + result.scales.nbytes
 
         print(f"  Magic bytes       : {MAGIC!r}")
         print(f"  Raw body (INT8)   : {raw_bytes:,} bytes  ({raw_bytes/1024:.1f} KB)")
@@ -585,8 +587,8 @@ def demo_v3_api(vectors: np.ndarray) -> None:
     with tempfile.NamedTemporaryFile(suffix=".vqz", delete=False) as f:
         path = f.name
     try:
-        v3_int8.save(r, path)
-        r2 = v3_int8.load(path)
+        v3_int8.save_compressed(r, path)
+        r2 = v3_int8.load_compressed(path)
         print(f"  Saved {r.n_vectors} vectors,  profile={r.profile!r}")
         print(f"  Loaded back:  n_vectors={r2.n_vectors},  dims={r2.dims}")
         print(f"  File size   : {os.path.getsize(path):,} bytes")
