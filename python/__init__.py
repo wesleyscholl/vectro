@@ -90,7 +90,7 @@ from .binary_api import quantize_binary, dequantize_binary
 from .rq_api import ResidualQuantizer
 from .codebook_api import Codebook
 from .auto_quantize_api import auto_quantize
-from .storage_v3 import save_vqz, load_vqz
+from .storage_v3 import save_vqz, load_vqz, save_compressed, load_compressed, VQZResult
 
 __version__ = "3.0.1"
 __author__ = "Wesley Scholl"
@@ -184,6 +184,9 @@ __all__ = [
     # v3 storage
     "save_vqz",
     "load_vqz",
+    "save_compressed",
+    "load_compressed",
+    "VQZResult",
 
     # Utilities
     "get_version_info"

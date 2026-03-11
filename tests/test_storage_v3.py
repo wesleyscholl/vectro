@@ -314,3 +314,244 @@ class TestCloudBackendStubs:
             assert hasattr(backend, "download")
             assert hasattr(backend, "save_vqz")
             assert hasattr(backend, "load_vqz")
+
+
+# ── In-memory filesystem mock ─────────────────────────────────────────────────
+
+class _MemFS:
+    """Minimal in-memory filesystem mock that satisfies _CloudBackendBase.upload/download."""
+
+    def __init__(self):
+        self._store: dict[str, bytes] = {}
+
+    def open(self, path: str, mode: str):
+        if "w" in mode:
+            return _MemWriteCtx(self._store, path)
+        return _MemReadCtx(self._store[path])
+
+
+class _MemWriteCtx:
+    def __init__(self, store, path):
+        self._store = store
+        self._path = path
+        self._buf = io.BytesIO()
+
+    def write(self, data: bytes):
+        self._buf.write(data)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self._store[self._path] = self._buf.getvalue()
+
+
+class _MemReadCtx:
+    def __init__(self, data: bytes):
+        self._buf = io.BytesIO(data)
+
+    def read(self) -> bytes:
+        return self._buf.read()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        pass
+
+
+# ── Cloud backend round-trip tests ────────────────────────────────────────────
+
+class TestCloudBackendRoundTrip:
+    """Full save_vqz → upload → download → load_vqz round-trips via mock FS."""
+
+    @pytest.fixture
+    def small(self):
+        rng = np.random.default_rng(99)
+        q = rng.integers(-127, 128, size=(8, 16), dtype=np.int8)
+        s = rng.random(8).astype(np.float32)
+        return q, s, 16
+
+    def _make_backend(self, BackendCls, monkeypatch):
+        """Return a backend instance wired to a MemFS, no real fsspec needed."""
+        import storage_v3
+        monkeypatch.setattr(storage_v3, "_HAVE_FSSPEC", True)
+        mem = _MemFS()
+        monkeypatch.setattr(BackendCls, "_open_fs", lambda self: mem)
+        return BackendCls("test-bucket", "prefix"), mem
+
+    def test_s3_save_and_load_round_trip(self, monkeypatch, small):
+        q, s, dims = small
+        backend, mem = self._make_backend(S3Backend, monkeypatch)
+
+        backend.save_vqz(q, s, dims, "vectors.vqz")
+        assert "test-bucket/prefix/vectors.vqz" in mem._store
+
+        result = backend.load_vqz("vectors.vqz")
+        np.testing.assert_array_equal(result["quantized"], q)
+        np.testing.assert_array_almost_equal(result["scales"], s, decimal=5)
+        assert result["dims"] == dims
+
+    def test_gcs_save_and_load_round_trip(self, monkeypatch, small):
+        q, s, dims = small
+        backend, mem = self._make_backend(GCSBackend, monkeypatch)
+
+        backend.save_vqz(q, s, dims, "model/vecs.vqz")
+        assert "test-bucket/prefix/model/vecs.vqz" in mem._store
+
+        result = backend.load_vqz("model/vecs.vqz")
+        np.testing.assert_array_equal(result["quantized"], q)
+        assert result["n_vectors"] == q.shape[0]
+
+    def test_azure_save_and_load_round_trip(self, monkeypatch, small):
+        q, s, dims = small
+        backend, mem = self._make_backend(AzureBlobBackend, monkeypatch)
+
+        backend.save_vqz(q, s, dims, "embeddings.vqz")
+        result = backend.load_vqz("embeddings.vqz")
+        np.testing.assert_array_equal(result["quantized"], q)
+
+    def test_full_path_with_prefix(self, monkeypatch, small):
+        q, s, dims = small
+        backend, mem = self._make_backend(S3Backend, monkeypatch)
+        assert backend._full_path("file.vqz") == "test-bucket/prefix/file.vqz"
+
+    def test_full_path_without_prefix(self, monkeypatch, small):
+        import storage_v3
+        monkeypatch.setattr(storage_v3, "_HAVE_FSSPEC", True)
+        mem = _MemFS()
+        monkeypatch.setattr(S3Backend, "_open_fs", lambda self: mem)
+        backend = S3Backend("my-bucket")
+        assert backend._full_path("file.vqz") == "my-bucket/file.vqz"
+
+    def test_upload_download_directly(self, monkeypatch, tmp_path, small):
+        q, s, dims = small
+        backend, mem = self._make_backend(S3Backend, monkeypatch)
+
+        # Write a file and upload it
+        local_in = tmp_path / "in.vqz"
+        save_vqz(q, s, dims, str(local_in))
+        backend.upload(str(local_in), "round_trip.vqz")
+        assert "test-bucket/prefix/round_trip.vqz" in mem._store
+
+        # Download it and verify
+        local_out = tmp_path / "out.vqz"
+        backend.download("round_trip.vqz", str(local_out))
+        result = load_vqz(str(local_out))
+        np.testing.assert_array_equal(result["quantized"], q)
+
+    def test_save_vqz_passes_compression_kwargs(self, monkeypatch, small):
+        """save_vqz should accept **kwargs like compression='none'."""
+        q, s, dims = small
+        backend, _ = self._make_backend(GCSBackend, monkeypatch)
+        backend.save_vqz(q, s, dims, "no_comp.vqz", compression="none")
+        result = backend.load_vqz("no_comp.vqz")
+        assert result["dims"] == dims
+
+
+# ---------------------------------------------------------------------------
+# 5. save_compressed / load_compressed (QuantizationResult wrappers)
+# ---------------------------------------------------------------------------
+
+from storage_v3 import save_compressed, load_compressed, VQZResult
+
+
+# Local lightweight stand-in for python.interface.QuantizationResult.
+# save_compressed only reads .quantized, .scales, .dims (duck-typing); using
+# a local namedtuple avoids triggering relative-import chains in interface.py
+# when storage_v3 is imported standalone in this test module.
+from typing import NamedTuple as _NT
+
+
+class _QResult(_NT):
+    quantized: np.ndarray
+    scales: np.ndarray
+    dims: int
+    n: int
+    precision_mode: str = "int8"
+    group_size: int = 0
+
+
+class TestSaveLoadCompressed:
+    """Tests for the QuantizationResult-aware save_compressed / load_compressed."""
+
+    @pytest.fixture()
+    def qresult(self):
+        rng = np.random.default_rng(55)
+        n, d = 16, 32
+        q = rng.integers(-128, 128, size=(n, d), dtype=np.int8)
+        s = rng.random(n).astype(np.float32)
+        return _QResult(quantized=q, scales=s, dims=d, n=n)
+
+    def test_round_trip_default_codec(self, qresult, tmp_path):
+        path = str(tmp_path / "out.vqz")
+        save_compressed(qresult, path)
+        r2 = load_compressed(path)
+        assert r2.n == qresult.n
+        assert r2.dims == qresult.dims
+        np.testing.assert_array_equal(r2.quantized, qresult.quantized)
+        np.testing.assert_array_almost_equal(r2.scales, qresult.scales)
+
+    def test_round_trip_zlib(self, qresult, tmp_path):
+        path = str(tmp_path / "out_zlib.vqz")
+        save_compressed(qresult, path, codec="zlib")
+        r2 = load_compressed(path)
+        np.testing.assert_array_equal(r2.quantized, qresult.quantized)
+
+    def test_round_trip_none(self, qresult, tmp_path):
+        path = str(tmp_path / "out_none.vqz")
+        save_compressed(qresult, path, codec="none")
+        r2 = load_compressed(path)
+        np.testing.assert_array_equal(r2.quantized, qresult.quantized)
+
+    def test_quantized_dtype_preserved(self, qresult, tmp_path):
+        path = str(tmp_path / "dtype.vqz")
+        save_compressed(qresult, path)
+        r2 = load_compressed(path)
+        assert r2.quantized.dtype == np.int8
+
+    def test_scales_dtype_preserved(self, qresult, tmp_path):
+        path = str(tmp_path / "scales.vqz")
+        save_compressed(qresult, path)
+        r2 = load_compressed(path)
+        assert r2.scales.dtype == np.float32
+
+    def test_returns_quantization_result(self, qresult, tmp_path):
+        path = str(tmp_path / "type.vqz")
+        save_compressed(qresult, path)
+        r2 = load_compressed(path)
+        assert isinstance(r2, VQZResult)
+
+    def test_compressed_smaller_than_raw(self, tmp_path):
+        """zstd-compressed file must be smaller than the uncompressed file."""
+        pytest.importorskip("zstandard")
+        n, d = 256, 128
+        q = np.zeros((n, d), dtype=np.int8)
+        s = np.ones(n, dtype=np.float32)
+        result = _QResult(quantized=q, scales=s, dims=d, n=n)
+        raw_path  = str(tmp_path / "raw.vqz")
+        zstd_path = str(tmp_path / "zstd.vqz")
+        save_compressed(result, raw_path, codec="none")
+        save_compressed(result, zstd_path, codec="zstd")
+        assert os.path.getsize(zstd_path) < os.path.getsize(raw_path)
+
+    def test_zstd_round_trip_if_available(self, qresult, tmp_path):
+        pytest.importorskip("zstandard")
+        path = str(tmp_path / "zstd.vqz")
+        save_compressed(qresult, path, codec="zstd", level=5)
+        r2 = load_compressed(path)
+        np.testing.assert_array_equal(r2.quantized, qresult.quantized)
+        np.testing.assert_array_almost_equal(r2.scales, qresult.scales)
+
+    def test_large_result_round_trip(self, tmp_path):
+        rng = np.random.default_rng(77)
+        n, d = 2048, 512
+        q = rng.integers(-128, 128, size=(n, d), dtype=np.int8)
+        s = rng.random(n).astype(np.float32)
+        result = _QResult(quantized=q, scales=s, dims=d, n=n)
+        path = str(tmp_path / "large.vqz")
+        save_compressed(result, path, codec="zlib")
+        r2 = load_compressed(path)
+        assert r2.n == n
+        assert r2.dims == d
+        np.testing.assert_array_equal(r2.quantized, q)

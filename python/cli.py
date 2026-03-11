@@ -62,11 +62,36 @@ def _cmd_compress(args: argparse.Namespace) -> int:
 
     vectro = Vectro()
     result = vectro.compress_batch(vectors, profile=profile)
-    vectro.save_compressed(result, args.output)
 
-    print(f"Compressed {len(vectors)} vectors ({vectors.shape[1]}D)")
+    output: str = args.output
+    n, d = vectors.shape
+    lossless_pass: str = getattr(args, "lossless_pass", None) or "zstd"
+
+    # Cloud URI dispatch: s3://, gs://, abfs://
+    if output.startswith("s3://"):
+        from python.storage_v3 import S3Backend
+        bucket, _, remote = output[5:].partition("/")
+        S3Backend(bucket).save_vqz(result.quantized, result.scales, d, remote,
+                                   compression=lossless_pass)
+    elif output.startswith("gs://"):
+        from python.storage_v3 import GCSBackend
+        bucket, _, remote = output[5:].partition("/")
+        GCSBackend(bucket).save_vqz(result.quantized, result.scales, d, remote,
+                                    compression=lossless_pass)
+    elif output.startswith("abfs://"):
+        from python.storage_v3 import AzureBlobBackend
+        container, _, remote = output[7:].partition("/")
+        AzureBlobBackend(container).save_vqz(result.quantized, result.scales, d, remote,
+                                             compression=lossless_pass)
+    elif output.endswith(".vqz"):
+        from python.storage_v3 import save_compressed
+        save_compressed(result, output, codec=lossless_pass)
+    else:
+        vectro.save_compressed(result, output)
+
+    print(f"Compressed {n} vectors ({d}D)")
     print(f"Ratio  : {result.compression_ratio:.2f}×")
-    print(f"Output : {args.output}")
+    print(f"Output : {output}")
     return 0
 
 
@@ -207,6 +232,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--profile", default=None,
                    choices=["speed", "balanced", "quality", "extreme", "adaptive"],
                    help="Compression profile (default: balanced)")
+    p.add_argument("--lossless-pass", dest="lossless_pass",
+                   choices=["zstd", "zlib", "none"], default="zstd",
+                   help="Lossless compression codec for .vqz output (default: zstd)")
 
     # decompress
     p = sub.add_parser("decompress", help="Reconstruct float32 vectors from a .npz artifact")

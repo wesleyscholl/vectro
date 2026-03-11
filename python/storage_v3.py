@@ -33,6 +33,7 @@ import hashlib
 import io
 import struct
 import zlib
+from collections import namedtuple
 
 import numpy as np
 
@@ -57,6 +58,16 @@ _VERSION = 1
 _FLAG_NONE = 0
 _FLAG_ZSTD = 1
 _FLAG_ZLIB = 2
+
+# Lightweight result type returned by load_compressed.  It intentionally
+# mirrors python.interface.QuantizationResult so callers that previously used
+# that type can switch without code changes.  Defined here so storage_v3 stays
+# self-contained with no cross-package relative imports.
+VQZResult = namedtuple(
+    "VQZResult",
+    ["quantized", "scales", "dims", "n", "precision_mode", "group_size"],
+    defaults=["int8", 0],
+)
 
 
 # ---------------------------------------------------------------------------
@@ -272,12 +283,12 @@ class _CloudBackendBase:
             return f"{self.bucket}/{self.prefix}/{name}"
         return f"{self.bucket}/{name}"
 
-    def upload(self, local_path: str, remote_name: str) -> None:  # pragma: no cover
+    def upload(self, local_path: str, remote_name: str) -> None:
         with open(local_path, "rb") as src:
             with self._fs.open(self._full_path(remote_name), "wb") as dst:
                 dst.write(src.read())
 
-    def download(self, remote_name: str, local_path: str) -> None:  # pragma: no cover
+    def download(self, remote_name: str, local_path: str) -> None:
         with self._fs.open(self._full_path(remote_name), "rb") as src:
             with open(local_path, "wb") as dst:
                 dst.write(src.read())
@@ -289,7 +300,7 @@ class _CloudBackendBase:
         dims: int,
         remote_name: str,
         **kwargs,
-    ) -> None:  # pragma: no cover
+    ) -> None:
         buf = io.BytesIO()
         # Write to buffer then upload
         import tempfile, os
@@ -301,7 +312,7 @@ class _CloudBackendBase:
         finally:
             os.unlink(tmp_path)
 
-    def load_vqz(self, remote_name: str) -> dict:  # pragma: no cover
+    def load_vqz(self, remote_name: str) -> dict:
         import tempfile, os
         with tempfile.NamedTemporaryFile(suffix=".vqz", delete=False) as tmp:
             tmp_path = tmp.name
@@ -331,3 +342,62 @@ class AzureBlobBackend(_CloudBackendBase):
 
     def _open_fs(self):  # pragma: no cover
         return fsspec.filesystem("abfs")
+
+
+# ---------------------------------------------------------------------------
+# QuantizationResult convenience wrappers
+# ---------------------------------------------------------------------------
+
+def save_compressed(
+    result: object,
+    filepath: str,
+    codec: str = "zstd",
+    level: int = 3,
+) -> None:
+    """Persist a ``QuantizationResult`` to a VQZ file with lossless compression.
+
+    This is a thin convenience wrapper around :func:`save_vqz` for callers who
+    already hold a ``QuantizationResult`` from ``compress_vectors`` /
+    ``quantize_embeddings``.
+
+    Args:
+        result:   A ``QuantizationResult`` instance (must have ``.quantized``,
+                  ``.scales``, and ``.dims`` attributes).
+        filepath: Destination file path (conventionally ending in ``.vqz``).
+        codec:    Compression codec — ``"zstd"`` (default), ``"zlib"``, or
+                  ``"none"``.
+        level:    Compression level (1–22 for zstd, 1–9 for zlib).
+    """
+    save_vqz(
+        result.quantized,
+        result.scales,
+        result.dims,
+        filepath,
+        compression=codec,
+        level=level,
+    )
+
+
+def load_compressed(filepath: str) -> object:
+    """Load a ``VQZResult`` from a VQZ file.
+
+    This is a thin convenience wrapper around :func:`load_vqz` that
+    reconstructs a :class:`VQZResult` namedtuple rather than returning
+    a plain dict.  The returned type intentionally mirrors
+    ``python.interface.QuantizationResult`` so callers can use it
+    interchangeably.
+
+    Args:
+        filepath: Path to a ``.vqz`` file previously written by
+                  :func:`save_compressed` or :func:`save_vqz`.
+
+    Returns:
+        A :class:`VQZResult` instance with the restored arrays.
+    """
+    d = load_vqz(filepath)
+    return VQZResult(
+        quantized=d["quantized"],
+        scales=d["scales"],
+        dims=d["dims"],
+        n=d["n_vectors"],
+    )
