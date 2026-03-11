@@ -66,15 +66,20 @@ fn create_balanced_profile() -> CompressionProfile:
 
 fn create_quality_profile() -> CompressionProfile:
     """Create profile optimized for quality.
-    
+
+    Uses the full INT8 symmetric range [-127, 127] so that no quantization
+    levels are wasted.  The higher accuracy versus "balanced" comes from the
+    Python layer's MAD-based outlier clipping (quantize_adaptive), not from
+    artificially shrinking the quantization range here.
+
     Returns:
-        Quality compression profile (int8, conservative range).
+        Quality compression profile (int8, full symmetric range).
     """
     return CompressionProfile(
         name="quality",
         bits_per_value=8,
-        min_value=-100.0,
-        max_value=100.0
+        min_value=-127.0,
+        max_value=127.0
     )
 
 

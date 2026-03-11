@@ -97,24 +97,48 @@ def quantize_int2(
 
 
 def _pack_int2(q: np.ndarray, d: int) -> np.ndarray:
-    """Pack a (n, d) uint8 array of values in [0,3] into (n, ceil(d/4)) uint8."""
+    """Pack a (n, d) uint8 array of values in [0,3] into (n, ceil(d/4)) uint8.
+
+    Uses contiguous column stacks instead of strided slices to avoid cache
+    misses caused by non-unit strides on large embedding matrices.
+    """
     n = q.shape[0]
     pad = (-d) % 4
     if pad:
-        q = np.pad(q, ((0, 0), (0, pad)), mode="constant", constant_values=1)  # pad with 0 (zero-point)
-    out = np.zeros((n, q.shape[1] // 4), dtype=np.uint8)
-    for i in range(4):
-        out |= (q[:, i::4] & 0x3) << (i * 2)
-    return out
+        # Pad with 1 (the zero-point mapping for ternary {-1→0, 0→1, 1→2})
+        q = np.pad(q, ((0, 0), (0, pad)), mode="constant", constant_values=1)
+    d_padded = q.shape[1]
+    n_bytes = d_padded // 4
+
+    # Reshape to (n, n_bytes, 4) — each group of 4 columns becomes a last dim.
+    # This produces a contiguous layout so the bitwise ops below hit L1 cache.
+    q_r = np.ascontiguousarray(q.reshape(n, n_bytes, 4), dtype=np.uint8)
+    out = (
+        (q_r[:, :, 0] & 0x3)
+        | ((q_r[:, :, 1] & 0x3) << 2)
+        | ((q_r[:, :, 2] & 0x3) << 4)
+        | ((q_r[:, :, 3] & 0x3) << 6)
+    )
+    return out.astype(np.uint8)
 
 
 def _unpack_int2(packed: np.ndarray, n_elements: int) -> np.ndarray:
-    """Unpack (n, ceil(d/4)) uint8 into (n, n_elements) uint8 {0,1,2}."""
-    n = packed.shape[0]
-    full = int(np.ceil(n_elements / 4)) * 4
-    out = np.zeros((n, full), dtype=np.uint8)
-    for i in range(4):
-        out[:, i::4] = (packed >> (i * 2)) & 0x3
+    """Unpack (n, ceil(d/4)) uint8 into (n, n_elements) uint8 {0,1,2}.
+
+    Contiguous reshape avoids the strided i::4 pattern that causes cache misses.
+    """
+    n, n_bytes = packed.shape
+    # Decode all 4 slots per byte at once → (n, n_bytes, 4)
+    slots = np.stack(
+        [
+            packed & 0x3,
+            (packed >> 2) & 0x3,
+            (packed >> 4) & 0x3,
+            (packed >> 6) & 0x3,
+        ],
+        axis=2,
+    )  # (n, n_bytes, 4)
+    out = np.ascontiguousarray(slots.reshape(n, n_bytes * 4), dtype=np.uint8)
     return out[:, :n_elements]
 
 

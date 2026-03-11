@@ -83,10 +83,17 @@ struct StreamConfig:
     fn bytes_per_chunk(self) -> Int:
         """Calculate bytes per chunk.
         Returns:
-            Bytes required for one chunk.
+            Bytes required for one chunk (quantized values + float32 scales).
         """
-        var bytes_per_value = 1 if self.num_bits == 8 else 1
-        return self.chunk_size * self.vector_dim * bytes_per_value + (self.chunk_size * 8)
+        # INT8: 1 byte/value; INT4: 0.5 byte/value (two values packed per byte)
+        var quant_bytes: Int
+        if self.num_bits == 8:
+            quant_bytes = self.chunk_size * self.vector_dim
+        else:
+            # INT4 — round up to whole bytes
+            quant_bytes = (self.chunk_size * self.vector_dim + 1) // 2
+        # 4 bytes per float32 scale, one scale per vector
+        return quant_bytes + self.chunk_size * 4
     
     fn print_config(self):
         """Print configuration."""
@@ -102,46 +109,51 @@ fn quantize_chunk_simple(
     chunk: List[List[Float32]],
     num_bits: Int
 ) -> List[List[Int]]:
-    """Quantize a single chunk.
+    """Quantize a single chunk using symmetric abs-max scaling.
+
+    Symmetric scaling centres the range at zero, which avoids wasting
+    quantization levels when embeddings are zero-mean (typical for LLMs).
+
     Args:
         chunk: List of vectors to quantize.
         num_bits: Number of quantization bits (4 or 8).
     Returns:
-        List of quantized vectors.
+        List of quantized vectors (values in [-half_range, half_range]).
     """
     var quantized_chunk = List[List[Int]]()
-    var max_val = (1 << num_bits) - 1
-    
+    # Symmetric: INT8 → [-127, 127], INT4 → [-7, 7]
+    var half_range = (1 << (num_bits - 1)) - 1
+
     for i in range(len(chunk)):
         var vec = chunk[i].copy()
         var dim = len(vec)
-        
-        # Find min/max for scaling
-        var min_val = vec[0]
-        var max_v = vec[0]
+
+        # Find max absolute value (symmetric, zero-centred scaling)
+        var max_abs: Float32 = 0.0
         for j in range(dim):
-            if vec[j] < min_val:
-                min_val = vec[j]
-            if vec[j] > max_v:
-                max_v = vec[j]
-        
-        var range_val = max_v - min_val
-        if range_val < 1e-10:
-            range_val = 1.0
-        
+            var v = vec[j]
+            var a = v if v >= 0.0 else -v
+            if a > max_abs:
+                max_abs = a
+
+        var scale: Float32 = 1.0
+        if max_abs > 1e-10:
+            scale = max_abs / Float32(half_range)
+        var inv_scale = 1.0 / scale
+
         # Quantize vector
         var quantized = List[Int]()
         for j in range(dim):
-            var normalized = (vec[j] - min_val) / range_val
-            var q_val = Int(normalized * Float32(max_val))
-            if q_val < 0:
-                q_val = 0
-            elif q_val > max_val:
-                q_val = max_val
-            quantized.append(q_val)
-        
+            var raw = vec[j] * inv_scale
+            if raw > Float32(half_range):
+                raw = Float32(half_range)
+            elif raw < Float32(-half_range):
+                raw = Float32(-half_range)
+            var qv = Int(raw + 0.5) if raw >= 0.0 else Int(raw - 0.5)
+            quantized.append(qv)
+
         quantized_chunk.append(quantized^)
-    
+
     return quantized_chunk^
 
 

@@ -130,19 +130,26 @@ fn benchmark_batch_processing(batch_size: Int, vector_dim: Int, iterations: Int)
         data.append(vec^)
     
     print("Running", iterations, "iterations...")
-    
-    # Simulate timing (Mojo time.now() not yet stable)
+
+    from time import perf_counter_ns
+
     var total_vectors = batch_size * iterations
-    var simulated_time_sec = Float64(total_vectors) / 900000.0  # Assume 900K vec/s
-    var throughput = Float64(total_vectors) / simulated_time_sec
-    
+    var start_ns = perf_counter_ns()
+
+    for _iter in range(iterations):
+        _ = quantize_batch(data)
+
+    var elapsed_ns = perf_counter_ns() - start_ns
+    var elapsed_sec = Float64(elapsed_ns) / 1_000_000_000.0
+    var throughput = Float64(total_vectors) / elapsed_sec
+
     print("\nBatch Processing Benchmark:")
     print("  Batch size:", batch_size)
     print("  Vector dim:", vector_dim)
     print("  Iterations:", iterations)
-    print("  Total time:", simulated_time_sec, "seconds (simulated)")
+    print("  Total time:", elapsed_sec, "seconds")
     print("  Throughput:", Int(throughput), "vectors/sec")
-    
+
     return throughput
 
 

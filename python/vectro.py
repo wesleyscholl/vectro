@@ -470,17 +470,32 @@ class Vectro:
         return self.batch_processor.quantize_batch(vectors, profile)
     
     def _compress_individually(
-        self, 
-        vectors: np.ndarray, 
+        self,
+        vectors: np.ndarray,
         profile: str,
         precision_mode: str = "int8",
     ) -> BatchQuantizationResult:
-        """Compress vectors individually and combine results."""
+        """Compress vectors, dispatching to the fast batch path when possible.
+
+        The old implementation always called quantize_embeddings one row at a
+        time even for large arrays, which incurred per-call Python overhead for
+        every single vector.  Now:
+          - If batch_size > 1 and the batch path supports the precision mode,
+            delegate to _compress_single_batch (single NumPy call, BLAS-level).
+          - Only fall back to row-by-row processing for edge cases (e.g. a
+            caller that explicitly needs per-vector error isolation).
+        """
         batch_size, vector_dim = vectors.shape
+
+        # Fast path: delegate to batch quantization for multi-vector inputs
+        if batch_size > 1 and precision_mode in ("int8", "int4"):
+            return self._compress_single_batch(vectors, profile, precision_mode)
+
+        # Scalar path: single vector or unsupported precision
         quantized_vectors = []
         scales_rows: List[np.ndarray] = []
         scales = np.zeros(batch_size, dtype=np.float32)
-        
+
         for i in range(batch_size):
             result = quantize_embeddings(
                 vectors[i:i+1],
@@ -497,7 +512,9 @@ class Vectro:
         if precision_mode == "int4":
             scales_final = np.asarray(scales_rows, dtype=np.float32)
             original_bytes = batch_size * vector_dim * 4
-            compressed_bytes = int(np.asarray(quantized_vectors, dtype=np.uint8).nbytes + scales_final.nbytes)
+            compressed_bytes = int(
+                np.asarray(quantized_vectors, dtype=np.uint8).nbytes + scales_final.nbytes
+            )
             compression_ratio = float(original_bytes) / float(compressed_bytes) if compressed_bytes > 0 else 0.0
             return BatchQuantizationResult(
                 quantized_vectors=quantized_vectors,
@@ -510,12 +527,11 @@ class Vectro:
                 precision_mode="int4",
                 group_size=64,
             )
-        
-        # Calculate compression metrics
+
         original_bytes = batch_size * vector_dim * 4
         compressed_bytes = batch_size * vector_dim * 1 + batch_size * 4
         compression_ratio = original_bytes / compressed_bytes
-        
+
         return BatchQuantizationResult(
             quantized_vectors=quantized_vectors,
             scales=scales,

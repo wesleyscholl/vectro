@@ -137,19 +137,25 @@ fn compute_cosine_similarity_quality(original: List[Float32], reconstructed: Lis
 
 
 fn sort_list(var lst: List[Float32]) -> List[Float32]:
-    """Simple bubble sort for small lists (for percentile calculation).
+    """Sort a list of floats in ascending order using insertion sort.
+
+    Insertion sort is O(n) on nearly-sorted data and avoids the worst-case
+    n²/2 swaps of bubble sort.  Phase 1 will replace this with a radix /
+    merge sort for large error arrays.
+
     Args:
-        lst: List to sort.
+        lst: List to sort (consumed).
     Returns:
         Sorted list.
     """
     var n = len(lst)
-    for i in range(n):
-        for j in range(0, n - i - 1):
-            if lst[j] > lst[j + 1]:
-                var temp = lst[j]
-                lst[j] = lst[j + 1]
-                lst[j + 1] = temp
+    for i in range(1, n):
+        var key = lst[i]
+        var j = i - 1
+        while j >= 0 and lst[j] > key:
+            lst[j + 1] = lst[j]
+            j -= 1
+        lst[j + 1] = key
     return lst^
 
 
