@@ -1,7 +1,7 @@
 # Vectro — Plan
 
 > Last updated: 2026-03-11
-> Current version: **3.0.0** — tagged `v3.0.0`, pushed to origin
+> Current version: **3.0.0** — tagged `v3.0.0`, pushed to origin, GitHub Release published
 
 ---
 
@@ -37,7 +37,8 @@ All steps verified and committed in `6c5a5f9`.
 | 10c README | v3.0.0 badges, 7 profiles, HNSW, AutoQuantize, VQZ, roadmap |
 | 10d Cloud backends | S3Backend, GCSBackend, AzureBlobBackend implemented via fsspec |
 | 10e docs/ | api-reference, getting-started, benchmark-methodology updated |
-| 10f Video demo | `demos/demo_v3.py` — 12 sections, all API signatures verified, runs cleanly end-to-end |
+| 10f Video demo | `demos/demo_v3.gif` — animated GIF (900×580, 35s, VHS-recorded, gifsicle-optimised) |
+| 10g GitHub Release | v3.0.0 published at https://github.com/wesleyscholl/vectro/releases/tag/v3.0.0 |
 | INT4 GA | Removed `enable_experimental_precisions` gate; INT4 is production in v3 |
 
 ### 10a. Test Suite Audit (prerequisite)
