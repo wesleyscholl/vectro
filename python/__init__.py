@@ -57,6 +57,7 @@ from .integrations import (
     WeaviateConnector,
     MilvusConnector,
     ChromaConnector,
+    PineconeConnector,
     compress_tensor,
     reconstruct_tensor,
     HuggingFaceCompressor,
@@ -91,8 +92,9 @@ from .rq_api import ResidualQuantizer
 from .codebook_api import Codebook
 from .auto_quantize_api import auto_quantize
 from .storage_v3 import save_vqz, load_vqz, save_compressed, load_compressed, VQZResult
+from .onnx_export import to_onnx_model, export_onnx
 
-__version__ = "3.1.0"
+__version__ = "3.2.0"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"
@@ -144,6 +146,7 @@ __all__ = [
     "WeaviateConnector",
     "MilvusConnector",
     "ChromaConnector",
+    "PineconeConnector",
     "compress_tensor",
     "reconstruct_tensor",
     "HuggingFaceCompressor",
@@ -188,6 +191,9 @@ __all__ = [
     "save_compressed",
     "load_compressed",
     "VQZResult",
+    # ONNX export
+    "to_onnx_model",
+    "export_onnx",
 
     # Utilities
     "get_version_info"

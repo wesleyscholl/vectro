@@ -7,8 +7,8 @@
 ### Ultra-High-Performance LLM Embedding Compressor
 
 ![Mojo](https://img.shields.io/badge/Mojo-first-orange?logo=fire&style=for-the-badge)
-![Version](https://img.shields.io/badge/version-3.0.1-blue?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-390_passing-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-3.2.0-blue?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-506_passing-green?style=for-the-badge)
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 
@@ -16,7 +16,7 @@
 ╦  ╦╔═╗╔═╗╔╦╗╦═╗╔═╗
 ╚╗╔╝║╣ ║   ║ ╠╦╝║ ║
  ╚╝ ╚═╝╚═╝ ╩ ╩╚═╚═╝
-  v3.0.1 — Mojo-First Runtime (all hot paths dispatch to compiled Mojo binary)
+  v3.2.0 — Performance & Research (ONNX export, PineconeConnector, GPU equivalence tests)
 ```
 
 **⚡ INT8 · NF4 · PQ-96 · Binary · HNSW · RQ · AutoQuantize · VQZ**
@@ -359,6 +359,9 @@ gcs = GCSBackend(bucket="my-vectors")
 | `InMemoryVectorDBConnector` | ✅ | ✅ | Zero-dependency testing |
 | `QdrantConnector` | ✅ | ✅ | REST/gRPC |
 | `WeaviateConnector` | ✅ | ✅ | Weaviate v4 |
+| `MilvusConnector` | ✅ | ✅ | MilvusClient payload-centric |
+| `ChromaConnector` | ✅ | ✅ | base64 quantized + JSON scales |
+| `PineconeConnector` | ✅ | ✅ | Managed cloud, `list[int]` metadata |
 
 ```python
 from python.integrations import QdrantConnector
@@ -591,18 +594,25 @@ Test categories:
 - ✅ INT4 promoted to GA
 - ✅ 445 tests, 100% coverage
 
-### v3.1.0 (Q2 2026)
-- 📋 Milvus + Chroma connectors
-- 📋 AsyncIO streaming decompressor
-- 📋 `vectro info --benchmark` CLI flag
-- 📋 `pytest-benchmark` integration
-- 📋 Type stubs + `mypy --strict` CI lane
+### v3.1.0 (2026-03-11) ✅
+- ✅ Milvus + Chroma connectors
+- ✅ AsyncIO streaming decompressor
+- ✅ `vectro info --benchmark` CLI flag
+- ✅ `pytest-benchmark` integration
+- ✅ Type stubs + `mypy --strict` CI lane
+- ✅ 471 tests, 100% coverage
 
-### v3.2.0 (Q3 2026)
-- 📋 ONNX export for edge inference
-- 📋 GPU throughput CI validation
-- 📋 Pinecone connector
-- 📋 JavaScript/WASM feasibility
+### v3.2.0 (2026-03-11) ✅
+- ✅ ONNX export for edge inference (opset 17, `vectro export-onnx` CLI)
+- ✅ GPU throughput CI validation (10 CPU-safe equivalence tests + GPU scaffold)
+- ✅ Pinecone connector (`PineconeConnector`)
+- ✅ JavaScript/WASM ADR (`docs/adr-001-javascript-bindings.md`)
+- ✅ 506 tests, 100% coverage
+
+### v3.3.0 (Q4 2026)
+- 📋 N-API native addon for Node.js `.vqz` reader (ADR-001 Phase 1)
+- 📋 ONNX Runtime integration test (`pip install onnxruntime`)
+- 📋 GPU runner provisioning
 
 ---
 

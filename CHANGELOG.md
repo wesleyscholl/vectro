@@ -5,6 +5,57 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] — 2026-03-11  Performance & Research (Phase 12)
+
+### Added
+
+#### ONNX Export
+- **`python/onnx_export.py`** — `to_onnx_model(result)` and `export_onnx(result, path)`.
+  Produces a portable three-node ONNX opset-17 graph (Cast INT8→FLOAT, Unsqueeze axes=[1],
+  Mul) that reproduces the INT8 dequantization path from `interface.py`.
+- **`vectro export-onnx <input> <output>`** CLI subcommand; supports `.npz` and `.vqz` inputs.
+- Both `to_onnx_model` and `export_onnx` exported from top-level `python/__init__.py`.
+- 10 tests in `tests/test_onnx_export.py` (6 always-run mock-based + 4 conditional on `onnx`
+  install); the 4 onnx-package tests verify graph structure, opset version, input/output names.
+
+#### Pinecone Connector
+- **`PineconeConnector`** (`python/integrations/pinecone_connector.py`): payload-centric
+  connector using `index.upsert/fetch/delete`; quantized codes stored as `list[int]` in
+  Pinecone metadata (no base64 encoding needed); injectable index for unit tests.
+- Exported from `python/integrations/__init__.py` and top-level `python/__init__.py`.
+- 15 tests in `tests/test_pinecone_connector.py` using `_FakePineconeIndex` mock.
+- `"pinecone-client>=3.0"` added to `integrations` optional dep group in `pyproject.toml`.
+
+#### GPU Equivalence Tests
+- **`tests/test_gpu_equivalence.py`** — 10 CPU-safe tests verifying `python/gpu_api.py`
+  produces numerically identical output to `python/interface.py` reference path.
+  Tests cover scale matching (atol=1e-5), code byte-equivalence, reconstruction (atol=1e-6),
+  round-trip cosine similarity (> 0.999), zero-vector NaN safety, `gpu_benchmark()` key
+  presence, throughput positivity, and `gpu_available()` return type.
+- Commented GPU runner scaffold added to `.github/workflows/ci.yml` (self-hosted CUDA
+  job, ready to uncomment when a GPU runner is provisioned).
+
+#### JavaScript Bindings ADR
+- **`docs/adr-001-javascript-bindings.md`** — Architecture Decision Record evaluating
+  WASM, N-API, pure-JS, and REST approaches.  Decision: adopt N-API native addon as
+  Phase 1 (v3.3.0) for Node.js server-side `.vqz` reader; WASM deferred to Phase 2
+  pending Mojo toolchain maturity; pure-JS explicitly rejected.
+
+#### pyproject.toml
+- Added `onnx = ["onnx>=1.14"]` optional dep group.
+- Added `gpu = ["torch>=2.0"]` optional dep group.
+- Fixed `all` extras to be comprehensive (14 packages): adds `qdrant-client`, `weaviate-client`,
+  `torch`, `transformers`, `pinecone-client`, and `onnx` which were previously absent.
+
+### Test Counts
+
+| Version | Tests |
+|---------|-------|
+| v3.0.0  | 390   |
+| v3.0.1  | 390   |
+| v3.1.0  | 471   |
+| v3.2.0  | 506   |
+
 ## [3.1.0] — 2026-03-11  Enterprise & Ecosystem Expansion (Phase 11)
 
 ### Added

@@ -9,6 +9,7 @@ from .qdrant_connector import QdrantConnector
 from .weaviate_connector import WeaviateConnector
 from .milvus_connector import MilvusConnector
 from .chroma_connector import ChromaConnector
+from .pinecone_connector import PineconeConnector
 from .torch_bridge import compress_tensor, reconstruct_tensor, HuggingFaceCompressor
 from .arrow_bridge import (
     result_to_table,
@@ -27,6 +28,7 @@ __all__ = [
     "WeaviateConnector",
     "MilvusConnector",
     "ChromaConnector",
+    "PineconeConnector",
     "compress_tensor",
     "reconstruct_tensor",
     "HuggingFaceCompressor",

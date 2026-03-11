@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Optional
 
 
-_VERSION = "3.1.0"
+_VERSION = "3.2.0"
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +197,50 @@ def _cmd_benchmark(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_result_for_export(path: str):
+    """Load a compressed artifact from *path* for ONNX export.
+
+    Supports ``.npz`` artifacts via :class:`~python.vectro.Vectro` and
+    ``.vqz`` files via :func:`~python.storage_v3.load_compressed`.
+
+    Raises
+    ------
+    RuntimeError
+        If the ``onnx`` package is not installed (propagated from
+        :func:`~python.onnx_export.to_onnx_model`).
+    FileNotFoundError
+        If *path* does not exist.
+    """
+    if path.endswith(".vqz"):
+        from python.storage_v3 import load_compressed
+        return load_compressed(path)
+    from python.vectro import Vectro
+    return Vectro().load_compressed(path)
+
+
+def _cmd_export_onnx(args: argparse.Namespace) -> int:
+    """Export a compressed artifact as an ONNX INT8 dequantization graph."""
+    from python.onnx_export import export_onnx
+
+    try:
+        result = _load_result_for_export(args.input)
+    except FileNotFoundError as exc:
+        print(f"Error loading {args.input}: {exc}", file=sys.stderr)
+        return 1
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        export_onnx(result, args.output)
+    except (RuntimeError, ValueError) as exc:
+        print(f"ONNX export failed: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"Exported ONNX model → {args.output}")
+    return 0
+
+
 def _cmd_info(args: argparse.Namespace) -> int:
     from python import get_backend_info, get_version_info
 
@@ -320,6 +364,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Run a 5-second throughput benchmark and print MAE figures",
     )
 
+    # export-onnx
+    p = sub.add_parser(
+        "export-onnx",
+        help="Export a compressed artifact as an ONNX INT8 dequantization graph (opset 17)",
+    )
+    p.add_argument("input", help="Input .npz or .vqz compressed artifact")
+    p.add_argument("output", help="Output .onnx file path")
+
     return parser
 
 
@@ -339,6 +391,7 @@ def main(argv: Optional[list] = None) -> None:
         "validate": _cmd_validate,
         "benchmark": _cmd_benchmark,
         "info": _cmd_info,
+        "export-onnx": _cmd_export_onnx,
     }
     sys.exit(dispatch[args.command](args))
 

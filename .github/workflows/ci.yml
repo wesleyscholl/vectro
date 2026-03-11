@@ -56,3 +56,13 @@ jobs:
         with:
           files: coverage.xml
           fail_ci_if_error: false
+
+# gpu-throughput:
+#   runs-on: [self-hosted, gpu, cuda-12]
+#   # Phase 12 target: >= 50M vec/s on A10G.
+#   # Uncomment when a CUDA self-hosted runner is provisioned.
+#   needs: python-tests
+#   steps:
+#     - uses: actions/checkout@v4
+#     - run: pip install ".[all]"
+#     - run: python -m pytest tests/test_gpu_equivalence.py -v

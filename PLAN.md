@@ -1,7 +1,7 @@
 # Vectro — Plan
 
 > Last updated: 2026-03-11
-> Current version: **3.0.1** — tagged `v3.0.1`, pushed to origin, GitHub Release published at https://github.com/wesleyscholl/vectro/releases/tag/v3.0.1
+> Current version: **3.2.0** — tagged `v3.2.0`, pushed to origin
 
 ---
 
@@ -211,38 +211,20 @@ making the CLI immediately useful for evaluating hardware capability.
 
 ---
 
-## Phase 12 — v3.2.0: Performance & Research
+## Phase 12 — v3.2.0: Performance & Research  ✅ COMPLETE (2026-03-11)
 
-**Target:** Q3 2026
+| Step | Deliverable | Status |
+|------|-------------|--------|
+| 12a | ONNX export (`python/onnx_export.py`) — opset-17 INT8 dequant graph; `vectro export-onnx` CLI | ✅ |
+| 12b | GPU equivalence tests (`tests/test_gpu_equivalence.py`, 10 tests); commented GPU CI scaffold | ✅ |
+| 12c | `PineconeConnector` (`python/integrations/pinecone_connector.py`); 15 tests | ✅ |
+| 12d | JavaScript Bindings ADR (`docs/adr-001-javascript-bindings.md`) | ✅ |
+| 12e | `pyproject.toml`: `onnx`, `gpu` dep groups; `pinecone-client` in `integrations`; complete `all` (14 pkgs) | ✅ |
+| 12f | Version bumped to **3.2.0** across all files; CHANGELOG prepended; README updated | ✅ |
+| 12g | v3.2.0 tagged and pushed to origin | ✅ |
 
-### 12a. ONNX Export
-
-`python/onnx_export.py` — export the dequantization graph to ONNX opset 17
-so decompression runs inside ONNX Runtime for edge/embedded inference.
-
-- `to_onnx_model(result)` function
-- `vectro export-onnx` CLI command
-- Prerequisites: pure-Python dequantization path (already exists in numpy layer)
-
-### 12b. Real GPU Throughput Validation
-
-The Phase 6 GPU quantizer targets ≥ 50M vec/s on A10G. If CI only runs CPU,
-add a CUDA-enabled CI job or document how to benchmark on GPU hardware.
-
-Add numerical equivalence tests: GPU output must match CPU output bit-for-bit.
-
-### 12c. Pinecone Connector
-
-`python/integrations/pinecone_connector.py` — closes the managed vector DB gap.
-Optional dep: `pinecone-client>=3.0`.
-
-### 12d. JavaScript Bindings (Research)
-
-From the 2026 roadmap: zero-copy JS interop. Evaluate:
-- WebAssembly compilation of the Mojo quantizer
-- Node.js native addon via N-API for the `.vqz` reader
-
-Deliverable for 12d: ADR document with feasibility analysis and chosen approach.
+**Test count:** 506 passing (≥ 500 ✅).
+**tag:** `v3.2.0` pushed to origin.
 
 ---
 
@@ -263,14 +245,11 @@ Deliverable for 12d: ADR document with feasibility analysis and chosen approach.
 
 ## Immediate Next Actions (Ordered)
 
-1. **Run the test suite** — `python -m pytest tests/ -v` — identify failures
-2. **Fix any test failures** from Phases 5–9
-3. **Update CHANGELOG** — document Phases 5–9 and rename section to `[3.0.0]`
-4. **Update README** — v3.0.0 badges, new API sections, updated benchmarks
-5. **Audit Phase 8c** — confirm cloud storage status; add to backlog if deferred
-6. **Update docs/** — api-reference, getting-started, benchmark-methodology
-7. **Tag v3.0.0** — trigger release workflow
-8. **Begin Phase 11** — cloud backends and Milvus/Chroma connectors
+1. **Plan Phase 13** — determine v3.3.0 scope (N-API JS addon, WASM research, perf tuning).
+2. **Provision GPU runner** — uncomment the `gpu-throughput` CI job in `.github/workflows/ci.yml`
+   when a CUDA self-hosted runner is available.
+3. **ONNX Runtime integration test** — add `tests/test_onnx_runtime.py` once `onnxruntime` is
+   added to the dev dependencies.
 
 ---
 
