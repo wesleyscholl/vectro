@@ -68,7 +68,7 @@ from .integrations import (
     from_arrow_bytes,
 )
 
-from .streaming import StreamingDecompressor
+from .streaming import StreamingDecompressor, AsyncStreamingDecompressor
 from .quantization_extra import quantize_int2, dequantize_int2, quantize_adaptive
 from .migration import inspect_artifact, upgrade_artifact, validate_artifact
 
@@ -156,6 +156,7 @@ __all__ = [
     "from_arrow_bytes",
     # Streaming
     "StreamingDecompressor",
+    "AsyncStreamingDecompressor",
     # Advanced quantization
     "quantize_int2",
     "dequantize_int2",

@@ -4,7 +4,7 @@ Provides a memory-efficient iterator that reconstructs float32 vectors
 from a compressed artifact one chunk at a time — no need to load the
 entire decompressed dataset into RAM simultaneously.
 
-Usage::
+Usage (synchronous)::
 
     vectro = Vectro()
     result = vectro.compress(large_matrix, profile="balanced")
@@ -12,10 +12,18 @@ Usage::
     for chunk in StreamingDecompressor(result, chunk_size=500):
         # process 500 float32 vectors at a time
         process(chunk)
+
+Usage (async)::
+
+    async def ingest(result):
+        async for chunk in AsyncStreamingDecompressor(result, chunk_size=128):
+            await send_to_downstream(chunk)
 """
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from typing import Generator, Iterator, Optional, Union
 
 import numpy as np
@@ -163,3 +171,100 @@ def _apply_grouped_scales(
     # Repeat each scale across its group
     scales_expanded = np.repeat(scales, group_size, axis=1)[:, :d]
     return quantized.astype(np.float32) * scales_expanded
+
+
+# ---------------------------------------------------------------------------
+# Async streaming decompressor
+# ---------------------------------------------------------------------------
+
+
+class AsyncStreamingDecompressor:
+    """Async iterator that wraps :class:`StreamingDecompressor` with backpressure.
+
+    Reconstruction (numpy) runs in a background thread so the event loop is
+    never blocked.  A bounded :class:`asyncio.Queue` between producer and
+    consumer limits peak memory by stalling the producer when the consumer
+    falls behind (backpressure).
+
+    Args:
+        result:     Compressed artifact (``QuantizationResult`` or
+                    ``BatchQuantizationResult``).
+        chunk_size: Number of vectors per chunk (default: 1000).
+        backend:    Reconstruction backend (``"auto"`` = fastest available).
+        queue_size: Maximum number of pre-computed chunks to buffer (default: 4).
+
+    Example::
+
+        async def ingest(result):
+            async for chunk in AsyncStreamingDecompressor(result, chunk_size=128):
+                await send(chunk)          # chunk: np.ndarray shape (≤chunk_size, dim)
+    """
+
+    _SENTINEL = object()  # poison-pill sentinel; never yielded to the caller
+
+    def __init__(
+        self,
+        result: Union["BatchQuantizationResult", "QuantizationResult"],
+        chunk_size: int = 1000,
+        backend: str = "auto",
+        queue_size: int = 4,
+    ):
+        if chunk_size < 1:
+            raise ValueError("chunk_size must be ≥ 1")
+        if queue_size < 1:
+            raise ValueError("queue_size must be ≥ 1")
+        self._result = result
+        self._chunk_size = chunk_size
+        self._backend = backend
+        self._queue_size = queue_size
+        self._queue: Optional[asyncio.Queue] = None
+
+    # ------------------------------------------------------------------
+    # Sizing helper
+    # ------------------------------------------------------------------
+
+    def __len__(self) -> int:
+        """Total number of vectors in the compressed artifact."""
+        return len(StreamingDecompressor(self._result, self._chunk_size))
+
+    # ------------------------------------------------------------------
+    # Async iterator protocol
+    # ------------------------------------------------------------------
+
+    def __aiter__(self) -> "AsyncStreamingDecompressor":
+        loop = asyncio.get_event_loop()
+        self._queue = asyncio.Queue(maxsize=self._queue_size)
+
+        def _produce() -> None:
+            sync = StreamingDecompressor(
+                self._result,
+                chunk_size=self._chunk_size,
+                backend=self._backend,
+            )
+            try:
+                for chunk in sync:
+                    # Block the producer thread if the queue is full (backpressure).
+                    asyncio.run_coroutine_threadsafe(
+                        self._queue.put(chunk), loop
+                    ).result()
+            except Exception as exc:
+                asyncio.run_coroutine_threadsafe(
+                    self._queue.put(exc), loop
+                ).result()
+            finally:
+                asyncio.run_coroutine_threadsafe(
+                    self._queue.put(self._SENTINEL), loop
+                ).result()
+
+        thread = threading.Thread(target=_produce, daemon=True)
+        thread.start()
+        return self
+
+    async def __anext__(self) -> np.ndarray:
+        assert self._queue is not None, "__aiter__ must be called before __anext__"
+        item = await self._queue.get()
+        if item is self._SENTINEL:
+            raise StopAsyncIteration
+        if isinstance(item, Exception):
+            raise item
+        return item
