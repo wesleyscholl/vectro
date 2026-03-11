@@ -6,10 +6,10 @@ Output demos/demo_v3.gif
 
 Set Theme "Catppuccin Mocha"
 Set FontSize 12
-Set Width 1000
-Set Height 640
-Set Padding 18
-Set Framerate 20
+Set Width 900
+Set Height 580
+Set Padding 16
+Set Framerate 15
 Set PlaybackSpeed 1.5
 
 # Start from project root
