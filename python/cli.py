@@ -197,7 +197,7 @@ def _cmd_benchmark(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_info(_args: argparse.Namespace) -> int:
+def _cmd_info(args: argparse.Namespace) -> int:
     from python import get_backend_info, get_version_info
 
     vi = get_version_info()
@@ -209,7 +209,56 @@ def _cmd_info(_args: argparse.Namespace) -> int:
     print(f"Python  : {vi.get('python_version', 'unknown')}")
     print(f"NumPy   : {vi.get('numpy_version', 'unknown')}")
     print(f"Platform: {vi.get('platform', 'unknown')}")
+
+    if getattr(args, "benchmark", False):
+        _run_inline_benchmark()
+
     return 0
+
+
+def _run_inline_benchmark() -> None:
+    """5-second throughput estimation printed to stdout."""
+    import time
+    import numpy as np
+    from python import quantize_embeddings, reconstruct_embeddings
+    from python.nf4_api import quantize_nf4, dequantize_nf4
+
+    _DIM   = 768
+    _BATCH = 256
+
+    rng  = np.random.default_rng(0)
+    vecs = rng.standard_normal((_BATCH, _DIM)).astype(np.float32)
+
+    print()
+    print("── Benchmark (5 s) ──────────────────────────────")
+
+    # ── INT8 throughput ───────────────────────────────────────────────────
+    deadline  = time.monotonic() + 5.0
+    n_batches = 0
+    while time.monotonic() < deadline:
+        quantize_embeddings(vecs)
+        n_batches += 1
+
+    total_vecs = n_batches * _BATCH
+    print(f"INT8 throughput : {total_vecs / 5:,.0f} vec/s  "
+          f"({n_batches} × {_BATCH}-batch in 5 s)")
+
+    # ── INT8 MAE ──────────────────────────────────────────────────────────
+    result_int8 = quantize_embeddings(vecs)
+    recon_int8  = reconstruct_embeddings(result_int8)
+    mae_int8    = float(np.mean(np.abs(vecs - recon_int8)))
+    print(f"INT8 MAE        : {mae_int8:.6f}")
+
+    # ── NF4 MAE (best-effort; skipped when unavailable) ───────────────────
+    try:
+        packed, scales = quantize_nf4(vecs)
+        recon_nf4 = dequantize_nf4(packed, scales, _DIM)
+        mae_nf4   = float(np.mean(np.abs(vecs - recon_nf4)))
+        print(f"NF4  MAE        : {mae_nf4:.6f}")
+    except Exception:  # noqa: BLE001 — NF4 backend may not be built
+        print("NF4  MAE        : unavailable (NF4 backend not found)")
+
+    print("─────────────────────────────────────────────────")
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +314,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--output", default=None, help="Save report to .json or .csv file")
 
     # info
-    sub.add_parser("info", help="Show backend and environment information")
+    p = sub.add_parser("info", help="Show backend and environment information")
+    p.add_argument(
+        "--benchmark", action="store_true", default=False,
+        help="Run a 5-second throughput benchmark and print MAE figures",
+    )
 
     return parser
 
