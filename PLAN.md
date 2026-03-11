@@ -1,7 +1,7 @@
 # Vectro — Plan
 
 > Last updated: 2026-03-11
-> Current version: 3.0.0-dev (all v3 phases implemented, not yet released)
+> Current version: **3.0.0** — tagged `v3.0.0`, pushed to origin
 
 ---
 
@@ -22,8 +22,7 @@ All ten phases of `VECTRO_V3_PLAN.md` have been committed to `main`:
 | 8 | Storage v3 — VQZ container + mmap bulk I/O | ✅ Done |
 | 9 | Unified v3 API — PQCodebook, HNSWIndex, VectroV3 | ✅ Done |
 
-Version strings bumped to `3.0.0` in all source files. The release is **not tagged** and the
-documentation has not been updated to reflect v3.
+Version strings bumped to `3.0.0` in all source files. Tag `v3.0.0` pushed to origin.
 
 ---
 
