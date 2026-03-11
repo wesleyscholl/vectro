@@ -55,15 +55,27 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "pytest-cov",
+    "pytest-benchmark",
+    "mypy>=1.8",
+    "pre-commit>=3.6",
 ]
 integrations = [
     "qdrant-client>=1.9",
     "weaviate-client>=4.0",
     "torch>=2.0",
     "transformers>=4.36",
+    "pymilvus>=2.4",
+    "chromadb>=0.4",
 ]
 data = [
     "pyarrow>=12.0",
+]
+cloud = [
+    "fsspec>=2024.2",
+    "zstandard>=0.20",
+]
+learned = [
+    "scikit-learn>=1.3",
 ]
 bench = [
     "rich>=13.0",
@@ -72,6 +84,16 @@ bench = [
 mojo = [
     # Mojo SDK is required for building from source with Mojo backend
     # Install from: https://www.modular.com/mojo
+]
+all = [
+    "scikit-learn>=1.3",
+    "pymilvus>=2.4",
+    "chromadb>=0.4",
+    "fsspec>=2024.2",
+    "zstandard>=0.20",
+    "pyarrow>=12.0",
+    "rich>=13.0",
+    "tqdm>=4.0",
 ]
 
 [project.urls]
