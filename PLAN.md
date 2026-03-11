@@ -27,9 +27,19 @@ documentation has not been updated to reflect v3.
 
 ---
 
-## Phase 10 — v3.0.0 Release Hardening
+## Phase 10 — v3.0.0 Release Hardening ✅ COMPLETE (2026-03-11)
 
-**Goal:** Ship a clean, fully documented, all-tests-passing `v3.0.0` release.
+All steps verified and committed in `6c5a5f9`.
+
+| Step | Result |
+|------|--------|
+| 10a Test suite | 445 / 445 passing |
+| 10b CHANGELOG | Phases 5–9 + Phase 10 hardening documented; section renamed `[3.0.0]` |
+| 10c README | v3.0.0 badges, 7 profiles, HNSW, AutoQuantize, VQZ, roadmap |
+| 10d Cloud backends | S3Backend, GCSBackend, AzureBlobBackend implemented via fsspec |
+| 10e docs/ | api-reference, getting-started, benchmark-methodology updated |
+| 10f Video demo | `demos/video_demo_v3.py` — 9 sections, paced pauses, runs cleanly |
+| INT4 GA | Removed `enable_experimental_precisions` gate; INT4 is production in v3 |
 
 ### 10a. Test Suite Audit (prerequisite)
 
