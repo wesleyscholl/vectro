@@ -5,6 +5,92 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0-dev] — Unreleased  Vectro 3.0 — SIMD Core + Advanced Quantization
+
+### Phase 0 — Correctness Bug Fixes (7 bugs)
+
+- **`src/quantizer.mojo` (F2):** Removed interleaved merge artifact where two function
+  bodies were interleaved line-by-line; replaced with a clean two-pass (abs-max scan +
+  quantize) scalar implementation.
+- **`src/batch_processor.mojo` (F3):** `benchmark_batch_processing()` hardcoded a fake
+  `900_000 vec/s` denominator; replaced with real `perf_counter_ns` wall-clock timing.
+- **`src/streaming_quantizer.mojo` (F4):** `bytes_per_chunk()` used
+  `bytes_per_value = 1 if bits==8 else 1` (identical branches) so INT4 got the same byte
+  budget as INT8; fixed to `(chunk_size * d + 1) // 2` for INT4.  Also replaced unsigned
+  min-max scaling with symmetric abs-max scaling (correct for zero-centred embeddings).
+- **`src/compression_profiles.mojo` (F5):** `create_quality_profile()` used
+  `max_value=100.0`, wasting 27 quantization levels; changed to `max_value=127.0`.
+- **`src/quality_metrics.mojo` (F6):** `sort_list()` was O(n²) bubble sort; replaced
+  with insertion sort (O(n) on nearly-sorted data, fewer swaps on random data).
+- **`python/quantization_extra.py` (F8):** `_pack_int2` / `_unpack_int2` used strided
+  `q[:, i::4]` slices causing cache misses; replaced with contiguous
+  `reshape(n, n_bytes, 4)` operations.
+- **`python/vectro.py` (F10):** `_compress_individually()` always processed vectors
+  one-at-a-time even for large batches; added batch fast-path delegation.
+
+### Phase 1 — SIMD Acceleration
+
+- **`src/vector_ops.mojo` (F1):** All six distance/similarity functions
+  (`cosine_similarity`, `euclidean_distance`, `manhattan_distance`, `dot_product`,
+  `vector_norm`, `normalize_vector`) were scalar loops despite having `vectorize`
+  imported; each is now rewritten with `vectorize[_kernel, SIMD_WIDTH]()` using
+  `SIMD[DType.float32, w].load()` + `reduce_add()`.
+- **`src/quantizer_simd.mojo` (new):** SIMD-accelerated INT8 quantizer; vectorised
+  abs-max reduction pass + quantize pass with symmetric abs-max scaling;
+  `perf_counter_ns` benchmark included.
+
+### Phase 2 — NF4 Normal Float 4-bit Quantization
+
+- **`src/nf4_quantizer.mojo` (new):** Mojo NF4 encode/decode using the 16 QLoRA
+  quantiles of N(0,1); SIMD abs-max normalisation before nearest-level lookup; two
+  nibbles packed per byte.  Expected improvement vs linear INT4: ≈20% lower
+  reconstruction error.
+- **`python/nf4_api.py` (new):** Vectorised NumPy NF4 encode/decode via
+  `searchsorted` on midpoint thresholds; mixed-precision mode stores top-k
+  highest-variance ("outlier") dimensions as FP16 and the remainder as NF4 (SpQR-style).
+  Helpers: `select_outlier_dims`, `quantize_mixed`, `dequantize_mixed`,
+  `nf4_cosine_sim`, `compression_ratio`.
+- **`tests/test_nf4.py` (new):** 19 tests — level monotonicity, identity roundtrip,
+  `cosine_sim >= 0.985` at d=768, odd-dimension, zero vector, mixed-precision quality
+  `>= 0.990`, compression ratio.
+
+### Phase 3 — Product Quantization (PQ)
+
+- **`src/product_quantizer.mojo` (new):** Mojo PQ encode with SIMD inner L2 distance
+  loop (`vectorize[_l2, SIMD_W]`); batch encode, batch decode (centroid lookup),
+  query ADC distance-table computation, ADC batch distance accumulation.
+- **`python/pq_api.py` (new):** `train_pq_codebook` — per-subspace
+  `MiniBatchKMeans`; `pq_encode` / `pq_decode` — vectorised NumPy with broadcasted
+  L2 distances; `pq_distance_table` + `pq_search` — Asymmetric Distance Computation
+  (ADC); `opq_rotation` — alternating SVD-based OPQ for +5–10 pp recall vs plain PQ.
+  Compression at d=768, M=96: 32× vs FP32.
+- **`tests/test_pq.py` (new):** 12 tests — codebook shape, invalid inputs, code range,
+  decode shape, reconstruction quality, ADC search ordering, compression ratio.
+
+### Phase 4 — Binary (1-bit) Quantization
+
+- **`src/binary_quantizer.mojo` (new):** `sign(v) → 1-bit`, 8 dims packed per byte;
+  `hamming_distance` (XOR + Kernighan bit-count); `hamming_batch` over n DB vectors;
+  `top_k_hamming` nearest-neighbour selection; `perf_counter_ns` scan benchmark.
+- **`python/binary_api.py` (new):** Vectorised NumPy binary encode/decode; batched
+  Hamming via `numpy.unpackbits`; `binary_search` top-k; `matryoshka_encode` for
+  Matryoshka-model prefix-length variants (e.g. d=64/128/256/512/768 from one call);
+  `binary_compression_ratio`.  Compression: 32× vs FP32.
+- **`tests/test_binary.py` (new):** 19 tests — pack/unpack bit patterns, all-pos/neg,
+  Hamming identity, flipped-all-bits, self-search recall, Matryoshka shapes,
+  compression ratio.
+
+### Test counts
+
+| Milestone | Tests |
+|-----------|-------|
+| v2.0.0 baseline | 158 |
+| + Phase 2 NF4    | +19 → **177** |
+| + Phase 3 PQ     | +12 → **189** |
+| + Phase 4 Binary | +19 → **208** |
+
+---
+
 ## [2.0.0] — 2026-03-10  Vectro 2.0 Overdrive
 
 ### Phase 4: Trust, Reproducibility, and Developer Experience
