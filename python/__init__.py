@@ -70,7 +70,27 @@ from .streaming import StreamingDecompressor
 from .quantization_extra import quantize_int2, dequantize_int2, quantize_adaptive
 from .migration import inspect_artifact, upgrade_artifact, validate_artifact
 
-__version__ = "2.0.0"
+# v3 unified API (Phase 9)
+from .v3_api import (
+    PQCodebook,
+    HNSWIndex,
+    V3Result,
+    VectroV3,
+)
+from .nf4_api import (
+    quantize_nf4,
+    dequantize_nf4,
+    quantize_mixed,
+    dequantize_mixed,
+    select_outlier_dims,
+)
+from .binary_api import quantize_binary, dequantize_binary
+from .rq_api import ResidualQuantizer
+from .codebook_api import Codebook
+from .auto_quantize_api import auto_quantize
+from .storage_v3 import save_vqz, load_vqz
+
+__version__ = "3.0.0"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"
@@ -140,6 +160,26 @@ __all__ = [
     "inspect_artifact",
     "upgrade_artifact",
     "validate_artifact",
+
+    # v3 unified API
+    "PQCodebook",
+    "HNSWIndex",
+    "V3Result",
+    "VectroV3",
+    # v3 quantization
+    "quantize_nf4",
+    "dequantize_nf4",
+    "quantize_mixed",
+    "dequantize_mixed",
+    "select_outlier_dims",
+    "quantize_binary",
+    "dequantize_binary",
+    "ResidualQuantizer",
+    "Codebook",
+    "auto_quantize",
+    # v3 storage
+    "save_vqz",
+    "load_vqz",
 
     # Utilities
     "get_version_info"
