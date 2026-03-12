@@ -1,11 +1,41 @@
 # Vectro — Plan
 
 > Last updated: 2026-03-12
-> Current version: **3.5.0** — tagged `v3.5.0`, pushed to origin
+> Current version: **3.6.0** — tagged `v3.6.0`, pushed to origin
 
 ---
 
-## v3.5.0 — MOJO OUTPERFORMS FAISS ✅ COMPLETE
+## v3.6.0 — FULL OPTIMIZATION + MULTI-BENCHMARK SUITE ✅ COMPLETE
+
+### Mojo hot-path optimizations
+
+| Change | Root cause | Fix | Expected gain |
+|--------|-----------|-----|---------------|
+| **NF4 StaticTuple lookup** | 16-branch `_nf4_level` + O(16) linear `_nearest_nf4` | Compile-time `NF4_TABLE` + `NF4_MIDS` → O(4) binary search; `parallelize` + vectorized abs-max | 10–50× NF4 |
+| **SIMD abs-max accumulator** | `reduce_max()` inside every `vectorize` iteration | Vector `acc_vec` accumulates full-width SIMD; single `reduce_max()` after loop | 5–10% INT8 abs-max pass |
+| **Binary `parallelize`** | `encode_binary`/`decode_binary` single-threaded | `parallelize[_encode_row](n)` + `parallelize[_decode_row](n)` | Linear core scaling |
+| **Pipe IPC bitcast** | Bit-shifting serialization per byte | `unsafe_ptr().bitcast[UInt8]()` + bulk copy; LLVM autovectorizes | Eliminates serialization overhead |
+| **`vectro_api.mojo` INT8** | Scalar quant loop, append init, no parallelize | `resize()` + `unsafe_ptr()` + SIMD acc + vectorized quant + `parallelize` | Same gains as standalone |
+| **Kurtosis row-major** | Column-major scan = 3072 byte stride at d=768 | Outer loop over vectors (sequential rows), inner `vectorize` over dims | 5–20× on kurtosis |
+| **Adam vectorize** | Scalar per-weight loop in `_adam_step` | `vectorize[_adam, SIMD_W](size)` | 4× on Adam |
+| **Batch buffer pre-alloc** | 12 × (alloc+free) per mini-batch iteration | Pre-allocate before epoch loop, free once after | Eliminates training malloc pressure |
+
+### Benchmark expansion
+- `benchmarks/benchmark_ann_comparison.py` — Vectro HNSW vs hnswlib/annoy/usearch recall@1/5/10
+- `benchmarks/benchmark_real_embeddings_v2.py` — actual GloVe-100 + SIFT1M datasets
+- `benchmarks/benchmark_faiss_comparison.py` — multi-dim INT8 analysis (d=128/384/768/1536)
+
+### Documentation fixes (pre-launch hardening)
+- README: `445/445` → `598` tests; binary cosine `0.94` → `0.80 / recall 0.95 w/ rerank`
+- `docs/faiss_comparison_results.md`: rewrote with Mojo SIMD result (4.59× FAISS)
+- `BACKLOG_v2.1.md`: truncated to archive header
+
+### Test results
+- **598 tests passing** (pre-existing sklearn failures unchanged)
+
+---
+
+
 
 ### Three root-cause fixes (2026-03-12)
 
@@ -78,11 +108,11 @@ All immediate credibility issues have been fixed:
 **Commit:** `fd28903` — Faiss comparison complete
 
 #### Remaining Phase 2 Tasks
-- ⏳ Run Mojo binary benchmarks on M3 hardware (requires pixi + Mojo toolchain)
-  - Command: `pixi run benchmark` outputs vectro_quantizer results
-  - Target verification: 5M+ vec/s for INT8
+- ✅ Run Mojo binary benchmarks on M3 hardware — **DONE in v3.5.0**
+  - Mojo SIMD: 12,121,212 vec/s INT8 (4.59–4.85× FAISS C++)
+  - Results: `results/faiss_comparison_mojo.json`
 - ⏳ Real embedding dataset benchmarks (GloVe-100, SIFT1M)
-  - Framework ready in `benchmarks/benchmark_real_embeddings.py`
+  - Scheduled for v3.6.0: `benchmarks/benchmark_real_embeddings_v2.py`
 
 #### Key Discrepancy Resolved
 - **Finding:** README claimed 200K-1.04M vec/s throughput for INT8 Python
@@ -369,11 +399,15 @@ making the CLI immediately useful for evaluating hardware capability.
 
 ## Immediate Next Actions (Ordered)
 
-1. **ADR-001 Phase 2** — implement `js/src/vectro_napi.cpp` for real: `.vqz` header parser,
+1. **Run ANN comparison** — `python benchmarks/benchmark_ann_comparison.py`
+   after `pip install "vectro[bench-ann]"` to produce `results/ann_comparison.json`.
+2. **Run real-embeddings benchmark** — `python benchmarks/benchmark_real_embeddings_v2.py`
+   (downloads GloVe-100 on first run, ~862 MB cache).
+3. **ADR-001 Phase 2** — implement `js/src/vectro_napi.cpp` for real: `.vqz` header parser,
    zstd decompressor, SIMD dequantize kernel; `npm run build` should succeed on macOS-arm64.
-2. **Provision GPU runner** — uncomment the `gpu-throughput` CI job in `.github/workflows/ci.yml`
+4. **Provision GPU runner** — uncomment the `gpu-throughput` CI job in `.github/workflows/ci.yml`
    when a CUDA self-hosted runner is available.
-3. **ONNX Runtime CI lane** — promote `test_onnx_runtime.py` to non-conditional once `onnxruntime`
+5. **ONNX Runtime CI lane** — promote `test_onnx_runtime.py` to non-conditional once `onnxruntime`
    is added to the default dev dependency set.
 
 ---

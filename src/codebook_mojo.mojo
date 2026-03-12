@@ -184,7 +184,9 @@ fn _adam_step(
 ):
     """Apply one Adam update step in-place to weight buffer w.
 
-    Uses beta1=0.9, beta2=0.999, eps=1e-8.
+    Uses beta1=0.9, beta2=0.999, eps=1e-8.  Inner loop is vectorized via
+    vectorize[SIMD_W] — all four pointer buffers are stride-1 float32, so
+    LLVM emits full-width NEON vector loads/stores for each 4-element chunk.
 
     Args:
         w:    Weight buffer (modified in-place).
@@ -197,13 +199,45 @@ fn _adam_step(
     """
     var bc1 = Float32(1.0) - ADAM_BETA1 ** Float32(t)
     var bc2 = Float32(1.0) - ADAM_BETA2 ** Float32(t)
+    var lr_v   = SIMD[DType.float32, SIMD_W](lr)
+    var bc1_v  = SIMD[DType.float32, SIMD_W](bc1)
+    var bc2_v  = SIMD[DType.float32, SIMD_W](bc2)
+    var eps_v  = SIMD[DType.float32, SIMD_W](ADAM_EPS)
+    var b1_v   = SIMD[DType.float32, SIMD_W](ADAM_BETA1)
+    var b2_v   = SIMD[DType.float32, SIMD_W](ADAM_BETA2)
+    var ob1_v  = SIMD[DType.float32, SIMD_W](Float32(1.0) - ADAM_BETA1)
+    var ob2_v  = SIMD[DType.float32, SIMD_W](Float32(1.0) - ADAM_BETA2)
 
-    for i in range(size):
-        m[i] = ADAM_BETA1 * m[i] + (Float32(1.0) - ADAM_BETA1) * g[i]
-        v[i] = ADAM_BETA2 * v[i] + (Float32(1.0) - ADAM_BETA2) * g[i] * g[i]
-        var m_hat = m[i] / bc1
-        var v_hat = v[i] / bc2
-        w[i] -= lr * m_hat / (sqrt(v_hat) + ADAM_EPS)
+    @parameter
+    fn _adam[ww: Int](i: Int):
+        var gi = g.load[width=ww](i)
+        var mi = m.load[width=ww](i)
+        var vi = v.load[width=ww](i)
+        var wi = w.load[width=ww](i)
+
+        @parameter
+        if ww == SIMD_W:
+            var mi_new = b1_v * mi + ob1_v * gi
+            var vi_new = b2_v * vi + ob2_v * gi * gi
+            m.store(i, mi_new)
+            v.store(i, vi_new)
+            var m_hat = mi_new / bc1_v
+            var v_hat = vi_new / bc2_v
+            w.store(i, wi - lr_v * m_hat / (sqrt(v_hat) + eps_v))
+        else:
+            var b1s  = SIMD[DType.float32, ww](ADAM_BETA1)
+            var b2s  = SIMD[DType.float32, ww](ADAM_BETA2)
+            var ob1s = SIMD[DType.float32, ww](Float32(1.0) - ADAM_BETA1)
+            var ob2s = SIMD[DType.float32, ww](Float32(1.0) - ADAM_BETA2)
+            var mi_new = b1s * mi + ob1s * gi
+            var vi_new = b2s * vi + ob2s * gi * gi
+            m.store(i, mi_new)
+            v.store(i, vi_new)
+            var m_hat = mi_new / SIMD[DType.float32, ww](bc1)
+            var v_hat = vi_new / SIMD[DType.float32, ww](bc2)
+            w.store(i, wi - SIMD[DType.float32, ww](lr) * m_hat / (sqrt(v_hat) + SIMD[DType.float32, ww](ADAM_EPS)))
+
+    vectorize[_adam, SIMD_W](size)
 
 
 fn _cosine_loss_grad(
@@ -465,6 +499,21 @@ struct Codebook:
 
         var t: Int = 0   # Adam time step
 
+        # Pre-allocate all training buffers once — eliminates 12×(alloc+free) per batch.
+        var max_bs    = min(batch_size, n)
+        var h_enc     = UnsafePointer[Float32].alloc(max_bs * hidden)
+        var z_enc     = UnsafePointer[Float32].alloc(max_bs * tdim)
+        var h_dec     = UnsafePointer[Float32].alloc(max_bs * hidden)
+        var recon     = UnsafePointer[Float32].alloc(max_bs * d)
+        var dL_drecon = UnsafePointer[Float32].alloc(max_bs * d)
+        var dL_dW2d   = UnsafePointer[Float32].alloc(hidden * d)
+        var dL_dh_dec = UnsafePointer[Float32].alloc(max_bs * hidden)
+        var dL_dW1d   = UnsafePointer[Float32].alloc(tdim * hidden)
+        var dL_dz     = UnsafePointer[Float32].alloc(max_bs * tdim)
+        var dL_dW2e   = UnsafePointer[Float32].alloc(hidden * tdim)
+        var dL_dh_enc = UnsafePointer[Float32].alloc(max_bs * hidden)
+        var dL_dW1e   = UnsafePointer[Float32].alloc(d * hidden)
+
         for _ in range(n_epochs):
             # Simple sequential batch ordering (no shuffle for determinism)
             var start = 0
@@ -474,11 +523,6 @@ struct Codebook:
                 var bx  = norm_data + start * d
 
                 # ── Forward ──────────────────────────────
-                var h_enc  = UnsafePointer[Float32].alloc(bs * hidden)
-                var z_enc  = UnsafePointer[Float32].alloc(bs * tdim)
-                var h_dec  = UnsafePointer[Float32].alloc(bs * hidden)
-                var recon  = UnsafePointer[Float32].alloc(bs * d)
-
                 for i in range(bs * hidden): h_enc[i] = 0.0
                 for i in range(bs * tdim):   z_enc[i] = 0.0
                 for i in range(bs * hidden): h_dec[i] = 0.0
@@ -492,15 +536,12 @@ struct Codebook:
                 _matmul_add(recon, h_dec, self.W2d.unsafe_ptr(), bs, hidden, d)
 
                 # ── Loss + output gradient ────────────────
-                var dL_drecon = UnsafePointer[Float32].alloc(bs * d)
                 _ = _cosine_loss_grad(recon, bx, bs, d, dL_drecon)
 
                 # ── Backward: decoder ─────────────────────
-                var dL_dW2d = UnsafePointer[Float32].alloc(hidden * d)
                 for i in range(hidden * d): dL_dW2d[i] = 0.0
                 _outer_add(dL_dW2d, h_dec, dL_drecon, bs, hidden, d, self.l2_reg, self.W2d.unsafe_ptr())
 
-                var dL_dh_dec = UnsafePointer[Float32].alloc(bs * hidden)
                 for i in range(bs * hidden): dL_dh_dec[i] = 0.0
                 _matmul_t_add(dL_dh_dec, dL_drecon, self.W2d.unsafe_ptr(), bs, hidden, d)
 
@@ -508,27 +549,22 @@ struct Codebook:
                 for i in range(bs * hidden):
                     if h_dec[i] <= 0.0: dL_dh_dec[i] = 0.0
 
-                var dL_dW1d = UnsafePointer[Float32].alloc(tdim * hidden)
                 for i in range(tdim * hidden): dL_dW1d[i] = 0.0
                 _outer_add(dL_dW1d, z_enc, dL_dh_dec, bs, tdim, hidden, self.l2_reg, self.W1d.unsafe_ptr())
 
-                var dL_dz = UnsafePointer[Float32].alloc(bs * tdim)
                 for i in range(bs * tdim): dL_dz[i] = 0.0
                 _matmul_t_add(dL_dz, dL_dh_dec, self.W1d.unsafe_ptr(), bs, tdim, hidden)
 
                 # ── Backward: encoder ─────────────────────
-                var dL_dW2e = UnsafePointer[Float32].alloc(hidden * tdim)
                 for i in range(hidden * tdim): dL_dW2e[i] = 0.0
                 _outer_add(dL_dW2e, h_enc, dL_dz, bs, hidden, tdim, self.l2_reg, self.W2e.unsafe_ptr())
 
-                var dL_dh_enc = UnsafePointer[Float32].alloc(bs * hidden)
                 for i in range(bs * hidden): dL_dh_enc[i] = 0.0
                 _matmul_t_add(dL_dh_enc, dL_dz, self.W2e.unsafe_ptr(), bs, hidden, tdim)
 
                 for i in range(bs * hidden):
                     if h_enc[i] <= 0.0: dL_dh_enc[i] = 0.0
 
-                var dL_dW1e = UnsafePointer[Float32].alloc(d * hidden)
                 for i in range(d * hidden): dL_dW1e[i] = 0.0
                 _outer_add(dL_dW1e, bx, dL_dh_enc, bs, d, hidden, self.l2_reg, self.W1e.unsafe_ptr())
 
@@ -539,12 +575,13 @@ struct Codebook:
                 _adam_step(self.W1d.unsafe_ptr(), dL_dW1d, self.M1d.unsafe_ptr(), self.V1d.unsafe_ptr(), t, lr, tdim * hidden)
                 _adam_step(self.W2d.unsafe_ptr(), dL_dW2d, self.M2d.unsafe_ptr(), self.V2d.unsafe_ptr(), t, lr, hidden * d)
 
-                # Free batch buffers
-                h_enc.free(); z_enc.free(); h_dec.free(); recon.free()
-                dL_drecon.free(); dL_dW2d.free(); dL_dh_dec.free()
-                dL_dW1d.free(); dL_dz.free(); dL_dW2e.free()
-                dL_dh_enc.free(); dL_dW1e.free()
                 start += batch_size
+
+        # Release all training buffers allocated before the epoch loop.
+        h_enc.free(); z_enc.free(); h_dec.free(); recon.free()
+        dL_drecon.free(); dL_dW2d.free(); dL_dh_dec.free()
+        dL_dW1d.free(); dL_dz.free(); dL_dW2e.free()
+        dL_dh_enc.free(); dL_dW1e.free()
 
         # Calibrate INT8 scale on up to 1000 normalised training vectors
         var calib_n = min(n, 1000)

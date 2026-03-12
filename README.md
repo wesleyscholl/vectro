@@ -7,8 +7,8 @@
 ### Ultra-High-Performance LLM Embedding Compressor
 
 ![Mojo](https://img.shields.io/badge/Mojo-first-orange?logo=fire&style=for-the-badge)
-![Version](https://img.shields.io/badge/version-3.5.0-blue?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-594_passing-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-3.6.0-blue?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-598_passing-green?style=for-the-badge)
 ![Python-Only](https://img.shields.io/badge/mode-Python--only-blue?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 
@@ -16,7 +16,7 @@
 ╦  ╦╔═╗╔═╗╔╦╗╦═╗╔═╗
 ╚╗╔╝║╣ ║   ║ ╠╦╝║ ║
  ╚╝ ╚═╝╚═╝ ╩ ╩╚═╚═╝
-  v3.5.0 — Mojo-Accelerated Vector Quantization
+  v3.6.0 — Mojo-Accelerated Vector Quantization
 ```
 
 > ⚠️ **Note on Performance Claims**: This library includes a compiled Mojo binary (`vectro_quantizer`) for peak performance. Without Mojo installed, all functions work via Python/NumPy fallback at ~60–80K vec/s. With the Mojo binary built, throughput reaches 12M+ vec/s — **4.85× faster than FAISS C++**. See [Requirements](#-requirements) below.
@@ -205,9 +205,9 @@ from python.storage_v3 import save_vqz, load_vqz, S3Backend, GCSBackend
 | `balanced` | INT8 | 4x | >= 0.9999 | Default |
 | `quality` | INT8 | 4x | >= 0.9999 | Tighter range |
 | `ultra` | INT4 | 8x | >= 0.92 | Now GA in v3 |
-| `binary` | 1-bit | 32x | >= 0.94* | Hamming+rerank |
+| `binary` | 1-bit | 32x | ~0.80 cosine / ≥0.95 recall@10 w/ rerank* | Hamming+rerank |
 
-*binary recall@10 >= 0.95 with INT8 re-rank
+*binary: direct cosine similarity ~0.80 on d=768; recall@10 ≥ 0.95 when combined with INT8 re-ranking
 
 ### Quality Analysis
 
@@ -498,11 +498,11 @@ See [docs/migration-guide.md](docs/migration-guide.md) for the complete guide.
 | NF4-Mixed | ~4.2 | 7.5x | >= 0.990 | Outlier-heavy data |
 | INT8 + ZSTD | — | 6–8x | >= 0.9999 | Disk/cloud storage |
 | PQ-96 | 1 | 32x | >= 0.95 | Bulk ANN storage |
-| Binary | 1 | 32x | >= 0.94* | Hamming + rerank |
+| Binary | 1 | 32x | ~0.80 cosine / ≥0.95 recall@10 w/ rerank* | Hamming + rerank |
 | RQ x3 | 3 | 10.7x | >= 0.98 | High-quality compression |
 | Autoencoder 64D | ~1.3 | 48x | >= 0.97 | Learned, model-specific |
 
-*recall@10 >= 0.95 with INT8 re-rank
+*recall@10 ≥ 0.95 with INT8 re-rank; direct cosine similarity is ~0.80 at d=768
 
 ### INT8 Throughput by Dimension
 
@@ -556,8 +556,8 @@ RQ x3:   cosine >= 0.98
 
 ### ✅ Production Ready
 ```
-Tests:    445/445 passing  ████████
-Coverage: 100%             ████████
+Tests:    594 passing      ████████
+Coverage: pytest-cov (CI)  ████████
 Warnings: 0                ████████
 ```
 
@@ -570,7 +570,7 @@ Warnings: 0                ████████
 ## 🧪 Testing
 
 ```bash
-# Run all 445 Python tests
+# Run all Python tests
 python -m pytest tests/ -q
 
 # Per-module
@@ -677,10 +677,21 @@ Test categories:
 - ✅ **INT8 throughput: 12,583,364 vec/s — 4.85× faster than FAISS C++ at d=768**
 - ✅ 575 tests, 100% module coverage
 
-### v3.6.0 (planned)
-- 📋 ADR-001 Phase 2: full N-API implementation (`.vqz` reader, SIMD dequantize)
-- 📋 GPU runner provisioning (CUDA self-hosted CI)
-- 📋 ONNX Runtime promoted to non-conditional (always-on CI lane)
+### v3.6.0 (2026-03-12) ✅
+- ✅ NF4 StaticTuple lookup table (O(16)→O(4) binary search) + `parallelize` + vectorized abs-max
+- ✅ SIMD vector accumulator for abs-max (eliminates mid-loop `reduce_max()`)
+- ✅ Binary encode/decode `parallelize` over rows (near-linear core scaling)
+- ✅ Pipe IPC bitcast optimization — `bitcast[UInt8]()` bulk copy replaces element-wise serialization
+- ✅ `vectro_api.mojo` `_int8_compress`/`_int8_decompress` fully vectorized + parallelized
+- ✅ Kurtosis scan restructured row-major (eliminates 3072-byte stride cache misses)
+- ✅ Adam optimizer `_adam_step` vectorized via `vectorize[SIMD_W]`
+- ✅ Codebook training batch buffers pre-allocated once outside epoch loop
+- ✅ `build-mojo-native` pixi task with explicit `--optimization-level 3`
+- ✅ ANN recall@K benchmark (`benchmarks/benchmark_ann_comparison.py`) — Vectro vs hnswlib/annoy/usearch
+- ✅ Real embedding benchmark v2 (`benchmarks/benchmark_real_embeddings_v2.py`) — actual GloVe-100 download
+- ✅ Multi-dimensional INT8 throughput analysis in FAISS comparison benchmark (d=128/384/768/1536)
+- ✅ `bench-ann` optional dep group (hnswlib, annoy, usearch, requests, tqdm)
+- ✅ 598 tests passing
 
 ---
 

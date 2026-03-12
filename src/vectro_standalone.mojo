@@ -151,42 +151,50 @@ fn write_stdout_bytes(buf: List[UInt8]):
 
 
 fn f32_to_bytes(vals: List[Float32]) -> List[UInt8]:
-    """Serialise float32 list to little-endian bytes."""
-    var buf = List[UInt8](capacity=len(vals) * 4)
-    for i in range(len(vals)):
-        var bits = f32_bits(vals[i])
-        buf.append(UInt8(bits & 0xFF))
-        buf.append(UInt8((bits >> 8) & 0xFF))
-        buf.append(UInt8((bits >> 16) & 0xFF))
-        buf.append(UInt8((bits >> 24) & 0xFF))
+    """Serialise float32 list to little-endian bytes via pointer bitcast (zero bit-shifting)."""
+    var count = len(vals)
+    var buf = List[UInt8](capacity=count * 4)
+    buf.resize(count * 4, UInt8(0))
+    # M3 is little-endian; Float32 memory representation IS the little-endian IEEE 754 wire format.
+    var src = vals.unsafe_ptr().bitcast[UInt8]()
+    var dst = buf.unsafe_ptr()
+    for i in range(count * 4):
+        dst[i] = src[i]   # LLVM autovectorizes this memcpy-shaped loop
     return buf^
 
 
 fn i8_to_bytes(vals: List[Int8]) -> List[UInt8]:
-    """Reinterpret Int8 list as UInt8 bytes."""
-    var buf = List[UInt8](capacity=len(vals))
-    for i in range(len(vals)):
-        buf.append(i8_to_u8(vals[i]))
+    """Reinterpret Int8 list as UInt8 bytes via bitcast (bit-identical on two's-complement)."""
+    var count = len(vals)
+    var buf = List[UInt8](capacity=count)
+    buf.resize(count, UInt8(0))
+    var src = vals.unsafe_ptr().bitcast[UInt8]()
+    var dst = buf.unsafe_ptr()
+    for i in range(count):
+        dst[i] = src[i]   # LLVM autovectorizes
     return buf^
 
 
 fn read_f32_from_raw(raw: List[UInt8], offset: Int, count: Int) -> List[Float32]:
-    """Parse float32 values from a byte buffer starting at `offset`."""
+    """Parse float32 values from a byte buffer via bitcast (zero bit-assembly per element)."""
     var out = List[Float32](capacity=count)
+    out.resize(count, Float32(0.0))
+    # Cast raw bytes at offset directly to Float32 pointer (little-endian, matches wire format).
+    var src = (raw.unsafe_ptr() + offset).bitcast[Float32]()
+    var dst = out.unsafe_ptr()
     for i in range(count):
-        var b0 = UInt32(raw[offset + i * 4])
-        var b1 = UInt32(raw[offset + i * 4 + 1]) << 8
-        var b2 = UInt32(raw[offset + i * 4 + 2]) << 16
-        var b3 = UInt32(raw[offset + i * 4 + 3]) << 24
-        out.append(bits_f32(b0 | b1 | b2 | b3))
+        dst[i] = src[i]
     return out^
 
 
 fn read_i8_from_raw(raw: List[UInt8], offset: Int, count: Int) -> List[Int8]:
-    """Parse Int8 values from a byte buffer starting at `offset`."""
+    """Parse Int8 values from a byte buffer via bitcast."""
     var out = List[Int8](capacity=count)
+    out.resize(count, Int8(0))
+    var src = (raw.unsafe_ptr() + offset).bitcast[Int8]()
+    var dst = out.unsafe_ptr()
     for i in range(count):
-        out.append(u8_to_i8(raw[offset + i]))
+        dst[i] = src[i]
     return out^
 
 
@@ -230,14 +238,21 @@ fn quantize_int8(emb: List[Float32], n: Int, d: Int) -> QuantResult:
         var ptr  = emb_ptr   + i * d
         var qptr = q_ptr_out + i * d
 
-        # Pass 1: SIMD abs-max reduction
-        var acc_max: Float32 = 0.0
+        # Pass 1: SIMD abs-max reduction — accumulate full-width SIMD vectors,
+        # single reduce_max() call at end (avoids 47 intermediate reductions at d=768).
+        var acc_vec  = SIMD[DType.float32, SIMD_W](0.0)
+        var acc_tail: Float32 = 0.0
 
         @parameter
         fn _max_kernel[w: Int](j: Int):
-            acc_max = max(acc_max, abs(ptr.load[width=w](j)).reduce_max())
+            @parameter
+            if w == SIMD_W:
+                acc_vec = max(acc_vec, abs(ptr.load[width=SIMD_W](j)))
+            else:
+                acc_tail = max(acc_tail, abs(ptr.load[width=w](j)).reduce_max())
 
         vectorize[_max_kernel, SIMD_W](d)
+        var acc_max = max(acc_tail, acc_vec.reduce_max())
 
         var scale: Float32 = acc_max / 127.0 if acc_max > 0.0 else Float32(1.0)
         scales_ptr[i] = scale
@@ -290,7 +305,10 @@ fn reconstruct_int8(q: List[Int8], scales: List[Float32], n: Int, d: Int) -> Lis
 # 2. NF4 encode / decode  (QLoRA 16-level normal-float codebook)
 # ────────────────────────────────────────────────────────────────────────────
 
+
+@always_inline
 fn _nf4_level(idx: Int) -> Float32:
+    """O(1) NF4 codebook lookup for the 16-level normal-float quantization codebook."""
     if idx == 0:  return Float32(-1.0)
     if idx == 1:  return Float32(-0.6961928)
     if idx == 2:  return Float32(-0.5250730)
@@ -309,73 +327,121 @@ fn _nf4_level(idx: Int) -> Float32:
     return Float32(1.0)
 
 
+@always_inline
 fn _nearest_nf4(v: Float32) -> Int:
-    var best = 0
-    var bd = abs(v - Float32(-1.0))
-    for k in range(1, 16):
-        var d = abs(v - _nf4_level(k))
-        if d < bd:
-            bd = d
-            best = k
-    return best
+    """O(4) binary search over the 16-level NF4 normal-float codebook.
+
+    Explicit 4-level if-else tree using precomputed midpoints between adjacent
+    NF4 levels. Replaces the previous O(16) linear scan.
+    Midpoints: mid(i,i+1) = (_nf4_level(i) + _nf4_level(i+1)) * 0.5
+    """
+    if v < Float32(0.03979016):
+        if v < Float32(-0.33968400):
+            if v < Float32(-0.61063290):
+                return 0 if v < Float32(-0.84809640) else 1
+            else:
+                return 2 if v < Float32(-0.45998670) else 3
+        else:
+            if v < Float32(-0.13796230):
+                return 4 if v < Float32(-0.23467110) else 5
+            else:
+                return 6 if v < Float32(-0.04552502) else 7
+    else:
+        if v < Float32(0.38931250):
+            if v < Float32(0.20352702):
+                return 8 if v < Float32(0.12025970) else 9
+            else:
+                return 10 if v < Float32(0.29201510) else 11
+        else:
+            if v < Float32(0.64281258):
+                return 12 if v < Float32(0.50168869) else 13
+            else:
+                return 14 if v < Float32(0.86147881) else 15
 
 
 fn encode_nf4(emb: List[Float32], n: Int, d: Int) -> PackedResult:
-    """NF4 normal-float 4-bit encoding. Two nibbles per byte (lo=first dim)."""
+    """NF4 normal-float 4-bit encoding. Two nibbles per byte (lo=first dim).
+
+    Parallelized over rows; abs-max pass uses SIMD vectorize.
+    """
     var half_d = (d + 1) // 2
     var packed = List[UInt8](capacity=n * half_d)
     var scales = List[Float32](capacity=n)
     packed.resize(n * half_d, UInt8(0))
     scales.resize(n, Float32(0.0))
 
-    for i in range(n):
-        var bf = i * d
-        var bp = i * half_d
+    var emb_ptr    = emb.unsafe_ptr()
+    var packed_ptr = packed.unsafe_ptr()
+    var scales_ptr = scales.unsafe_ptr()
 
-        var amax: Float32 = 0.0
-        for j in range(d):
-            var a = emb[bf + j]
-            if a < 0.0: a = -a
-            if a > amax: amax = a
-        var scale: Float32 = 1.0
-        if amax > 0.0: scale = amax
-        scales[i] = scale
+    @parameter
+    fn _encode_vec(i: Int):
+        var row  = emb_ptr + i * d
+        var bp   = i * half_d
+
+        # Pass 1: SIMD abs-max reduction
+        var acc_vec  = SIMD[DType.float32, SIMD_W](0.0)
+        var acc_tail: Float32 = 0.0
+
+        @parameter
+        fn _amax[w: Int](j: Int):
+            @parameter
+            if w == SIMD_W:
+                acc_vec = max(acc_vec, abs(row.load[width=SIMD_W](j)))
+            else:
+                acc_tail = max(acc_tail, abs(row.load[width=w](j)).reduce_max())
+
+        vectorize[_amax, SIMD_W](d)
+        var amax = max(acc_tail, acc_vec.reduce_max())
+
+        var scale: Float32 = amax if amax > 0.0 else Float32(1.0)
+        scales_ptr[i] = scale
         var inv = Float32(1.0) / scale
 
+        # Pass 2: 4-step binary search encode, pack two nibbles per byte
         var bidx = bp
         var j = 0
         while j < d:
-            var lo = _nearest_nf4(emb[bf + j] * inv)
+            var lo = _nearest_nf4(row[j] * inv)
             var hi = 0
             if j + 1 < d:
-                hi = _nearest_nf4(emb[bf + j + 1] * inv)
-            packed[bidx] = UInt8((hi << 4) | (lo & 0xF))
+                hi = _nearest_nf4(row[j + 1] * inv)
+            packed_ptr[bidx] = UInt8((hi << 4) | (lo & 0xF))
             bidx += 1
             j += 2
+
+    parallelize[_encode_vec](n)
 
     return PackedResult(packed^, scales^)
 
 
 fn decode_nf4(packed: List[UInt8], scales: List[Float32], n: Int, d: Int) -> List[Float32]:
-    """Decode NF4 nibbles back to float32."""
+    """Decode NF4 nibbles back to float32. Parallelized over rows."""
     var half_d = (d + 1) // 2
     var out = List[Float32](capacity=n * d)
     out.resize(n * d, Float32(0.0))
 
-    for i in range(n):
-        var bf = i * d
-        var bp = i * half_d
-        var scale = scales[i]
+    var packed_ptr = packed.unsafe_ptr()
+    var scales_ptr = scales.unsafe_ptr()
+    var out_ptr    = out.unsafe_ptr()
+
+    @parameter
+    fn _decode_vec(i: Int):
+        var bp    = i * half_d
+        var scale = scales_ptr[i]
+        var op    = out_ptr + i * d
 
         var bidx = bp
         var j = 0
         while j < d:
-            var b = Int(packed[bidx])
-            out[bf + j] = _nf4_level(b & 0xF) * scale
+            var b = Int(packed_ptr[bidx])
+            op[j] = _nf4_level(b & 0xF) * scale
             if j + 1 < d:
-                out[bf + j + 1] = _nf4_level((b >> 4) & 0xF) * scale
+                op[j + 1] = _nf4_level((b >> 4) & 0xF) * scale
             bidx += 1
             j += 2
+
+    parallelize[_decode_vec](n)
 
     return out^
 
@@ -385,12 +451,16 @@ fn decode_nf4(packed: List[UInt8], scales: List[Float32], n: Int, d: Int) -> Lis
 # ────────────────────────────────────────────────────────────────────────────
 
 fn encode_binary(emb: List[Float32], n: Int, d: Int) -> List[UInt8]:
-    """Sign-bit packing: 8 dimensions per byte. Returns n x ceil(d/8) bytes."""
+    """Sign-bit packing: 8 dimensions per byte. Parallelized over rows."""
     var bpv = (d + 7) // 8
     var packed = List[UInt8](capacity=n * bpv)
     packed.resize(n * bpv, UInt8(0))
 
-    for i in range(n):
+    var emb_ptr    = emb.unsafe_ptr()
+    var packed_ptr = packed.unsafe_ptr()
+
+    @parameter
+    fn _encode_row(i: Int):
         var bf = i * d
         var bb = i * bpv
         for bi in range(bpv):
@@ -398,28 +468,36 @@ fn encode_binary(emb: List[Float32], n: Int, d: Int) -> List[UInt8]:
             for bit in range(8):
                 var dim = bi * 8 + bit
                 if dim < d:
-                    if emb[bf + dim] >= 0.0:
+                    if emb_ptr[bf + dim] >= 0.0:
                         byte_val = byte_val | UInt8(1 << bit)
-            packed[bb + bi] = byte_val
+            packed_ptr[bb + bi] = byte_val
+
+    parallelize[_encode_row](n)
 
     return packed^
 
 
 fn decode_binary(packed: List[UInt8], n: Int, d: Int) -> List[Float32]:
-    """Decode sign-bit packed bytes back to +/-1.0 float32."""
+    """Decode sign-bit packed bytes back to +/-1.0 float32. Parallelized over rows."""
     var bpv = (d + 7) // 8
     var out = List[Float32](capacity=n * d)
     out.resize(n * d, Float32(0.0))
 
-    for i in range(n):
+    var packed_ptr = packed.unsafe_ptr()
+    var out_ptr    = out.unsafe_ptr()
+
+    @parameter
+    fn _decode_row(i: Int):
         var bf = i * d
         var bb = i * bpv
         for bi in range(bpv):
-            var b = Int(packed[bb + bi])
+            var b = Int(packed_ptr[bb + bi])
             for bit in range(8):
                 var dim = bi * 8 + bit
                 if dim < d:
-                    out[bf + dim] = Float32(1.0) if (b >> bit) & 1 == 1 else Float32(-1.0)
+                    out_ptr[bf + dim] = Float32(1.0) if (b >> bit) & 1 == 1 else Float32(-1.0)
+
+    parallelize[_decode_row](n)
 
     return out^
 
@@ -647,10 +725,16 @@ fn main() raises:
                 # stdin: pn*pd float32 → stdout: pn*pd int8 + pn float32 scales
                 var data = read_f32_from_raw(raw, 0, pn * pd)
                 var r = quantize_int8(data, pn, pd)
-                var buf = i8_to_bytes(r.q)
-                var sbytes = f32_to_bytes(r.scales)
-                for i in range(len(sbytes)):
-                    buf.append(sbytes[i])
+                # Build output in a single pre-sized buffer (avoids append-loop reallocs)
+                var q_count  = pn * pd
+                var sc_count = pn * 4
+                var buf = List[UInt8](capacity=q_count + sc_count)
+                buf.resize(q_count + sc_count, UInt8(0))
+                var dst   = buf.unsafe_ptr()
+                var q_src = r.q.unsafe_ptr().bitcast[UInt8]()
+                for i in range(q_count): dst[i] = q_src[i]
+                var s_src = r.scales.unsafe_ptr().bitcast[UInt8]()
+                for i in range(sc_count): dst[q_count + i] = s_src[i]
                 write_stdout_bytes(buf)
                 return
 
@@ -668,17 +752,27 @@ fn main() raises:
                 # stdin: pn*pd float32 → stdout: pn*half_pd uint8 + pn float32 scales
                 var data = read_f32_from_raw(raw, 0, pn * pd)
                 var r = encode_nf4(data, pn, pd)
-                var sbytes = f32_to_bytes(r.scales)
-                for i in range(len(sbytes)):
-                    r.packed.append(sbytes[i])
-                write_stdout_bytes(r.packed)
+                # Pre-sized single output buffer — avoids element-by-element scale append
+                var pk_count = pn * half_pd
+                var sc_count = pn * 4
+                var buf = List[UInt8](capacity=pk_count + sc_count)
+                buf.resize(pk_count + sc_count, UInt8(0))
+                var dst    = buf.unsafe_ptr()
+                var pk_src = r.packed.unsafe_ptr()
+                for i in range(pk_count): dst[i] = pk_src[i]
+                var s_src = r.scales.unsafe_ptr().bitcast[UInt8]()
+                for i in range(sc_count): dst[pk_count + i] = s_src[i]
+                write_stdout_bytes(buf)
                 return
 
             if pop == "decode":
                 # stdin: pn*half_pd uint8 + pn float32 scales → stdout: pn*pd float32
+                # Bulk copy packed bytes from raw (avoid element-by-element append loop)
                 var packed = List[UInt8](capacity=pn * half_pd)
-                for i in range(pn * half_pd):
-                    packed.append(raw[i])
+                packed.resize(pn * half_pd, UInt8(0))
+                var src = raw.unsafe_ptr()
+                var dst = packed.unsafe_ptr()
+                for i in range(pn * half_pd): dst[i] = src[i]
                 var sc = read_f32_from_raw(raw, pn * half_pd, pn)
                 var recon = decode_nf4(packed, sc, pn, pd)
                 write_stdout_bytes(f32_to_bytes(recon))
@@ -695,9 +789,12 @@ fn main() raises:
 
             if pop == "decode":
                 # stdin: pn*bpv uint8 → stdout: pn*pd float32
+                # Bulk copy packed bytes from raw (avoid element-by-element append loop)
                 var packed = List[UInt8](capacity=pn * bpv)
-                for i in range(pn * bpv):
-                    packed.append(raw[i])
+                packed.resize(pn * bpv, UInt8(0))
+                var src = raw.unsafe_ptr()
+                var dst = packed.unsafe_ptr()
+                for i in range(pn * bpv): dst[i] = src[i]
                 var recon = decode_binary(packed, pn, pd)
                 write_stdout_bytes(f32_to_bytes(recon))
                 return

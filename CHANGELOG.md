@@ -5,6 +5,81 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.6.0] — 2026-03-12  Full Optimization + Multi-Benchmark Suite
+
+### Performance Optimizations
+
+#### NF4 Quantization (B1)
+- Replaced 16-branch `if-else` `_nf4_level` and O(16) linear `_nearest_nf4` with compile-time
+  `alias NF4_TABLE = StaticTuple[Float32, 16](...)` and `alias NF4_MIDS = StaticTuple[Float32, 15](...)`.
+  O(4) binary search eliminates ~115M branch evaluations per n=100K NF4 encode call.
+- Added `parallelize[_encode_vec](n)` to `encode_nf4` with vectorized abs-max accumulator.
+- Added `parallelize[_decode_vec](n)` to `decode_nf4` using direct NF4_TABLE O(1) lookup.
+
+#### SIMD Accumulator for Abs-Max (B2)
+- Replaced `reduce_max()` call inside every `vectorize` iteration with a full-width SIMD
+  accumulator vector; single `reduce_max()` called once after the loop. Eliminates 47
+  intermediate reductions per row at d=768, SIMD_W=16. Applied to both Mojo source files.
+
+#### Binary Encode/Decode `parallelize` (B3)
+- Added `parallelize[_encode_row](n)` and `parallelize[_decode_row](n)` to `encode_binary`
+  and `decode_binary`. Near-linear multi-core scaling on trivially-independent rows.
+
+#### Pipe IPC Bitcast Optimization (B4)
+- Replaced element-by-element bit-shifting serialization with `unsafe_ptr().bitcast[UInt8]()`
+  bulk copy. LLVM autovectorizes the resulting memcpy-shaped loops.
+- Pre-sized single output buffer for INT8 quantize pipe — eliminates append reallocation.
+
+#### `vectro_api.mojo` INT8 Compress/Decompress (B5)
+- `_int8_compress`: `resize()` init, `unsafe_ptr()` extraction, SIMD vector accumulator
+  abs-max, vectorized quantize+store, `parallelize[_process_row](n)`.
+- `_int8_decompress`: `parallelize[_recon_row](n)` + vectorized int8→float32 cast+scale+store.
+
+#### Row-Major Kurtosis Scan (B6)
+- `compute_kurtosis` restructured: outer loop over vectors (sequential row reads), inner
+  `vectorize` over dimensions using per-dimension L2-resident accumulator arrays.
+
+#### Vectorized Adam + Batch Buffer Pre-allocation (B7)
+- `_adam_step` scalar loop → `vectorize[_adam, SIMD_W](size)`.
+- All 12 training buffers in `Codebook.train` pre-allocated once before epoch loop;
+  freed once after. Eliminates O(n_epochs × n/batch_size × 24) malloc/free.
+
+#### Build Task (B8)
+- Added `build-mojo-native` pixi task with explicit `--optimization-level 3`.
+
+### Benchmark Expansion
+
+- **`benchmarks/benchmark_ann_comparison.py`** (new): recall@1/5/10 + QPS for Vectro HNSW
+  vs hnswlib vs annoy vs usearch. Graceful degradation, exact BF ground truth.
+- **`benchmarks/benchmark_real_embeddings_v2.py`** (new): Actual GloVe-100 download (cached
+  at `~/.cache/vectro_benchmarks/`). SIFT1M via `--dataset sift1m`. Replaces synthetic v1.
+- **`benchmarks/benchmark_faiss_comparison.py`**: `benchmark_int8_multidim()` added —
+  d=128/384/768/1536 at n=50K. Results in `all_results["int8_multidim"]`.
+
+### Dependency Updates
+- `pyproject.toml`: `bench-ann = ["hnswlib>=0.8.0", "annoy>=1.17.3", "usearch>=2.9.0",
+  "requests>=2.31", "tqdm>=4.0"]` added; packages added to `all` meta-group.
+
+### Documentation Fixes
+- README "Production Ready" box corrected: `445/445` → `598 passing`, `100%` → `pytest-cov (CI)`.
+- README binary cosine claim corrected: `>= 0.94*` → `~0.80 cosine / ≥0.95 recall@10 w/ INT8 rerank*`.
+- `BACKLOG_v2.1.md` truncated to archive header.
+- `docs/faiss_comparison_results.md` rewritten with confirmed Mojo SIMD results (4.59× FAISS).
+
+### Test Summary
+
+| Version | Tests passing |
+|---------|---------------|
+| v3.0.0  | 390           |
+| v3.1.0  | 471           |
+| v3.2.0  | 506           |
+| v3.3.0  | 575           |
+| v3.4.0  | 575           |
+| v3.5.0  | 575           |
+| **v3.6.0** | **598**    |
+
+---
+
 ## [3.5.0] — 2026-03-12  Mojo Outperforms FAISS (v3.5.0)
 
 ### Added / Changed

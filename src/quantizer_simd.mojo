@@ -47,14 +47,20 @@ fn quantize_int8_simd(
         var ptr  = emb_ptr   + i * d
         var qptr = q_ptr_out + i * d
 
-        # ── Pass 1: SIMD abs-max reduction ──────────────────────────────────
-        var acc_max: Float32 = 0.0
+        # ── Pass 1: SIMD abs-max reduction — vector accumulator, single reduce at end ──
+        var acc_vec  = SIMD[DType.float32, SIMD_W](0.0)
+        var acc_tail: Float32 = 0.0
 
         @parameter
         fn _max_kernel[w: Int](j: Int):
-            acc_max = max(acc_max, abs(ptr.load[width=w](j)).reduce_max())
+            @parameter
+            if w == SIMD_W:
+                acc_vec = max(acc_vec, abs(ptr.load[width=SIMD_W](j)))
+            else:
+                acc_tail = max(acc_tail, abs(ptr.load[width=w](j)).reduce_max())
 
         vectorize[_max_kernel, SIMD_W](d)
+        var acc_max = max(acc_tail, acc_vec.reduce_max())
 
         var scale: Float32 = acc_max / 127.0 if acc_max > 0.0 else Float32(1.0)
         scales_ptr[i] = scale

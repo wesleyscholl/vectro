@@ -27,13 +27,13 @@ QualityEvaluator.mean_cosine(a, b, n, d) -> Float32
 QualityEvaluator.mean_absolute_error(a, b, n, d) -> Float32
 """
 
-from algorithm import vectorize
+from algorithm import vectorize, parallelize
 from sys.info import simdwidthof
-from math import sqrt
+from math import sqrt, copysign
 
 alias SIMD_W = simdwidthof[DType.float32]()
 
-alias VECTRO_VERSION: String = "3.4.0"
+alias VECTRO_VERSION: String = "3.6.0"
 
 # Compression ratio constants (used by ProfileRegistry)
 alias RATIO_INT8:   Float32 = 4.0
@@ -356,6 +356,10 @@ fn _int8_compress(
 ):
     """Compress data to INT8 and populate result.
 
+    Uses resize() for memset-style init, unsafe_ptr() extraction for
+    closure capture, SIMD vector accumulator for abs-max (no mid-loop
+    reduce_max()), vectorized quantize pass, and parallelize over rows.
+
     Args:
         data:   Input (n × d) float32 buffer.
         n:      Number of vectors.
@@ -367,25 +371,48 @@ fn _int8_compress(
     result.compression_ratio  = RATIO_INT8
     result.code_bytes_per_vec = d
 
-    for i in range(n):
-        var row = data + i * d
-        var abs_max: Float32 = 0.0
+    result.quantized.resize(n * d, Int8(0))
+    result.scales.resize(n, Float32(0.0))
+
+    var q_ptr      = result.quantized.unsafe_ptr()
+    var scales_ptr = result.scales.unsafe_ptr()
+
+    @parameter
+    fn _process_row(i: Int):
+        var row  = data + i * d
+        var qptr = q_ptr + i * d
+
+        # Pass 1: SIMD vector accumulator for abs-max — single reduce_max at end
+        var acc_vec  = SIMD[DType.float32, SIMD_W](0.0)
+        var acc_tail: Float32 = 0.0
 
         @parameter
-        fn _max[w: Int](j: Int):
-            var v = SIMD[DType.float32, w].load(row + j)
-            abs_max = max(abs_max, v.abs().reduce_max())
+        fn _max_kernel[w: Int](j: Int):
+            @parameter
+            if w == SIMD_W:
+                acc_vec = max(acc_vec, abs(row.load[width=SIMD_W](j)))
+            else:
+                acc_tail = max(acc_tail, abs(row.load[width=w](j)).reduce_max())
 
-        vectorize[_max, SIMD_W](d)
+        vectorize[_max_kernel, SIMD_W](d)
+        var abs_max = max(acc_tail, acc_vec.reduce_max())
 
         var scale = abs_max / Float32(127) if abs_max > 0.0 else Float32(1.0)
-        result.scales.append(scale)
+        scales_ptr[i] = scale
         var inv_scale = Float32(1.0) / scale
 
-        for j in range(d):
-            var v = row[j] * inv_scale
-            v = max(Float32(-127), min(Float32(127), v))
-            result.quantized.append(Int8(Int(v + 0.5 if v >= 0.0 else v - 0.5)))
+        # Pass 2: vectorized quantize + store
+        @parameter
+        fn _quant_kernel[w: Int](j: Int):
+            var raw = row.load[width=w](j) * inv_scale
+            raw = max(raw, SIMD[DType.float32, w](-127.0))
+            raw = min(raw, SIMD[DType.float32, w](127.0))
+            var half = copysign(SIMD[DType.float32, w](0.5), raw)
+            qptr.store(j, (raw + half).cast[DType.int32]().cast[DType.int8]())
+
+        vectorize[_quant_kernel, SIMD_W](d)
+
+    parallelize[_process_row](n)
 
 
 fn _int8_decompress(
@@ -394,6 +421,9 @@ fn _int8_decompress(
 ):
     """Reconstruct float32 vectors from an INT8 CompressResult.
 
+    Uses unsafe_ptr() extraction, vectorized int8→float32 cast+multiply,
+    and parallelize over rows for multi-core throughput.
+
     Args:
         result:  A CompressResult from _int8_compress().
         out_buf: Output buffer (n × d floats).
@@ -401,10 +431,23 @@ fn _int8_decompress(
     var n = result.n_vectors
     var d = result.dims
 
-    for i in range(n):
-        var scale = result.scales[i]
-        for j in range(d):
-            out_buf[i * d + j] = Float32(Int(result.quantized[i * d + j])) * scale
+    var q_ptr      = result.quantized.unsafe_ptr()
+    var scales_ptr = result.scales.unsafe_ptr()
+
+    @parameter
+    fn _recon_row(i: Int):
+        var qp = q_ptr + i * d
+        var op = out_buf + i * d
+        var s  = scales_ptr[i]
+
+        @parameter
+        fn _recon_kernel[w: Int](j: Int):
+            var qi = qp.load[width=w](j)
+            op.store(j, qi.cast[DType.float32]() * SIMD[DType.float32, w](s))
+
+        vectorize[_recon_kernel, SIMD_W](d)
+
+    parallelize[_recon_row](n)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

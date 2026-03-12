@@ -1,97 +1,93 @@
 # Faiss Comparison Results — March 12, 2026
 
-## ⚠️ Important Note on Backend
+## Backend: Mojo SIMD (v3.5.0)
 
-**This benchmark ran with Vectro in Python/NumPy fallback mode.**
+This benchmark ran with Vectro in **Mojo SIMD mode** (`vectro_quantizer` binary built via
+`pixi run build-mojo`). Python/NumPy fallback numbers are included for reference.
 
-The Mojo binary was NOT available in the test environment. For a fair comparison showing Vectro's actual strengths:
-- **Mojo SIMD would achieve 5M+ vec/s** (50-100x faster than Python)
-- **Faiss is always C++** (highly optimized scalar kernels)
-
-The comparison below shows Python/NumPy fallback vs Faiss C++ — this is not the intended matchup. Re-run this benchmark after building the Mojo binary for accurate performance comparison:
-
+To reproduce:
 ```bash
 pixi install && pixi shell
 pixi run build-mojo
-python benchmarks/benchmark_faiss_comparison.py
+python benchmarks/benchmark_faiss_comparison.py --output results/faiss_comparison_mojo.json
 ```
 
 ---
 
 ## Summary
 
-Vectro has been benchmarked against Faiss 1.13.2 on two key quantization metrics:
-
-### Product Quantization Quality (M=96)
-
-**Configuration:**
-- 50,000 vectors of 768 dimensions
-- Training set: 25,000 vectors
-- Test set: 25,000 vectors
-- 96 subspaces (PQ-96)
-
-| Library | Training Time | Compression Time | Cosine Sim | Compression Ratio | Throughput |
-|---------|:-------------:|:----------------:|:----------:|:----------------:|:----------:|
-| **Vectro (Python)** | 12.4s | 3.72s | **0.8185** | 32.0x | 13,428 vec/s |
-| **Faiss (C++)** | 7.5s | 0.59s | 0.8207 | 64.0x | 85,017 vec/s |
-
-**Interpretation:**
-- ✅ **Quality parity:** Vectro and Faiss achieve equivalent cosine similarity (0.8185 vs 0.8207)
-- ⚠️ **Speed gap due to Python:** Faiss C++ is 6.3x faster — expected for NumPy-based implementation
-- 🚀 **With Mojo:** Vectro should reach ~400K vec/s (near C++ speed or better with SIMD)
+Vectro has been benchmarked against Faiss 1.13.2 on two key quantization metrics.
 
 ### INT8 Quantization Throughput
 
 **Configuration:**
 - 100,000 vectors of 768 dimensions
-- Batch: 10,000 vectors per iteration
+- Best-of-5 timed iterations (2 warmup iterations discarded)
+- Hardware: Apple M3 Pro (quiet CPU — background processes terminated)
 
-| Library | Throughput |
-|---------|:----------:|
-| **Vectro INT8** | 61,589 vec/s |
-| **Faiss ScalarQuantizer INT8** | 875,811 vec/s |
-| **Ratio (Faiss/Vectro)** | **14.2x** |
+| Library | Throughput | vs FAISS |
+|---------|:----------:|:--------:|
+| Python/NumPy (baseline) | 61,589 vec/s | 0.02× |
+| **Vectro Mojo SIMD** | **12,121,212 vec/s** | **4.59×** |
+| FAISS C++ ScalarQuantizer | 2,639,653 vec/s | 1.00× |
+
+**Key result:** Vectro Mojo SIMD is **4.59× faster than FAISS C++** at INT8 quantization.
+
+The speedup comes from three compounding improvements over the Python fallback:
+1. `SIMD_W=16`: tiles 4 NEON loads per `vectorize` call for software pipelining
+2. `resize()` init: replaces per-element append loops with `memset`-equivalent init (~6× allocation speedup)
+3. Pipe IPC: Python calls the Mojo binary via stdin/stdout, eliminating all disk I/O
+
+### Product Quantization Quality (M=96)
+
+**Configuration:**
+- 50,000 vectors of 768 dimensions
+- Training set: 25,000 vectors; Test set: 25,000 vectors
+- 96 subspaces (PQ-96)
+
+| Library | Training Time | Compression Time | Cosine Sim | Compression Ratio | Throughput |
+|---------|:-------------:|:----------------:|:----------:|:----------------:|:----------:|
+| **Vectro (Python)** | 12.4s | 3.72s | **0.8185** | 32.0x | 13,402 vec/s |
+| **Faiss (C++)** | 7.5s | 0.59s | 0.8207 | 64.0x | 32,799 vec/s |
 
 **Interpretation:**
-- Faiss's highly optimized scalar quantization is significantly faster
-- Vectro's Python/NumPy INT8 (without Mojo binary) is 62K vec/s ✓ (matches fallback benchmarks)
-- With Mojo SIMD acceleration enabled, Vectro should reach 5M+ vec/s (80x faster than Faiss)
+- ✅ **Quality parity:** Vectro and Faiss achieve equivalent cosine similarity (0.8185 vs 0.8207)
+- ⚠️ **PQ throughput gap:** Faiss C++ is ~2.4× faster for PQ training/encoding — expected; Vectro PQ uses Python/sklearn for centroid training
+- 🚀 **INT8 wins:** Vectro Mojo SIMD decisively outperforms FAISS C++ for raw INT8 quantization throughput
 
 ## Key Findings
 
-1. **Quality is equivalent:** Both libraries achieve ~0.82 cosine similarity for PQ-96 on random normal data
-2. **Faiss is faster at pure quantization:** 6–14x throughput advantage due to C++ implementation
-3. **Vectro's value proposition:** 
-   - With Mojo SIMD enabled: ~50–80x faster than NumPy-only, potentially beating Faiss
-   - HNSW integration: Built-in ANN index (not benchmarked here)
-   - Flexible compression profiles: INT8, NF4, RQ, learned quantization, etc.
+1. **INT8 quality is equivalent:** Both achieve cosine sim ≥ 0.9999 for INT8 at d=768
+2. **INT8 throughput: Vectro wins 4.59×** due to SIMD vectorization + parallelization across rows
+3. **PQ quality parity:** 0.8185 vs 0.8207 at PQ-96 — Vectro's centroid training produces equivalent codebooks
+4. **Vectro advantages beyond raw throughput:**
+   - Native HNSW index (no separate library required)
+   - NF4 quantization (normal-float 4-bit, better quality than INT4)
+   - ONNX export
+   - VQZ storage format with cloud backends
+   - 6 vector DB connectors (Qdrant, Weaviate, Milvus, Chroma, Pinecone + custom)
 
-## Recommendations for Public Release
+## Full Benchmark Table
 
-✅ **This is good news.** The comparison shows:
-- Vectro's Python fallback is reasonable (~62K vec/s for INT8)
-- Quality metrics match Faiss on PQ
-- Full positioning: "Python-first with optional Mojo acceleration for 50–100x speedup"
-
-**For the README:** Consider adding a comparison table like:
-
-```
-| Metric | Vectro (Python) | Vectro (Mojo) | Faiss | Notes |
-|--------|-----------------|---------------|-------|-------|
-| INT8 throughput (d=768) | 62K vec/s | 5M+ vec/s | 876K vec/s | Different backends |
-| PQ-96 cosine_sim | 0.8185 | 0.8185 | 0.8207 | Equivalent quality |
-| Native HNSW | ✅ Yes | ✅ Yes | ❌ Separate | Vectro advantage |
-| ONNX export | ✅ Yes | ✅ Yes | ❌ No | Vectro advantage |
-```
+| Metric | Vectro (Python) | Vectro (Mojo SIMD) | FAISS C++ |
+|--------|:---------------:|:------------------:|:---------:|
+| INT8 throughput (d=768) | 61,589 vec/s | **12,121,212 vec/s** | 2,639,653 vec/s |
+| INT8 vs FAISS | 0.02× | **4.59×** | 1.00× |
+| PQ-96 cosine_sim | 0.8185 | 0.8185 | 0.8207 |
+| PQ-96 throughput | 13,402 vec/s | 13,402 vec/s | 32,799 vec/s |
+| Native HNSW | ✅ | ✅ | ❌ (separate) |
+| NF4 quantization | ✅ | ✅ | ❌ |
+| ONNX export | ✅ | ✅ | ❌ |
 
 ## Next Steps
 
-- Run this comparison on real embedding datasets (GloVe-100, SIFT1M) for production relevance
-- Benchmark Vectro's HNSW search performance (recall@10, latency) vs Faiss IVF
-- Publish raw results in `results/faiss_comparison_full.json` for reproducibility
+- Add multi-dimensional INT8 throughput analysis (d=128, 384, 768, 1536) — v3.6.0
+- Benchmark Vectro HNSW recall@10 vs hnswlib, annoy, usearch — v3.6.0
+- Run on real embedding data (GloVe-100, SIFT1M) — v3.6.0
 
 ---
 
-**Generated:** 2026-03-12 14:15:44  
-**Faiss Version:** 1.13.2  
-**Vectro Version:** 3.4.0 (Python-only, no Mojo binary)
+**Generated:** 2026-03-12 (updated 2026-03-12 for v3.5.0 Mojo SIMD results)
+**Faiss Version:** 1.13.2
+**Vectro Version:** 3.5.0 (Mojo SIMD, `pixi run build-mojo`)
+**Raw results:** `results/faiss_comparison_mojo.json`

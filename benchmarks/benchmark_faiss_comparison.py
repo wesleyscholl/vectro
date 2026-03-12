@@ -274,6 +274,102 @@ def benchmark_int8_quantization() -> Dict[str, Any]:
     return results
 
 
+def benchmark_int8_multidim() -> dict:
+    """
+    Compare INT8 throughput across multiple dimensions: d=128, 384, 768, 1536.
+
+    Runs the Mojo binary (preferred) or Python fallback at n=50,000 for each
+    dimension, and the Faiss C++ ScalarQuantizer at the same dimensions.
+
+    Returns
+    -------
+    dict
+        ``{"d=128": {...}, "d=384": {...}, "d=768": {...}, "d=1536": {...}}``
+        where each sub-dict contains vectro_throughput, faiss_throughput,
+        and vectro_vs_faiss_ratio.
+    """
+    import subprocess
+
+    print(f"\n▶ INT8 Multi-Dimensional Throughput (n=50,000)")
+
+    DIMS = [128, 384, 768, 1536]
+    N = 50_000
+    mojo_available = check_mojo_binary()
+    faiss_available = attempt_faiss_import()
+
+    results = {}
+
+    for d in DIMS:
+        print(f"  d={d:<5}", end="", flush=True)
+        entry: Dict[str, Any] = {"n": N, "d": d}
+
+        # ── Vectro throughput ──────────────────────────────────────────────
+        vectro_throughput: int = 0
+        if mojo_available:
+            try:
+                result = subprocess.run(
+                    ["./vectro_quantizer", "benchmark", str(N), str(d)],
+                    capture_output=True,
+                    timeout=120,
+                    cwd=str(Path(__file__).parent.parent),
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.decode().splitlines():
+                        if "INT8 quantize" in line and "vec/s" in line:
+                            vectro_throughput = int(line.split(":")[1].strip().split()[0])
+                            break
+            except Exception:
+                pass
+
+        if vectro_throughput == 0:
+            # Python/NumPy fallback
+            from python import compress_vectors  # type: ignore[import]
+            vectors_local = np.random.normal(size=(N, d)).astype(np.float32)
+            for _ in range(2):   # warmup
+                compress_vectors(vectors_local[:500], profile="int8")
+            times = []
+            for _ in range(3):
+                t0 = time.time()
+                compress_vectors(vectors_local, profile="int8")
+                times.append(time.time() - t0)
+            vectro_throughput = int(N / min(times))
+            entry["vectro_backend"] = "Python/NumPy"
+        else:
+            entry["vectro_backend"] = "Mojo SIMD"
+
+        entry["vectro_throughput_vec_per_sec"] = vectro_throughput
+        print(f"  Vectro {vectro_throughput:>12,} vec/s  ({entry['vectro_backend']})", end="")
+
+        # ── Faiss throughput ───────────────────────────────────────────────
+        if faiss_available:
+            try:
+                import faiss  # type: ignore[import]
+
+                vectors_local = np.random.normal(size=(N, d)).astype(np.float32)
+                index = faiss.IndexScalarQuantizer(d, faiss.ScalarQuantizer.QT_8bit)
+                index.train(vectors_local[:min(10_000, N)])
+                times = []
+                for _ in range(3):
+                    t0 = time.time()
+                    index.add(vectors_local)
+                    times.append(time.time() - t0)
+                    index.reset()
+                faiss_throughput = int(N / min(times))
+                entry["faiss_throughput_vec_per_sec"] = faiss_throughput
+                ratio = vectro_throughput / max(faiss_throughput, 1)
+                entry["vectro_vs_faiss_ratio"] = round(ratio, 2)
+                print(f"   FAISS {faiss_throughput:>12,} vec/s   ratio {ratio:.2f}x")
+            except Exception as exc:
+                print(f"   FAISS error: {str(exc)[:60]}")
+        else:
+            print("   FAISS not installed")
+
+        key = f"d={d}"
+        results[key] = entry
+
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Benchmark Vectro against Faiss"
@@ -309,8 +405,9 @@ def main():
 
     # Run benchmarks; int8 result carries the authoritative backend label
     # (may be "Python/NumPy" if the Mojo binary errored at runtime)
-    pq_result   = benchmark_pq_compression(vectors)
-    int8_result = benchmark_int8_quantization()
+    pq_result       = benchmark_pq_compression(vectors)
+    int8_result     = benchmark_int8_quantization()
+    multidim_result = benchmark_int8_multidim()
     actual_backend = int8_result.get("vectro_backend", "Python/NumPy")
 
     all_results = {
@@ -321,6 +418,7 @@ def main():
         "faiss_backend": "C++",
         "pq_comparison": pq_result,
         "int8_comparison": int8_result,
+        "int8_multidim": multidim_result,
         "notes": {
             "vectro_info": (
                 "Using compiled Mojo SIMD binary"

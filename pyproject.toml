@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vectro"
-version = "3.5.0"
+version = "3.6.0"
 description = "Mojo-first ultra-high-performance LLM embedding compressor with vector DB integrations, migration tooling, streaming decompression, and a CLI (v2.0: 158 tests, 11 modules)"
 readme = "README.md"
 license = {text = "MIT"}
@@ -82,6 +82,13 @@ bench = [
     "rich>=13.0",
     "tqdm>=4.0",
 ]
+bench-ann = [
+    "hnswlib>=0.8.0",
+    "annoy>=1.17.3",
+    "usearch>=2.9.0",
+    "requests>=2.31",
+    "tqdm>=4.0",
+]
 mojo = [
     # Mojo SDK is required for building from source with Mojo backend
     # Install from: https://www.modular.com/mojo
@@ -111,6 +118,10 @@ all = [
     "tqdm>=4.0",
     "onnx>=1.14",
     "onnxruntime>=1.17",
+    "hnswlib>=0.8.0",
+    "annoy>=1.17.3",
+    "usearch>=2.9.0",
+    "requests>=2.31",
 ]
 
 [project.urls]

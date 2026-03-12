@@ -204,6 +204,12 @@ fn compute_kurtosis(
 ) -> Float32:
     """Mean per-dimension excess kurtosis (Pearson: μ₄/σ⁴ − 3).
 
+    Row-major access: outer loop over vectors (sequential reads per row),
+    vectorized inner loop over dimensions using per-dimension accumulator
+    arrays sized d×4 bytes each (fits in L2 cache).  Eliminates the
+    column-stride cache misses of the previous column-major scan where
+    accesses to data[i*d+j] strided by d*4 bytes per step.
+
     Args:
         data: Row-major (n × d) float32 buffer.
         n:    Number of vectors.
@@ -211,31 +217,53 @@ fn compute_kurtosis(
     Returns:
         Scalar mean excess kurtosis over all d dimensions.
     """
-    var total_kurtosis: Float32 = 0.0
     var inv_n = Float32(1.0) / Float32(n)
 
+    # Per-dimension accumulators — 4 arrays × d × 4 bytes; fits in L2.
+    var sum1  = UnsafePointer[Float32].alloc(d)
+    var meanv = UnsafePointer[Float32].alloc(d)
+    var sum2  = UnsafePointer[Float32].alloc(d)
+    var sum4  = UnsafePointer[Float32].alloc(d)
     for j in range(d):
-        # Single pass: mean
-        var mean: Float32 = 0.0
-        for i in range(n):
-            mean += data[i * d + j]
-        mean *= inv_n
+        sum1[j] = 0.0; meanv[j] = 0.0; sum2[j] = 0.0; sum4[j] = 0.0
 
-        # Second pass: σ² and μ₄
-        var var_: Float32 = 0.0
-        var m4:   Float32 = 0.0
-        for i in range(n):
-            var z = data[i * d + j] - mean
+    # Pass 1: row-major mean accumulation — sequential row reads.
+    for i in range(n):
+        var row = data + i * d
+
+        @parameter
+        fn _acc_sum1[w: Int](j: Int):
+            sum1.store(j, sum1.load[width=w](j) + row.load[width=w](j))
+
+        vectorize[_acc_sum1, SIMD_W](d)
+
+    # Mean per dimension.
+    for j in range(d):
+        meanv[j] = sum1[j] * inv_n
+
+    # Pass 2: row-major variance + 4th-moment accumulation — sequential row reads.
+    for i in range(n):
+        var row = data + i * d
+
+        @parameter
+        fn _acc_moments[w: Int](j: Int):
+            var z  = row.load[width=w](j) - meanv.load[width=w](j)
             var z2 = z * z
-            var_ += z2
-            m4   += z2 * z2
+            sum2.store(j, sum2.load[width=w](j) + z2)
+            sum4.store(j, sum4.load[width=w](j) + z2 * z2)
 
-        var_ *= inv_n
-        m4   *= inv_n
+        vectorize[_acc_moments, SIMD_W](d)
 
+    # Final scalar reduce: mean excess kurtosis over all dimensions.
+    var total_kurtosis: Float32 = 0.0
+    for j in range(d):
+        var var_   = sum2[j] * inv_n
+        var m4     = sum4[j] * inv_n
         var sigma4 = var_ * var_
         if sigma4 > 1e-10:
             total_kurtosis += m4 / sigma4 - 3.0
+
+    sum1.free(); meanv.free(); sum2.free(); sum4.free()
 
     return total_kurtosis / Float32(d)
 
