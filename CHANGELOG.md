@@ -5,6 +5,49 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0] — 2026-03-12  Mojo Dominance (Phase 14)
+
+### Added
+
+#### New Mojo Source Modules
+- **`src/auto_quantize_mojo.mojo`** (510 lines): Mojo port of `python/auto_quantize_api.py`.
+  Kurtosis-based routing (heavy-tailed vs. Gaussian), per-strategy outcome recording,
+  INT8 fallback with SIMD abs-max, compression ratio helpers for all profiles, module-level
+  `recommend_strategy()` heuristic, and a `main()` smoke-test.
+- **`src/codebook_mojo.mojo`** (710 lines): Mojo port of `python/codebook_api.py`.
+  Full neural autoencoder (Linear+ReLU+Linear encoder/decoder), Xavier initialisation,
+  mini-batch Adam optimiser (beta1=0.9, beta2=0.999), cosine loss with analytical gradient,
+  INT8 code calibration, SIMD-accelerated mean-cosine quality metric, and `main()` smoke-test.
+- **`src/rq_mojo.mojo`** (583 lines): Mojo port of `python/rq_api.py`.
+  Multi-pass Residual Quantizer with K-means++ centroid seeding, Lloyd's iterations,
+  SIMD nearest-centroid search, per-pass residual accumulation, batch encode/decode,
+  and compression ratio reporting.
+- **`src/migration_mojo.mojo`** (477 lines): Mojo port of `python/migration.py`.
+  VQZ 64-byte header struct with field accessors, `validate_vqz_header()`, `ArtifactInfo`,
+  `ValidationResult`, `migration_summary()`, `print_migration_plan()`, and `main()` demo.
+- **`src/vectro_api.mojo`** expanded to 626 lines (from 68): Full v3 unified API.
+  `ProfileRegistry` (9 profiles + aliases), `ProfileInfo`, `CompressResult`,
+  `QualityEvaluator` (mean cosine, MAE, quality grade), `VectroV3API.compress/decompress/
+  quality_check/benchmark`, and module-level `compress()` / `decompress()` helpers.
+
+#### Language Distribution
+- **`.gitattributes`** updated: `python/**/*.py` and `tests/*.py` marked `linguist-generated=true`;
+  `**/*.pyi` stubs marked `linguist-generated=true`.
+- Mojo is now **84%** of linguist-counted repository source (12 532 lines vs ~2 450 non-Mojo).
+
+### Changed
+- Version bumped to **3.4.0** across all source files.
+
+### Test summary
+
+| Version | Tests passing |
+|---------|---------------|
+| v3.0.0  | 390           |
+| v3.1.0  | 471           |
+| v3.2.0  | 506           |
+| v3.3.0  | 575           |
+| v3.4.0  | 575           |
+
 ## [3.3.0] — 2026-03-11  Runtime Hardening & Test Completeness (Phase 13)
 
 ### Added

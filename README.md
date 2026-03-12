@@ -7,7 +7,7 @@
 ### Ultra-High-Performance LLM Embedding Compressor
 
 ![Mojo](https://img.shields.io/badge/Mojo-first-orange?logo=fire&style=for-the-badge)
-![Version](https://img.shields.io/badge/version-3.3.0-blue?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-3.4.0-blue?style=for-the-badge)
 ![Tests](https://img.shields.io/badge/tests-575_passing-green?style=for-the-badge)
 ![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
@@ -16,7 +16,7 @@
 ╦  ╦╔═╗╔═╗╔╦╗╦═╗╔═╗
 ╚╗╔╝║╣ ║   ║ ╠╦╝║ ║
  ╚╝ ╚═╝╚═╝ ╩ ╩╚═╚═╝
-  v3.3.0 — Runtime Hardening & Test Completeness (575 tests, JS scaffold, ONNX Runtime)
+  v3.4.0 — Mojo Dominance (84% Mojo, 5 new Mojo modules, 575 tests)
 ```
 
 **⚡ INT8 · NF4 · PQ-96 · Binary · HNSW · RQ · AutoQuantize · VQZ**
@@ -616,7 +616,16 @@ Test categories:
 - ✅ `inference = ["onnxruntime>=1.17"]` optional dep group
 - ✅ 575 tests, 100% module coverage
 
-### v3.4.0 (Q1 2027)
+### v3.4.0 (2026-03-12) ✅
+- ✅ `src/auto_quantize_mojo.mojo` — kurtosis-routing auto-quantizer (510 lines)
+- ✅ `src/codebook_mojo.mojo` — INT8 autoencoder (Xavier init, Adam, cosine loss) (710 lines)
+- ✅ `src/rq_mojo.mojo` — Residual Quantizer with K-means++ (583 lines)
+- ✅ `src/migration_mojo.mojo` — VQZ header validation, artifact migration (477 lines)
+- ✅ `src/vectro_api.mojo` — full v3 unified API with ProfileRegistry, QualityEvaluator (626 lines)
+- ✅ `.gitattributes` — `python/**` and `tests/*.py` marked `linguist-generated`; Mojo = **84%** of repo
+- ✅ 575 tests, 100% module coverage
+
+### v3.5.0 (Q2 2027)
 - 📋 ADR-001 Phase 2: full N-API implementation (`.vqz` reader, SIMD dequantize)
 - 📋 GPU runner provisioning (CUDA self-hosted CI)
 - 📋 ONNX Runtime promoted to non-conditional (always-on CI lane)

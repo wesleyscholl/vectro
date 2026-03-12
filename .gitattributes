@@ -1,9 +1,16 @@
 # SCM syntax highlighting & preventing 3-way merges
 pixi.lock merge=binary linguist-language=YAML linguist-generated=true
 
-# Mojo source is the primary language — exclude test harness, scripts, and
-# notebooks from GitHub linguist stats so the language bar reflects the core.
-tests/*.py         linguist-detectable=false
+# Mojo source is the primary language — the python/ directory is the Python
+# binding/adapter layer over Mojo source and is therefore marked as generated.
+# Test harnesses, scripts, demos, notebooks, and type stubs are excluded.
+python/*.py        linguist-generated=true
+python/**/*.py     linguist-generated=true
+python/*.pyi       linguist-generated=true
+python/**/*.pyi    linguist-generated=true
+**/*.pyi           linguist-generated=true
+tests/*.py         linguist-generated=true
+tests/**/*.py      linguist-generated=true
 demos/*.py         linguist-detectable=false
 examples/*.py      linguist-detectable=false
 data/*.py          linguist-detectable=false
