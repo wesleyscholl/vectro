@@ -381,6 +381,187 @@ fn benchmark_search_performance(
     Ok(benchmark)
 }
 
+// ─────────────────────── Phase-16 algorithm bindings ──────────────────────
+
+use vectro_lib::quant::{int8, nf4, binary, pq};
+use vectro_lib::index::hnsw::HnswIndex;
+
+/// INT8 symmetric abs-max quantizer (Python binding).
+#[pyclass]
+struct PyInt8Encoder {
+    vectors: Vec<int8::Int8Vector>,
+}
+
+#[pymethods]
+impl PyInt8Encoder {
+    #[new]
+    fn new() -> Self {
+        Self { vectors: Vec::new() }
+    }
+
+    fn encode(&mut self, vectors: Vec<Vec<f32>>) {
+        self.vectors = int8::encode_batch(&vectors);
+    }
+
+    fn search(&self, query: Vec<f32>, top_k: usize) -> Vec<(usize, f32)> {
+        let mut scored: Vec<(usize, f32)> = self
+            .vectors
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (i, int8::cosine_int8(&query, v)))
+            .collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        scored.truncate(top_k);
+        scored
+    }
+
+    fn __repr__(&self) -> String {
+        format!("PyInt8Encoder(n_vectors={})", self.vectors.len())
+    }
+}
+
+/// NF4 4-bit normal-float quantizer (Python binding).
+#[pyclass]
+struct PyNf4Encoder {
+    vectors: Vec<nf4::Nf4Vector>,
+}
+
+#[pymethods]
+impl PyNf4Encoder {
+    #[new]
+    fn new() -> Self {
+        Self { vectors: Vec::new() }
+    }
+
+    fn encode(&mut self, vectors: Vec<Vec<f32>>) {
+        self.vectors = nf4::encode_batch(&vectors);
+    }
+
+    fn decode(&self) -> Vec<Vec<f32>> {
+        nf4::decode_batch(&self.vectors)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("PyNf4Encoder(n_vectors={})", self.vectors.len())
+    }
+}
+
+/// Binary 1-bit sign quantizer with Hamming search (Python binding).
+#[pyclass]
+struct PyBinaryEncoder {
+    vectors: Vec<binary::BinaryVector>,
+}
+
+#[pymethods]
+impl PyBinaryEncoder {
+    #[new]
+    fn new() -> Self {
+        Self { vectors: Vec::new() }
+    }
+
+    fn encode(&mut self, vectors: Vec<Vec<f32>>) {
+        self.vectors = binary::encode_batch(&vectors, true);
+    }
+
+    fn search(&self, query: Vec<f32>, top_k: usize) -> Vec<(usize, u32)> {
+        binary::binary_search(&query, &self.vectors, top_k, true)
+    }
+
+    fn __repr__(&self) -> String {
+        format!("PyBinaryEncoder(n_vectors={})", self.vectors.len())
+    }
+}
+
+/// Product Quantization codebook + ADC search (Python binding).
+#[pyclass]
+struct PyPQCodebook {
+    codebook: Option<pq::PQCodebook>,
+    codes: Vec<Vec<u8>>,
+}
+
+#[pymethods]
+impl PyPQCodebook {
+    #[new]
+    fn new() -> Self {
+        Self { codebook: None, codes: Vec::new() }
+    }
+
+    fn train(
+        &mut self,
+        training_data: Vec<Vec<f32>>,
+        n_subspaces: usize,
+        n_centroids: usize,
+        max_iter: usize,
+        seed: u64,
+    ) -> PyResult<()> {
+        let cb = pq::train_pq_codebook(&training_data, n_subspaces, n_centroids, max_iter, seed)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        self.codebook = Some(cb);
+        Ok(())
+    }
+
+    fn encode(&mut self, vectors: Vec<Vec<f32>>) -> PyResult<()> {
+        let cb = self
+            .codebook
+            .as_ref()
+            .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("train() must be called first"))?;
+        self.codes = pq::pq_encode(&vectors, cb);
+        Ok(())
+    }
+
+    fn search(&self, query: Vec<f32>, top_k: usize) -> PyResult<Vec<(usize, f32)>> {
+        let cb = self
+            .codebook
+            .as_ref()
+            .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("train() must be called first"))?;
+        Ok(pq::pq_search(&query, &self.codes, cb, top_k))
+    }
+
+    fn __repr__(&self) -> String {
+        match &self.codebook {
+            None => "PyPQCodebook(untrained)".to_string(),
+            Some(cb) => format!(
+                "PyPQCodebook(M={}, K={}, sub_dim={}, n_encoded={})",
+                cb.n_subspaces, cb.n_centroids, cb.sub_dim, self.codes.len()
+            ),
+        }
+    }
+}
+
+/// HNSW approximate nearest-neighbour index (Python binding).
+#[pyclass]
+struct PyHnswIndex {
+    inner: HnswIndex,
+}
+
+#[pymethods]
+impl PyHnswIndex {
+    #[new]
+    fn new(m: usize, ef_construction: usize) -> Self {
+        Self { inner: HnswIndex::new(m, ef_construction) }
+    }
+
+    fn add(&mut self, vector: Vec<f32>) {
+        self.inner.add(&vector);
+    }
+
+    fn add_batch(&mut self, vectors: Vec<Vec<f32>>) {
+        self.inner.add_batch(&vectors);
+    }
+
+    fn search(&self, query: Vec<f32>, k: usize, ef: usize) -> Vec<(usize, f32)> {
+        self.inner.search(&query, k, ef)
+    }
+
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("PyHnswIndex(n_vectors={})", self.inner.len())
+    }
+}
+
 /// Main Python module
 #[pymodule]
 fn vectro_py(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
@@ -388,14 +569,19 @@ fn vectro_py(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyEmbeddingDataset>()?;
     m.add_class::<PySearchIndex>()?;
     m.add_class::<PyQuantizedIndex>()?;
+    m.add_class::<PyInt8Encoder>()?;
+    m.add_class::<PyNf4Encoder>()?;
+    m.add_class::<PyBinaryEncoder>()?;
+    m.add_class::<PyPQCodebook>()?;
+    m.add_class::<PyHnswIndex>()?;
     m.add_function(wrap_pyfunction!(compress_embeddings, m)?)?;
     m.add_function(wrap_pyfunction!(analyze_compression_quality, m)?)?;
     m.add_function(wrap_pyfunction!(benchmark_search_performance, m)?)?;
     
     // Add version info
-    m.add("__version__", "1.1.0")?;
+    m.add("__version__", "4.0.0")?;
     m.add("__author__", "Wesley Scholl")?;
-    m.add("__description__", "Python bindings for Vectro+ high-performance vector compression and search")?;
+    m.add("__description__", "Python bindings for Vectro high-performance vector compression and search")?;
     
     Ok(())
 }

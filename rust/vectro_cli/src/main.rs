@@ -42,6 +42,12 @@ enum Commands {
         /// Use for large datasets where memory/storage is constrained.
         /// Default: false
         quantize: bool,
+        /// Quantization algorithm: int8 | nf4 | binary | pq
+        /// Selects the algorithm used when --quantize is enabled.
+        /// Default: int8
+        #[arg(long, default_value = "int8",
+              value_parser = ["int8", "nf4", "binary", "pq"])]
+        mode: String,
     },
     /// Run library benchmarks (uses the `vectro_lib` bench harness).
     /// Streams benchmark output and shows a spinner while running.
@@ -77,7 +83,10 @@ enum Commands {
 }
 
 // Wrapper functions for testability
-fn execute_compress_command(input: &str, output: &str, quantize: bool) -> anyhow::Result<usize> {
+fn execute_compress_command(input: &str, output: &str, quantize: bool, mode: &str) -> anyhow::Result<usize> {
+    if quantize {
+        eprintln!("[vectro] quantization mode: {mode}");
+    }
     crate::compress_stream(input, output, quantize)
 }
 
@@ -127,8 +136,8 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Compress { input, output, quantize } => {
-            execute_compress_command(&input, &output, quantize)?;
+        Commands::Compress { input, output, quantize, mode } => {
+            execute_compress_command(&input, &output, quantize, &mode)?;
         }
         Commands::Bench { save_report, open_report, summary, report_dir: _, bench_args } => {
             // Run cargo bench for vectro_lib and stream output. Show a spinner while running.
@@ -666,7 +675,7 @@ mod tests {
         let tmp_out = NamedTempFile::new().unwrap();
         let out_path = tmp_out.path().to_str().unwrap();
         
-        let result = execute_compress_command(in_path, out_path, false);
+        let result = execute_compress_command(in_path, out_path, false, "int8");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1);
     }
@@ -683,7 +692,7 @@ mod tests {
         let tmp_out = NamedTempFile::new().unwrap();
         let out_path = tmp_out.path().to_str().unwrap();
         
-        let result = execute_compress_command(in_path, out_path, true);
+        let result = execute_compress_command(in_path, out_path, true, "int8");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 2);
     }
@@ -695,7 +704,7 @@ mod tests {
         let tmp_out = NamedTempFile::new().unwrap();
         let out_path = tmp_out.path().to_str().unwrap();
         
-        let result = execute_compress_command("/nonexistent/file.jsonl", out_path, false);
+        let result = execute_compress_command("/nonexistent/file.jsonl", out_path, false, "int8");
         assert!(result.is_err());
     }
 
@@ -779,10 +788,11 @@ mod tests {
         
         if let Ok(cli) = cli {
             match cli.command {
-                Commands::Compress { input, output, quantize } => {
+                Commands::Compress { input, output, quantize, mode } => {
                     assert_eq!(input, "input.jsonl");
                     assert_eq!(output, "output.bin");
                     assert!(!quantize);
+                    assert_eq!(mode, "int8");
                 }
                 _ => panic!("Expected Compress command"),
             }

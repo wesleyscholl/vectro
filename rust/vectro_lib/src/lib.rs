@@ -1,3 +1,6 @@
+pub mod index;
+pub mod quant;
+
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write, Seek, SeekFrom};

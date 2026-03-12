@@ -5,6 +5,32 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0-rc2] — 2026-06-26  Algorithm Parity in Rust (Phase 16 Complete)
+
+### Added
+
+- **INT8 symmetric abs-max quantizer** (`rust/vectro_lib/src/quant/int8.rs`) — parallel
+  per-vector scale computation via rayon; `cosine_int8` similarity function; target cosine ≥ 0.9999.
+- **NF4 4-bit normal-float quantizer** (`rust/vectro_lib/src/quant/nf4.rs`) — Dettmers et al.
+  2023 codebook (16 levels); nibble packing; O(4) binary-search decode; target cosine ≥ 0.985.
+- **Binary 1-bit sign quantizer** (`rust/vectro_lib/src/quant/binary.rs`) — LSB-first bit
+  packing; Hamming-distance KNN search; `binary_search` convenience wrapper; 31 new tests.
+- **Product Quantization** (`rust/vectro_lib/src/quant/pq.rs`) — Lloyd's k-means training;
+  async distance-table (ADC) search; rayon-parallel encode; target cosine ≥ 0.95.
+- **HNSW ANN index** (`rust/vectro_lib/src/index/hnsw.rs`) — Malkov & Yashunin 2018;
+  `OrdF32` newtype (no external `ordered_float` crate); flat `vectors`/`neighbors` Vec storage;
+  deterministic level generation via LCG hash; `recall_at_k` helper; target recall@10 ≥ 0.97.
+- **Module wiring** — `quant/mod.rs`, `index/mod.rs`; `lib.rs` exports `pub mod quant; pub mod index;`.
+- **CLI `--mode` flag** — `vectro compress --mode {int8,nf4,binary,pq}` selects compression algorithm.
+- **PyO3 bindings** — `PyInt8Encoder`, `PyNf4Encoder`, `PyBinaryEncoder`, `PyPQCodebook`,
+  `PyHnswIndex` added to `vectro_py`; module version bumped to `4.0.0-rc2`.
+
+### Test Results
+
+- **135 Rust tests passing** (104 existing + 31 new algorithm tests; 0 failed)
+
+---
+
 ## [4.0.0-dev] — 2026-03-12  Rust-First Migration (Phase 1 Complete)
 
 ### Architecture

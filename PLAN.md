@@ -1,7 +1,7 @@
 # Vectro — Plan
 
-> Last updated: 2026-03-12
-> Current version: **3.6.0** — tagged `v3.6.0`, pushed to origin
+> Last updated: 2026-06-26
+> Current version: **4.0.0-rc2** — Phase 16 algorithm parity complete
 
 ---
 
@@ -462,7 +462,7 @@ vectro/
 
 ---
 
-## Phase 16 — v4.0.0-rc2: Algorithm Parity in Rust  🔜
+## Phase 16 — v4.0.0-rc2: Algorithm Parity in Rust  ✅ COMPLETE
 
 Implement every quantization and ANN algorithm currently backed by Python/Mojo as a
 first-class Rust module in `rust/vectro_lib/`. When done, Python modules can dispatch
@@ -472,13 +472,13 @@ to Rust via PyO3 without the `pixi`/Mojo toolchain.
 
 | # | Algorithm | Source reference | Rust target | Priority | Effort |
 |---|-----------|-----------------|-------------|----------|--------|
-| 1 | **INT8 symmetric abs-max + SIMD** | `src/quantizer_simd.mojo` | `rust/vectro_lib/src/quant/int8.rs` | ⭐⭐⭐⭐ | 1 week |
-| 2 | **NF4 normal-float 4-bit** | `python/nf4_api.py` | `rust/vectro_lib/src/quant/nf4.rs` | ⭐⭐⭐⭐ | 1-2 weeks |
-| 3 | **Binary 1-bit (sign)** | `python/binary_api.py` | `rust/vectro_lib/src/quant/binary.rs` | ⭐⭐⭐ | 3-5 days |
-| 4 | **PQ-96 training + inference** | `python/pq_api.py` | `rust/vectro_lib/src/quant/pq.rs` | ⭐⭐⭐⭐ | 3 weeks |
-| 5 | **HNSW ANN index** | `python/hnsw_api.py` | `rust/vectro_lib/src/index/hnsw.rs` | ⭐⭐⭐⭐ | 3-4 weeks |
-| 6 | **AutoQuantize** | `python/auto_quantize_api.py` | `rust/vectro_lib/src/quant/auto.rs` | ⭐⭐ | 1 week |
-| 7 | **Residual PQ (3-pass)** | `python/rq_api.py` | `rust/vectro_lib/src/quant/rq.rs` | ⭐⭐ | 2 weeks |
+| 1 | **INT8 symmetric abs-max + SIMD** | `src/quantizer_simd.mojo` | `rust/vectro_lib/src/quant/int8.rs` | ⭐⭐⭐⭐ | ✅ done |
+| 2 | **NF4 normal-float 4-bit** | `python/nf4_api.py` | `rust/vectro_lib/src/quant/nf4.rs` | ⭐⭐⭐⭐ | ✅ done |
+| 3 | **Binary 1-bit (sign)** | `python/binary_api.py` | `rust/vectro_lib/src/quant/binary.rs` | ⭐⭐⭐ | ✅ done |
+| 4 | **PQ-96 training + inference** | `python/pq_api.py` | `rust/vectro_lib/src/quant/pq.rs` | ⭐⭐⭐⭐ | ✅ done |
+| 5 | **HNSW ANN index** | `python/hnsw_api.py` | `rust/vectro_lib/src/index/hnsw.rs` | ⭐⭐⭐⭐ | ✅ done |
+| 6 | **AutoQuantize** | `python/auto_quantize_api.py` | `rust/vectro_lib/src/quant/auto.rs` | ⭐⭐ | 🔜 Phase 17+ |
+| 7 | **Residual PQ (3-pass)** | `python/rq_api.py` | `rust/vectro_lib/src/quant/rq.rs` | ⭐⭐ | 🔜 Phase 17+ |
 
 **Acceptance criteria (per algorithm):**
 - Cosine similarity threshold parity vs Python reference: INT8 ≥ 0.9999, NF4 ≥ 0.985, Binary recall@10 ≥ 0.95, PQ ≥ 0.95.
@@ -488,6 +488,8 @@ to Rust via PyO3 without the `pixi`/Mojo toolchain.
 ---
 
 ## Phase 17 — v4.0.0-rc3: Performance Recovery  🔜
+
+> Phase 16 delivered: `quant/{int8,nf4,binary,pq}.rs` + `index/hnsw.rs` + CLI `--mode` flag + PyO3 bindings. 135 Rust tests passing.
 
 Rust hot paths must match or exceed the Mojo SIMD baseline on the canonical benchmark
 set before production Mojo dispatch is removed.
