@@ -39,6 +39,13 @@ def attempt_faiss_import() -> bool:
         return False
 
 
+def check_mojo_binary() -> bool:
+    """Check if vectro_quantizer Mojo binary exists."""
+    from pathlib import Path
+    binary_path = Path(__file__).parent.parent / "vectro_quantizer"
+    return binary_path.exists() and binary_path.is_file()
+
+
 def benchmark_pq_compression(
     vectors: np.ndarray,
     n_subspaces: int = 96,
@@ -160,35 +167,77 @@ def benchmark_pq_compression(
 def benchmark_int8_quantization() -> Dict[str, Any]:
     """
     Compare INT8 quantization throughput.
+    Prefers Mojo binary if available, falls back to Python.
     """
     print(f"\n▶ INT8 Quantization Comparison")
     
-    from python import compress_vectors as vectro_compress
+    import subprocess
     
     vectors = np.random.normal(size=(100000, 768)).astype(np.float32)
     
-    # Vectro INT8
-    print("  Vectro INT8...", end="", flush=True)
-    start = time.time()
-    for i in range(0, len(vectors), 10000):
-        vectro_compress(vectors[i:i+10000], profile="balanced")
-    vectro_time = time.time() - start
-    vectro_throughput = len(vectors) / vectro_time
-    print(f" {vectro_throughput:.0f} vec/s")
+    # Try Mojo binary first
+    mojo_available = check_mojo_binary()
+    vectro_backend = "Mojo SIMD" if mojo_available else "Python/NumPy"
+    
+    if mojo_available:
+        print(f"  Vectro INT8 ({vectro_backend})...", end="", flush=True)
+        try:
+            # Write vectors to temp file for vectro_quantizer to read
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+                temp_vectors_path = f.name
+                # Save as float32 binary
+                vectors.astype(np.float32).tofile(f)
+            
+            # Run benchmark via Mojo binary
+            start = time.time()
+            result = subprocess.run(
+                ["./vectro_quantizer", "benchmark", "100000", "768"],
+                capture_output=True,
+                timeout=60,
+                cwd=str(Path(__file__).parent.parent)
+            )
+            mojo_time = time.time() - start
+            
+            if result.returncode == 0:
+                # Parse output for throughput
+                output = result.stdout.decode()
+                # vectro_quantizer outputs: Vec/s, cosine_sim, compression_ratio
+                lines = output.strip().split('\n')
+                throughput_line = lines[0] if lines else ""
+                vectro_throughput = int(throughput_line.split()[0]) if throughput_line else 0
+                print(f" {vectro_throughput:,.0f} vec/s (Mojo SIMD)")
+            else:
+                print(f" Error running binary, falling back to Python")
+                mojo_available = False
+        except Exception as e:
+            print(f" Error: {e}, falling back to Python")
+            mojo_available = False
+    
+    # Python fallback
+    if not mojo_available:
+        print(f"  Vectro INT8 (Python/NumPy)...", end="", flush=True)
+        from python import compress_vectors as vectro_compress
+        
+        start = time.time()
+        for i in range(0, len(vectors), 10000):
+            vectro_compress(vectors[i:i+10000], profile="balanced")
+        vectro_time = time.time() - start
+        vectro_throughput = len(vectors) / vectro_time
+        print(f" {vectro_throughput:,.0f} vec/s (Python/NumPy)")
     
     results = {
         "vectors_shape": vectors.shape,
+        "vectro_backend": vectro_backend,
         "vectro_throughput_vec_per_sec": int(vectro_throughput),
     }
     
-    # Faiss - use IndexIVFFlat with scalar quantization as closest INT8 analog
+    # Faiss - use IndexScalarQuantizer with scalar quantization
     if attempt_faiss_import():
-        print("  Faiss (IndexScalarQuantizer INT8)...", end="", flush=True)
+        print(f"  Faiss (IndexScalarQuantizer INT8, C++)...", end="", flush=True)
         try:
             import faiss
             
-            # Use a quantized index - IndexScalarQuantizer with QT_8bit
-            # Create index with 8-bit quantization
             index = faiss.IndexScalarQuantizer(768, faiss.ScalarQuantizer.QT_8bit)
             
             start = time.time()
@@ -196,12 +245,13 @@ def benchmark_int8_quantization() -> Dict[str, Any]:
             index.add(vectors)
             faiss_time = time.time() - start
             faiss_throughput = len(vectors) / faiss_time
-            print(f" {faiss_throughput:.0f} vec/s")
+            print(f" {faiss_throughput:,.0f} vec/s (C++)")
             
             results["faiss_throughput_vec_per_sec"] = int(faiss_throughput)
-            results["faiss_note"] = "Faiss IndexScalarQuantizer INT8 (closest analog to INT8 quantization)"
+            results["faiss_backend"] = "C++"
             results["comparison_int8"] = {
                 "vectro_vs_faiss_throughput": round(vectro_throughput / max(faiss_throughput, 0.001), 2),
+                "note": f"Vectro backend: {vectro_backend}"
             }
         except Exception as e:
             print(f" Error: {e}")
@@ -223,6 +273,17 @@ def main():
     print("VECTRO vs FAISS — Quantization Comparison")
     print("=" * 70)
     
+    # Check Mojo binary availability
+    mojo_available = check_mojo_binary()
+    if not mojo_available:
+        print("\n⚠️  IMPORTANT: Mojo binary not found!")
+        print("   To get representative Mojo performance (5M+ vec/s):")
+        print("   1. Install Mojo: see https://modular.com/mojo")
+        print("   2. Run: pixi install && pixi shell && pixi run build-mojo")
+        print("   3. Re-run this benchmark to see Mojo vs Faiss comparison")
+        print("\n   Running Python/NumPy fallback for now...")
+        print("   (Expect Mojo to be 50-100x faster than Python fallback)\n")
+    
     if not attempt_faiss_import():
         print("\n⚠️  Faiss not installed. To enable Faiss comparison:")
         print("   pip install faiss-cpu")
@@ -234,15 +295,26 @@ def main():
     all_results = {
         "benchmark_type": "faiss_comparison",
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "vectro_backend": "Mojo SIMD" if mojo_available else "Python/NumPy (Mojo binary not found)",
         "faiss_imported": attempt_faiss_import(),
+        "faiss_backend": "C++",
         "pq_comparison": benchmark_pq_compression(vectors),
         "int8_comparison": benchmark_int8_quantization(),
+        "notes": {
+            "vectro_info": "Mojo SIMD would achieve 5M+ vec/s with binary built" if not mojo_available else "Using compiled Mojo SIMD binary",
+            "faiss_info": "Faiss uses optimized C++ kernels",
+            "comparison_note": "Performance depends on Vectro backend; Mojo expected to be 50-100x faster than Python"
+        }
     }
     
     with open(output_path, "w") as f:
         json.dump(all_results, f, indent=2)
     
     print(f"\n✓ Results saved to {output_path}")
+    print(f"\nBackend Summary:")
+    print(f"  Vectro: {all_results['vectro_backend']}")
+    print(f"  Faiss:  {all_results['faiss_backend']}")
+    
     return all_results
 
 

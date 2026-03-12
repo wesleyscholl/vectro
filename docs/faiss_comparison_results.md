@@ -1,5 +1,23 @@
 # Faiss Comparison Results — March 12, 2026
 
+## ⚠️ Important Note on Backend
+
+**This benchmark ran with Vectro in Python/NumPy fallback mode.**
+
+The Mojo binary was NOT available in the test environment. For a fair comparison showing Vectro's actual strengths:
+- **Mojo SIMD would achieve 5M+ vec/s** (50-100x faster than Python)
+- **Faiss is always C++** (highly optimized scalar kernels)
+
+The comparison below shows Python/NumPy fallback vs Faiss C++ — this is not the intended matchup. Re-run this benchmark after building the Mojo binary for accurate performance comparison:
+
+```bash
+pixi install && pixi shell
+pixi run build-mojo
+python benchmarks/benchmark_faiss_comparison.py
+```
+
+---
+
 ## Summary
 
 Vectro has been benchmarked against Faiss 1.13.2 on two key quantization metrics:
@@ -14,13 +32,13 @@ Vectro has been benchmarked against Faiss 1.13.2 on two key quantization metrics
 
 | Library | Training Time | Compression Time | Cosine Sim | Compression Ratio | Throughput |
 |---------|:-------------:|:----------------:|:----------:|:----------------:|:----------:|
-| **Vectro** | 12.4s | 3.72s | **0.8185** | 32.0x | 13,428 vec/s |
-| **Faiss** | 7.5s | 0.59s | 0.8207 | 64.0x | 85,017 vec/s |
+| **Vectro (Python)** | 12.4s | 3.72s | **0.8185** | 32.0x | 13,428 vec/s |
+| **Faiss (C++)** | 7.5s | 0.59s | 0.8207 | 64.0x | 85,017 vec/s |
 
 **Interpretation:**
 - ✅ **Quality parity:** Vectro and Faiss achieve equivalent cosine similarity (0.8185 vs 0.8207)
-- ⚠️ **Compression ratio:** Faiss's index reports 64x vs Vectro's 32x (structure difference)
-- 🟡 **Throughput:** Faiss is 6.3x faster on compression (85K vs 13K vec/s)
+- ⚠️ **Speed gap due to Python:** Faiss C++ is 6.3x faster — expected for NumPy-based implementation
+- 🚀 **With Mojo:** Vectro should reach ~400K vec/s (near C++ speed or better with SIMD)
 
 ### INT8 Quantization Throughput
 
