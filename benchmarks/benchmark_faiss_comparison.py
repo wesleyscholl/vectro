@@ -200,19 +200,34 @@ def benchmark_int8_quantization() -> Dict[str, Any]:
             mojo_time = time.time() - start
             
             if result.returncode == 0:
-                # Parse output for throughput
+                # Parse output for throughput.
+                # The binary prints a header line first:
+                #   Benchmark n= 100000  d= 768
+                #   INT8 quantize  : 5234567 vec/s
+                #   INT8 reconstruct: ...
                 output = result.stdout.decode()
-                # vectro_quantizer outputs: Vec/s, cosine_sim, compression_ratio
                 lines = output.strip().split('\n')
-                throughput_line = lines[0] if lines else ""
-                vectro_throughput = int(throughput_line.split()[0]) if throughput_line else 0
+                vectro_throughput = 0
+                for line in lines:
+                    if "INT8 quantize" in line and "vec/s" in line:
+                        vectro_throughput = int(line.split(":")[1].strip().split()[0])
+                        break
+                if vectro_throughput == 0:
+                    raise ValueError(
+                        f"Could not parse INT8 quantize throughput from output:\n{output}"
+                    )
                 print(f" {vectro_throughput:,.0f} vec/s (Mojo SIMD)")
             else:
-                print(f" Error running binary, falling back to Python")
+                stderr = result.stderr.decode().strip()
+                print(f" Error running binary (rc={result.returncode})"
+                      + (f": {stderr[:120]}" if stderr else "")
+                      + ", falling back to Python")
                 mojo_available = False
+                vectro_backend = "Python/NumPy"
         except Exception as e:
             print(f" Error: {e}, falling back to Python")
             mojo_available = False
+            vectro_backend = "Python/NumPy"
     
     # Python fallback
     if not mojo_available:
@@ -291,20 +306,33 @@ def main():
     
     # Generate test data
     vectors = np.random.normal(size=(100000, 768)).astype(np.float32)
-    
+
+    # Run benchmarks; int8 result carries the authoritative backend label
+    # (may be "Python/NumPy" if the Mojo binary errored at runtime)
+    pq_result   = benchmark_pq_compression(vectors)
+    int8_result = benchmark_int8_quantization()
+    actual_backend = int8_result.get("vectro_backend", "Python/NumPy")
+
     all_results = {
         "benchmark_type": "faiss_comparison",
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "vectro_backend": "Mojo SIMD" if mojo_available else "Python/NumPy (Mojo binary not found)",
+        "vectro_backend": actual_backend,
         "faiss_imported": attempt_faiss_import(),
         "faiss_backend": "C++",
-        "pq_comparison": benchmark_pq_compression(vectors),
-        "int8_comparison": benchmark_int8_quantization(),
+        "pq_comparison": pq_result,
+        "int8_comparison": int8_result,
         "notes": {
-            "vectro_info": "Mojo SIMD would achieve 5M+ vec/s with binary built" if not mojo_available else "Using compiled Mojo SIMD binary",
+            "vectro_info": (
+                "Using compiled Mojo SIMD binary"
+                if actual_backend == "Mojo SIMD"
+                else "Mojo binary not found or failed at runtime; results are Python/NumPy"
+            ),
             "faiss_info": "Faiss uses optimized C++ kernels",
-            "comparison_note": "Performance depends on Vectro backend; Mojo expected to be 50-100x faster than Python"
-        }
+            "comparison_note": (
+                "Performance depends on Vectro backend; "
+                "Mojo expected to be 50-100x faster than Python"
+            ),
+        },
     }
     
     with open(output_path, "w") as f:
