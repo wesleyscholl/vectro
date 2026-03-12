@@ -5,23 +5,25 @@ Key improvements over the scalar quantizer.mojo:
   - vectorize[SIMD_WIDTH]() for abs-max reduction and quantize inner loops
   - abs()-based max via SIMD reduce_max(), no branching per element
   - Symmetric abs-max scaling (zero-centred, correct for LLM embeddings)
+  - parallelize[_process_row](n) for multi-core throughput
   - perf_counter_ns benchmark included
 
 Target: >= 5 M vec/s for INT8 on d=768 (vs ~70K in v2 scalar path).
 """
 
-from algorithm import vectorize
-from math import sqrt
-from sys.info import simdwidthof
+from algorithm import vectorize, parallelize
+from io import FileDescriptor
+from math import copysign
 from time import perf_counter_ns
 
-alias SIMD_W = simdwidthof[DType.float32]()
+# Tile 4 NEON lanes in software (LLVM pipelines the 4 loads better than scalar).
+alias SIMD_W: Int = 16
 
 
 fn quantize_int8_simd(
     emb_flat: List[Float32], n: Int, d: Int
 ) -> (List[Int8], List[Float32]):
-    """Quantize n*d float32 values to INT8 using SIMD inner loops.
+    """Quantize n*d float32 values to INT8 using SIMD inner loops + parallel rows.
 
     Args:
         emb_flat: Flat row-major array of length n*d.
@@ -33,52 +35,44 @@ fn quantize_int8_simd(
     var q = List[Int8](capacity=n * d)
     var scales = List[Float32](capacity=n)
 
-    for _ in range(n * d):
-        q.append(0)
-    for _ in range(n):
-        scales.append(0.0)
+    q.resize(n * d, Int8(0))
+    scales.resize(n, Float32(0.0))
 
-    for i in range(n):
-        var base = i * d
-        var ptr = emb_flat.unsafe_ptr() + base
+    var emb_ptr    = emb_flat.unsafe_ptr()
+    var q_ptr_out  = q.unsafe_ptr()
+    var scales_ptr = scales.unsafe_ptr()
+
+    @parameter
+    fn _process_row(i: Int):
+        var ptr  = emb_ptr   + i * d
+        var qptr = q_ptr_out + i * d
 
         # ── Pass 1: SIMD abs-max reduction ──────────────────────────────────
         var acc_max: Float32 = 0.0
 
         @parameter
         fn _max_kernel[w: Int](j: Int):
-            var v = SIMD[DType.float32, w].load(ptr + j)
-            var a = v.abs()
-            acc_max = max(acc_max, a.reduce_max())
+            acc_max = max(acc_max, abs(ptr.load[width=w](j)).reduce_max())
 
         vectorize[_max_kernel, SIMD_W](d)
 
-        var scale: Float32 = 1.0
-        if acc_max > 0.0:
-            scale = acc_max / 127.0
-        scales[i] = scale
+        var scale: Float32 = acc_max / 127.0 if acc_max > 0.0 else Float32(1.0)
+        scales_ptr[i] = scale
 
-        # ── Pass 2: SIMD quantize ────────────────────────────────────────────
-        var inv_scale = 1.0 / scale
-        var qptr = q.unsafe_ptr() + base
+        # ── Pass 2: SIMD quantize + SIMD store ───────────────────────────────
+        var inv_scale = Float32(1.0) / scale
 
         @parameter
         fn _quant_kernel[w: Int](j: Int):
-            var raw = SIMD[DType.float32, w].load(ptr + j) * inv_scale
-            # Clamp to [-127, 127]
-            raw = raw.max(SIMD[DType.float32, w](-127.0))
-            raw = raw.min(SIMD[DType.float32, w](127.0))
-            # Round: add 0.5 for positive, sub 0.5 for negative, then truncate
-            var sign = (raw >= SIMD[DType.float32, w](0.0)).select(
-                SIMD[DType.float32, w](0.5),
-                SIMD[DType.float32, w](-0.5),
-            )
-            var rounded = (raw + sign).__int__()
-            # Store as Int8 — must be scalar tail for safety
-            for k in range(w):
-                qptr[j + k] = Int8(rounded[k])
+            var raw = ptr.load[width=w](j) * inv_scale
+            raw = max(raw, SIMD[DType.float32, w](-127.0))
+            raw = min(raw, SIMD[DType.float32, w](127.0))
+            var half = copysign(SIMD[DType.float32, w](0.5), raw)
+            qptr.store(j, (raw + half).cast[DType.int32]().cast[DType.int8]())
 
         vectorize[_quant_kernel, SIMD_W](d)
+
+    parallelize[_process_row](n)
 
     return (q^, scales^)
 
@@ -87,6 +81,8 @@ fn reconstruct_int8_simd(
     q_flat: List[Int8], scales: List[Float32], n: Int, d: Int
 ) -> List[Float32]:
     """Reconstruct float32 embeddings from INT8 + per-vector scales.
+
+    Uses SIMD int8→float32 cast + multiply and parallelises over rows.
 
     Args:
         q_flat: Flat int8 array (length n*d).
@@ -97,22 +93,27 @@ fn reconstruct_int8_simd(
         Reconstructed float32 array of length n*d.
     """
     var out = List[Float32](capacity=n * d)
-    for _ in range(n * d):
-        out.append(0.0)
+    out.resize(n * d, Float32(0.0))
 
-    for i in range(n):
-        var base = i * d
-        var s = scales[i]
-        var q_ptr = q_flat.unsafe_ptr() + base
-        var o_ptr = out.unsafe_ptr() + base
+    var q_ptr_in   = q_flat.unsafe_ptr()
+    var o_ptr_out  = out.unsafe_ptr()
+    var scales_ptr = scales.unsafe_ptr()
+
+    @parameter
+    fn _recon_row(i: Int):
+        var qp = q_ptr_in  + i * d
+        var op = o_ptr_out + i * d
+        var s  = scales_ptr[i]
 
         @parameter
         fn _recon_kernel[w: Int](j: Int):
-            # Widen Int8 → Float32 element-by-element (no SIMD cast yet in Mojo List)
-            for k in range(w):
-                o_ptr[j + k] = Float32(q_ptr[j + k]) * s
+            # SIMD int8 load → widen to float32 → multiply by scale → store
+            var qi = qp.load[width=w](j)
+            op.store(j, qi.cast[DType.float32]() * SIMD[DType.float32, w](s))
 
         vectorize[_recon_kernel, SIMD_W](d)
+
+    parallelize[_recon_row](n)
 
     return out^
 

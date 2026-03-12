@@ -1,0 +1,54 @@
+{
+  "benchmark_type": "faiss_comparison",
+  "timestamp": "2026-03-12 11:29:27",
+  "vectro_backend": "Mojo SIMD",
+  "faiss_imported": true,
+  "faiss_backend": "C++",
+  "pq_comparison": {
+    "n_subspaces": 96,
+    "vectors_shape": [
+      50000,
+      768
+    ],
+    "results": {
+      "vectro": {
+        "training_time_sec": 18.138,
+        "compression_time_sec": 3.731,
+        "mean_cosine_similarity": 0.818516,
+        "compression_ratio": 32.0,
+        "throughput_vec_per_sec": 13402
+      },
+      "faiss": {
+        "training_time_sec": 6.672,
+        "compression_time_sec": 1.524,
+        "mean_cosine_similarity": 0.820718,
+        "compression_ratio": 64.0,
+        "throughput_vec_per_sec": 32799
+      },
+      "comparison": {
+        "vectro_vs_faiss_cosine_sim": 1.0,
+        "vectro_vs_faiss_throughput": 0.41,
+        "note": "Faiss uses IndexPQ; compression ratio calculated from index structure"
+      }
+    }
+  },
+  "int8_comparison": {
+    "vectors_shape": [
+      100000,
+      768
+    ],
+    "vectro_backend": "Mojo SIMD",
+    "vectro_throughput_vec_per_sec": 12121212,
+    "faiss_throughput_vec_per_sec": 2639653,
+    "faiss_backend": "C++",
+    "comparison_int8": {
+      "vectro_vs_faiss_throughput": 4.59,
+      "note": "Vectro backend: Mojo SIMD"
+    }
+  },
+  "notes": {
+    "vectro_info": "Using compiled Mojo SIMD binary",
+    "faiss_info": "Faiss uses optimized C++ kernels",
+    "comparison_note": "Performance depends on Vectro backend; Mojo expected to be 50-100x faster than Python"
+  }
+}

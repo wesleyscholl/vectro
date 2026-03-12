@@ -17,13 +17,13 @@ if ! command -v pixi &> /dev/null; then
     exit 1
 fi
 
-if ! command -v python &> /dev/null; then
+if ! command -v python3 &> /dev/null; then
     echo "❌ Python not found"
     exit 1
 fi
 
 echo "✓ pixi: $(pixi --version)"
-echo "✓ python: $(python --version)"
+echo "✓ python: $(python3 --version)"
 echo ""
 
 # Set up Mojo environment
@@ -51,13 +51,13 @@ echo ""
 
 # Install Faiss if not already installed
 echo "Step 4: Installing Faiss (if needed)..."
-python -c "import faiss; print(f'✓ Faiss {faiss.__version__} already installed')" 2>/dev/null || \
-    (pip install -q faiss-cpu && echo "✓ Faiss installed")
+python3 -c "import faiss; print(f'✓ Faiss {faiss.__version__} already installed')" 2>/dev/null || \
+    (pip3 install -q faiss-cpu && echo "✓ Faiss installed")
 echo ""
 
 # Run benchmarks
 echo "Step 5: Running Vectro vs Faiss benchmarks..."
-python benchmarks/benchmark_faiss_comparison.py --output results/faiss_comparison_mojo.json
+python3 benchmarks/benchmark_faiss_comparison.py --output results/faiss_comparison_mojo.json
 echo ""
 
 # Display results summary
@@ -67,7 +67,7 @@ echo "=========================================="
 echo ""
 echo "Results saved to: results/faiss_comparison_mojo.json"
 echo ""
-python << 'PYTHON_EOF'
+python3 << 'PYTHON_EOF'
 import json
 with open("results/faiss_comparison_mojo.json") as f:
     data = json.load(f)
