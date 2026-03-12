@@ -5,7 +5,7 @@
 
 ---
 
-## v3.4.0 → v3.5.0 Pre-Launch Hardening ✅ Phase 1 COMPLETE, Phase 2 IN PROGRESS
+## v3.4.0 → v3.5.0 Pre-Launch Hardening ✅ Phase 1 COMPLETE, Phase 2 SUBSTANTIALLY COMPLETE
 
 ### Phase 1: FIX WHAT BREAKS ON FIRST USE ✅ COMPLETE
 All immediate credibility issues have been fixed:
@@ -15,23 +15,38 @@ All immediate credibility issues have been fixed:
 - ✅ Requirements section added to README (explains Mojo vs Python fallback)
 - ✅ JavaScript layer marked honestly as "not yet callable"
 
-**Commit:** `36e9493` — Phase 1 complete
+**Commits:**
+- `36e9493` — Phase 1 complete
+- `710274c` — Phase 2 benchmarking infrastructure
 
-### Phase 2: MAKE BENCHMARK CLAIMS DEFENSIBLE [IN PROGRESS]
-Current status:
-- ✅ Python/NumPy fallback benchmarks measured and saved to `results/benchmark_python_fallback.json`
-- ✅ Benchmarking guide created at `docs/benchmarking-guide.md`
-- ✅ README updated with measurement conditions and disclaimers
-- ⏳ Mojo binary benchmarks (requires Mojo toolchain on M3 — to be run by user)
-- ⏳ Faiss comparison (next step)
-- ⏳ Real embedding dataset testing (next step)
+### Phase 2: MAKE BENCHMARK CLAIMS DEFENSIBLE ✅ FRAMEWORK + FAISS COMPARISON COMPLETE
 
-**Key Findings:**
-- Python/NumPy INT8 throughput: 62K vec/s at d=768 (without squish_quant)
-- Quality metrics confirmed: cosine_sim 0.999971 for INT8, 0.994707 for NF4
-- Discrepancy identified: README claims 200K-1.04M vec/s for "INT8 Python layer"
-  but measured only 62K vec/s without squish_quant Rust extension
-- Solution: Updated README with qualifications and benchmark methodology guide
+#### Python/NumPy Benchmarks ✅
+- **INT8 throughput:** 62K vec/s at d=768 (cosine_sim 0.999971)
+- **Quality confirmed:** NF4 0.994707, Binary 0.798129, PQ 32x compression
+- **Results saved:** `results/benchmark_python_fallback.json`
+
+#### Faiss Comparison ✅
+- **Product Quantization (M=96):** Quality equivalent (Vectro 0.8185 vs Faiss 0.8207)
+- **INT8 Throughput:** Vectro 62K vec/s, Faiss 876K vec/s (C++ advantage)
+- **Key finding:** Vectro Python falls behind Faiss, but Mojo acceleration targets 5M+ vec/s
+- **Analysis:** `docs/faiss_comparison_results.md` (ready for publication)
+- **Results saved:** `results/faiss_comparison_full.json`
+
+**Commit:** `fd28903` — Faiss comparison complete
+
+#### Remaining Phase 2 Tasks
+- ⏳ Run Mojo binary benchmarks on M3 hardware (requires pixi + Mojo toolchain)
+  - Command: `pixi run benchmark` outputs vectro_quantizer results
+  - Target verification: 5M+ vec/s for INT8
+- ⏳ Real embedding dataset benchmarks (GloVe-100, SIFT1M)
+  - Framework ready in `benchmarks/benchmark_real_embeddings.py`
+
+#### Key Discrepancy Resolved
+- **Finding:** README claimed 200K-1.04M vec/s throughput for INT8 Python
+- **Actual:** Pure NumPy achieves only 62K vec/s without squish_quant Rust extension
+- **Solution:** Updated README with clear measurement conditions, added benchmarking guide
+- **Status:** Credibility issue resolved; numbers now defensible with qualifications
 
 All quantization hot paths now dispatch to the compiled Mojo binary at runtime.
 `v3.0.0` advertised Mojo-first but all paths fell through to Python/NumPy.
