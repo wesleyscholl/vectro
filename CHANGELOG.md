@@ -5,6 +5,62 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.5.0] — 2026-03-12  Mojo Outperforms FAISS (v3.5.0)
+
+### Added / Changed
+
+#### Three Root-Cause Fixes
+- **Mislabeled backend** — stdout parser crashed on `"Benchmark n= …"` header; silently fell back
+  to Python/NumPy and reported it as "Mojo SIMD". Fix: scan each line for `"INT8 quantize"` substring.
+- **Scalar init loops replaced by `resize()`** — `for _ in range(n*d): q.append(Int8(0))` was
+  writing 7.7 MB element-by-element per call. `q.resize(n*d, Int8(0))` (memset) is ~6× faster.
+  Applied to all six quantize/reconstruct paths in both `vectro_standalone.mojo` and `quantizer_simd.mojo`.
+- **Pipe IPC replaces temp-file IPC** — `_mojo_bridge.py` previously wrote 300 MB+ to `/tmp` on
+  every call. New `pipe` subcommand uses `subprocess.run(input=data, capture_output=True)`,
+  eliminating all disk I/O. Removed `os`, `tempfile`, `math` imports.
+
+#### SIMD + Parallelism Upgrades
+- `SIMD_W` bumped **4 → 16** in both Mojo source files (LLVM tiles 4 NEON loads and pipelines them).
+- `quantize_int8` / `reconstruct_int8` rewritten with `vectorize` + `parallelize` over rows.
+- `reconstruct_int8_simd`: replaced scalar `for k in range(w)` loop with SIMD int8→float32
+  cast + multiply + store.
+- Benchmark method: 2-iteration full-N warmup + best-of-5 timed iterations (eliminates cold-cache variance).
+
+#### Benchmark Results (n=100,000, d=768, best-of-5, quiet M3)
+
+| System | INT8 quantize | vs FAISS |
+|--------|--------------|---------|
+| Python/NumPy (baseline) | 89,707 vec/s | 0.04× |
+| Mojo scalar (after bug fix) | 408,623 vec/s | 0.20× |
+| Mojo SIMD W=4, append-loop | 1,263,902 vec/s | 0.62× |
+| **Mojo SIMD W=16 + resize()** | **12,583,364 vec/s** | **4.85×** |
+| FAISS C++ (reference) | 2,594,923 vec/s | 1.00× |
+
+Vectro Mojo is **4.85× faster than FAISS C++** at INT8 quantization.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `src/vectro_standalone.mojo` | SIMD_W=16, `resize()` init, `parallelize`, `pipe` subcommand, best-of-5 benchmark |
+| `src/quantizer_simd.mojo` | SIMD_W=16, `resize()` init, correct Mojo SIMD API (`ptr.load[width=w]`, `ptr.store`) |
+| `python/_mojo_bridge.py` | All 6 temp-file functions replaced with pipe IPC via `_run_pipe()`; removed `os`, `tempfile`, `math` |
+| `benchmarks/benchmark_faiss_comparison.py` | Fixed stdout parser + stale backend label + runtime backend detection |
+| `results/faiss_comparison_mojo.json` | Final benchmark results saved |
+
+### Test summary
+
+| Version | Tests passing |
+|---------|---------------|
+| v3.0.0  | 390           |
+| v3.1.0  | 471           |
+| v3.2.0  | 506           |
+| v3.3.0  | 575           |
+| v3.4.0  | 575           |
+| v3.5.0  | 575           |
+
+---
+
 ## [3.4.0] — 2026-03-12  Mojo Dominance (Phase 14)
 
 ### Added
