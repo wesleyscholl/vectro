@@ -1,0 +1,33 @@
+{
+  "benchmark_type": "real_embeddings",
+  "timestamp": "2026-03-12 14:13:53",
+  "dataset": "glove-100",
+  "quality_results": {
+    "dataset": "GloVe-100 (synthetic approximation, 100K vectors, d=100)",
+    "vectors_shape": [
+      100000,
+      100
+    ],
+    "results": {
+      "int8": {
+        "mean_cosine_similarity": 0.99998,
+        "median_cosine_similarity": 0.999982,
+        "min_cosine_similarity": 0.999939,
+        "std_cosine_similarity": 5e-06,
+        "compression_ratio": 3.85,
+        "throughput_vec_per_sec": 2878473
+      },
+      "nf4": {
+        "mean_cosine_similarity": 0.995635,
+        "median_cosine_similarity": 0.995678,
+        "min_cosine_similarity": 0.991723,
+        "std_cosine_similarity": 0.000661,
+        "compression_ratio": 7.41,
+        "throughput_vec_per_sec": 367515
+      },
+      "pq-96": {
+        "error": "Profile 'pq-96' requires a trained PQCodebook. Pass codebook=PQCodebook.train(training_data) to VectroV3()."
+      }
+    }
+  }
+}

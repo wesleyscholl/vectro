@@ -462,6 +462,12 @@ See [docs/migration-guide.md](docs/migration-guide.md) for the complete guide.
 
 ## ✅ Performance Benchmarks
 
+> **⚠️ Measurement Notes**
+> - Python throughput below assumes `squish_quant` Rust extension is available (auto-installed, optional)
+> - Without it: ~60–80K vec/s for INT8 at d=768 (pure NumPy)
+> - Mojo binary numbers require the compiled `vectro_quantizer` — see [docs/benchmarking-guide.md](docs/benchmarking-guide.md) for full methodology
+> - All measurements: Apple M3 Pro, batch_size=10000, random normal Float32
+
 ### Throughput (Apple M3 Pro)
 
 ```

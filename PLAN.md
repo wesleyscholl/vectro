@@ -5,7 +5,33 @@
 
 ---
 
-## v3.0.1 — Mojo-First Runtime Fix ✅ COMPLETE (2026-03-11)
+## v3.4.0 → v3.5.0 Pre-Launch Hardening ✅ Phase 1 COMPLETE, Phase 2 IN PROGRESS
+
+### Phase 1: FIX WHAT BREAKS ON FIRST USE ✅ COMPLETE
+All immediate credibility issues have been fixed:
+- ✅ Auto_compress import error fixed (added as module-level function)
+- ✅ Test badge updated (594 tests in Python-only mode, removed false 100% coverage claim)
+- ✅ BACKLOG_v2.1.md archived (items were shipped in v3.x)
+- ✅ Requirements section added to README (explains Mojo vs Python fallback)
+- ✅ JavaScript layer marked honestly as "not yet callable"
+
+**Commit:** `36e9493` — Phase 1 complete
+
+### Phase 2: MAKE BENCHMARK CLAIMS DEFENSIBLE [IN PROGRESS]
+Current status:
+- ✅ Python/NumPy fallback benchmarks measured and saved to `results/benchmark_python_fallback.json`
+- ✅ Benchmarking guide created at `docs/benchmarking-guide.md`
+- ✅ README updated with measurement conditions and disclaimers
+- ⏳ Mojo binary benchmarks (requires Mojo toolchain on M3 — to be run by user)
+- ⏳ Faiss comparison (next step)
+- ⏳ Real embedding dataset testing (next step)
+
+**Key Findings:**
+- Python/NumPy INT8 throughput: 62K vec/s at d=768 (without squish_quant)
+- Quality metrics confirmed: cosine_sim 0.999971 for INT8, 0.994707 for NF4
+- Discrepancy identified: README claims 200K-1.04M vec/s for "INT8 Python layer"
+  but measured only 62K vec/s without squish_quant Rust extension
+- Solution: Updated README with qualifications and benchmark methodology guide
 
 All quantization hot paths now dispatch to the compiled Mojo binary at runtime.
 `v3.0.0` advertised Mojo-first but all paths fell through to Python/NumPy.

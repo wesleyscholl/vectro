@@ -1,0 +1,28 @@
+{
+  "benchmark_type": "faiss_comparison",
+  "timestamp": "2026-03-12 14:13:25",
+  "faiss_imported": false,
+  "pq_comparison": {
+    "n_subspaces": 96,
+    "vectors_shape": [
+      50000,
+      768
+    ],
+    "results": {
+      "vectro": {
+        "training_time_sec": 12.51,
+        "compression_time_sec": 4.015,
+        "mean_cosine_similarity": 0.818581,
+        "compression_ratio": 32.0,
+        "throughput_vec_per_sec": 12454
+      }
+    }
+  },
+  "int8_comparison": {
+    "vectors_shape": [
+      100000,
+      768
+    ],
+    "vectro_throughput_vec_per_sec": 60805
+  }
+}

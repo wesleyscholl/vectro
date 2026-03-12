@@ -1,0 +1,101 @@
+{
+  "benchmark_type": "python_fallback",
+  "timestamp": "2026-03-12 14:11:20",
+  "throughput_results": [
+    {
+      "dimension": 768,
+      "total_vectors": 100000,
+      "results": [
+        {
+          "batch_size": 100,
+          "vectors_processed": 100000,
+          "time_sec": 1.833,
+          "throughput_vec_per_sec": 54567
+        },
+        {
+          "batch_size": 1000,
+          "vectors_processed": 100000,
+          "time_sec": 1.587,
+          "throughput_vec_per_sec": 62999
+        },
+        {
+          "batch_size": 10000,
+          "vectors_processed": 100000,
+          "time_sec": 1.616,
+          "throughput_vec_per_sec": 61882
+        }
+      ]
+    },
+    {
+      "dimension": 384,
+      "total_vectors": 100000,
+      "results": [
+        {
+          "batch_size": 100,
+          "vectors_processed": 100000,
+          "time_sec": 1.551,
+          "throughput_vec_per_sec": 64455
+        },
+        {
+          "batch_size": 1000,
+          "vectors_processed": 100000,
+          "time_sec": 1.466,
+          "throughput_vec_per_sec": 68215
+        },
+        {
+          "batch_size": 10000,
+          "vectors_processed": 100000,
+          "time_sec": 1.45,
+          "throughput_vec_per_sec": 68964
+        }
+      ]
+    },
+    {
+      "dimension": 128,
+      "total_vectors": 100000,
+      "results": [
+        {
+          "batch_size": 100,
+          "vectors_processed": 100000,
+          "time_sec": 1.454,
+          "throughput_vec_per_sec": 68755
+        },
+        {
+          "batch_size": 1000,
+          "vectors_processed": 100000,
+          "time_sec": 1.363,
+          "throughput_vec_per_sec": 73378
+        },
+        {
+          "batch_size": 10000,
+          "vectors_processed": 100000,
+          "time_sec": 1.305,
+          "throughput_vec_per_sec": 76627
+        }
+      ]
+    }
+  ],
+  "quality_results": [
+    {
+      "dimension": 768,
+      "num_vectors": 10000,
+      "profiles": {
+        "int8": {
+          "mean_cosine_similarity": 0.999971,
+          "std_cosine_similarity": 6e-06,
+          "compression_ratio": 3.98
+        },
+        "nf4": {
+          "mean_cosine_similarity": 0.994707,
+          "std_cosine_similarity": 0.00054,
+          "compression_ratio": 7.92
+        },
+        "binary": {
+          "mean_cosine_similarity": 0.798129,
+          "std_cosine_similarity": 0.007735,
+          "compression_ratio": 32.0
+        }
+      }
+    }
+  ]
+}
