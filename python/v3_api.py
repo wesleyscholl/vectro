@@ -818,6 +818,47 @@ class VectroV3:
 
 
 # ---------------------------------------------------------------------------
+# Module-level convenience functions
+# ---------------------------------------------------------------------------
+
+def auto_compress(
+    vectors: np.ndarray,
+    target_cosine: float = 0.97,
+    target_compression: float = 8.0,
+) -> dict:
+    """Automatically select and apply the best quantization scheme.
+
+    A module-level wrapper around auto_quantize_api.auto_quantize that delegates
+    to VectroV3.auto_compress under the hood. Provides an ergonomic top-level API
+    for users who want automatic strategy selection without instantiating VectroV3.
+
+    Parameters
+    ----------
+    vectors            : float32 array (n, d)
+    target_cosine      : minimum acceptable mean cosine similarity (default 0.97)
+    target_compression : minimum acceptable compression ratio vs FP32 (default 8.0)
+
+    Returns
+    -------
+    dict from auto_quantize_api.auto_quantize — keys include:
+        "profile", "cosine_sim", "compression_ratio", "quantized", "scales",
+        "success", "strategy"
+
+    Examples
+    --------
+    >>> from python.v3_api import auto_compress
+    >>> result = auto_compress(vectors, target_cosine=0.97, target_compression=8.0)
+    >>> print(f"Selected profile: {result['profile']}")
+    >>> print(f"Achieved cosine similarity: {result['cosine_sim']:.5f}")
+    """
+    return auto_quantize(
+        vectors,
+        target_cosine=target_cosine,
+        target_compression=target_compression,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 

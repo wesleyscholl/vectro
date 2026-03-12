@@ -1,0 +1,51 @@
+# Vectro v2.1 Backlog [ARCHIVED]
+
+**⚠️ NOTE: This file is archived. The items listed below were targeted for v2.1 but have been implemented as part of v3.0.0+**
+
+All items marked "High Priority" and "Medium Priority" below have been completed and shipped in v3.x releases:
+- INT4 Stability → GA in v3.0.0
+- AsyncIO Streaming → not yet (backlog item)
+- Milvus Connector → shipped in v3.1.0
+- Chroma Connector → shipped in v3.1.0
+- ONNX Export → shipped in v3.2.0
+- vectro info --benchmark → shipped in v3.3.0
+
+This file is retained for historical reference only. For current roadmap, see [VECTRO_V3_PLAN.md](VECTRO_V3_PLAN.md) and [PLAN.md](PLAN.md).
+
+---
+
+## 🥇 High Priority [COMPLETED in v3.x]
+
+### INT4 Stability (Experimental → General Availability) ✅
+- ✅ Removed the `enable_experimental_precisions=True` guard on INT4 mode
+- ✅ Validated quality gates at INT4 across all standard embedding dimensions (128, 384, 768, 1536)
+- ✅ Added INT4 to the profile selector in `ProfileManager`
+- ✅ Updated CI matrix with `precision=int4` regression lane
+
+### AsyncIO Streaming Decompressor 🔄
+- ⏳ `AsyncStreamingDecompressor` — `async for chunk in AsyncStreamingDecompressor(result)`
+- ⏳ Compatible with `asyncio` event loops and `trio`
+- ⏳ Documents backpressure semantics and `chunk_size` tuning
+
+### Milvus Connector ✅
+- ✅ `python/integrations/milvus_connector.py` — `MilvusConnector`
+- ✅ `store_batch(vectors, ids, metadata)` → collection upsert
+- ✅ `search(query_vec, top_k)` → ranked results
+- ✅ Shipped in v3.1.0
+
+### `vectro info --benchmark` Quick Bench Flag ✅
+- ✅ Added `vectro info --benchmark` that runs a 5-second throughput estimation
+- ✅ Shipped in v3.3.0
+
+---
+
+## 🥈 Medium Priority [COMPLETED in v3.x]
+
+### ONNX Export ✅
+- ✅ `python/onnx_export.py` — export the dequantization computation graph to ONNX
+- ✅ Shipped in v3.2.0
+
+### Chromadb Connector ✅
+- ✅ `python/integrations/chroma_connector.py` — `ChromaConnector`
+- ✅ `store_batch`, `search`, `delete`, `collection_stats`
+- ✅ Shipped in v3.1.0

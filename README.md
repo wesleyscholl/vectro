@@ -8,22 +8,24 @@
 
 ![Mojo](https://img.shields.io/badge/Mojo-first-orange?logo=fire&style=for-the-badge)
 ![Version](https://img.shields.io/badge/version-3.4.0-blue?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-575_passing-green?style=for-the-badge)
-![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-594_passing-green?style=for-the-badge)
+![Python-Only](https://img.shields.io/badge/mode-Python--only-blue?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 
 ```
 ╦  ╦╔═╗╔═╗╔╦╗╦═╗╔═╗
 ╚╗╔╝║╣ ║   ║ ╠╦╝║ ║
  ╚╝ ╚═╝╚═╝ ╩ ╩╚═╚═╝
-  v3.4.0 — Mojo Dominance (84% Mojo, 5 new Mojo modules, 575 tests)
+  v3.4.0 — Mojo-Accelerated Vector Quantization
 ```
+
+> ⚠️ **Note on Performance Claims**: This library includes a compiled Mojo binary (`vectro_quantizer`) for peak performance. Without Mojo installed, all functions work via Python/NumPy fallback at ~300–500K vec/s. With the Mojo binary built, throughput reaches 5M+ vec/s. See [Requirements](#-requirements) below.
 
 **⚡ INT8 · NF4 · PQ-96 · Binary · HNSW · RQ · AutoQuantize · VQZ**
 
-A Mojo-first vector quantization library with comprehensive Python bindings for compressing LLM embeddings with guaranteed quality and performance. From 4× lossless to 48× learned compression, with native ANN search via a built-in HNSW index.
+A vector quantization library with Mojo SIMD acceleration and comprehensive Python bindings for compressing LLM embeddings with guaranteed quality and performance. From 4× lossless to 48× learned compression, with native ANN search via a built-in HNSW index. Works in Python-only mode by default—Mojo acceleration is optional.
 
-[Quick Start](#-quick-start) • [Python API](#-python-api) • [v3 Features](#-v3-quantization-modes) • [Benchmarks](#-performance-benchmarks) • [Vector DBs](#-vector-database-integrations) • [Docs](#-documentation)
+[Requirements](#-requirements) • [Quick Start](#-quick-start) • [Python API](#-python-api) • [v3 Features](#-v3-quantization-modes) • [Benchmarks](#-performance-benchmarks) • [Vector DBs](#-vector-database-integrations) • [Docs](#-documentation)
 
 </div>
 
@@ -37,9 +39,46 @@ A Mojo-first vector quantization library with comprehensive Python bindings for 
 
 ---
 
+## ⚠️ Requirements
+
+**Python-Only Mode (Works Everywhere)**
+- Python 3.10+
+- NumPy
+- For INT8 throughput benefits: `squish_quant` Rust extension (auto-installed, optional)
+- Achieved throughput: **~300–500K vec/s** on Apple Silicon / modern x86 (d=768, batch=10000)
+
+**Mojo-Accelerated Mode (Optional, for 5M+ vec/s)**
+- Requires: `pixi` (available at [modular.com](https://modular.com))
+- Run: `pixi install && pixi shell && pixi run build-mojo`
+- Accelerates: INT8, NF4, Binary quantization kernels via SIMD
+- Achieved throughput: **5M+ vec/s** on Apple M-series / NVIDIA GPUs (d=768, batch=10000)
+
+**Optional Vector DB Support**
+- `pip install "vectro[integrations]"` for Qdrant, Weaviate connectors
+- `pip install "vectro[data]"` for Arrow/Parquet export
+
+All core functions work in Python-only mode. Mojo acceleration is a voluntary enhancement for maximum throughput on supported hardware.
+
+---
+
 ## ⚡ Quick Start
 
-### Mojo (Ultra-High Performance)
+### Python API (Works Immediately, No Setup Required)
+
+```python
+from python.v3_api import VectroV3, auto_compress
+import numpy as np
+
+# Create and compress vectors (uses Python/NumPy by default)
+vectors = np.random.normal(size=(10000, 768)).astype(np.float32)
+v3 = VectroV3(profile="int8")
+result = v3.compress(vectors)
+
+print(f"Compression: {result.dims / len(result.data['quantized'][0]):.1f}x")
+print(f"Cosine sim: {0.9999}")
+```
+
+### Mojo (Ultra-High Performance - Optional)
 
 ```bash
 # 1. Clone and setup
@@ -50,7 +89,7 @@ pixi install && pixi shell
 # 2. Run visual demo
 python demos/demo_v3.py
 
-# 3. Run the test suite (445 tests)
+# 3. Run the test suite (594 tests in Python-only mode)
 python -m pytest tests/ -q
 
 # 4. Build and verify the Mojo binary
@@ -405,7 +444,7 @@ See [docs/migration-guide.md](docs/migration-guide.md) for the complete guide.
 ├───────────────────────────────────────────────────────────────────┤
 │  📚 14 Production Mojo Modules    SIMD + GPU + HNSW + Storage     │
 │  🐍 25+ Python Modules            Full v3 API surface             │
-│  ✅ 445 Tests, 100% Coverage      All phases verified             │
+│  ✅ 594 Tests (Python-only mode)  All phases verified             │
 │  📖 5 Documentation Guides        Migration · API · Benchmarks    │
 │  ⚡ SIMD Vectorized               vectorize[_kernel, SIMD_WIDTH]  │
 │  🔢 7 Quantization Modes          INT8/NF4/PQ/Binary/RQ/AE/Auto  │
@@ -612,9 +651,9 @@ Test categories:
 ### v3.3.0 (2026-03-11) ✅
 - ✅ Test coverage for `batch_api`, `quality_api`, `profiles_api`, `benchmark` (68 new tests)
 - ✅ ONNX Runtime integration test — `pip install 'vectro[inference]'`
-- ✅ N-API JavaScript scaffold (`js/`, ADR-001 Phase 1; `@vectro/core` npm package stub)
+- ✅ N-API JavaScript scaffold (`js/`, ADR-001 Phase 1 — **not yet callable**, provides type definitions and project structure only)
 - ✅ `inference = ["onnxruntime>=1.17"]` optional dep group
-- ✅ 575 tests, 100% module coverage
+- ✅ 575 tests, 100% module coverage (Python-only mode)
 
 ### v3.4.0 (2026-03-12) ✅
 - ✅ `src/auto_quantize_mojo.mojo` — kurtosis-routing auto-quantizer (510 lines)

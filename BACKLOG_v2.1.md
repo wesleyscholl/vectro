@@ -1,53 +1,17 @@
-# Vectro v2.1 Backlog
+# Vectro v2.1 Backlog [ARCHIVED]
 
-Items deferred from the v2.0 Overdrive milestone. Ordered roughly by expected
-impact and implementation effort.
+> **This file is archived.** The items listed here were deferred from v2.0 and have since been completed
+> and shipped in v3.x releases. See [PLAN.md](PLAN.md) for the current roadmap.
 
----
+The following items have been completed:
+- ✅ **INT4 Stability** → GA in v3.0.0
+- ✅ **Milvus Connector** → v3.1.0
+- ✅ **Chromadb Connector** → v3.1.0
+- ✅ **ONNX Export** → v3.2.0
+- ✅ **`vectro info --benchmark`** → v3.3.0
+- ⏳ **AsyncIO Streaming Decompressor** → In progress
 
-## 🥇 High Priority
-
-### INT4 Stability (Experimental → General Availability)
-- Remove the `enable_experimental_precisions=True` guard on INT4 mode
-- Validate quality gates at INT4 across all standard embedding dimensions
-  (128, 384, 768, 1536)
-- Add INT4 to the profile selector in `ProfileManager`
-- Update CI matrix with `precision=int4` regression lane
-- **Acceptance:** `test_quantization_extra.py` INT4 path with cosine_sim ≥ 0.92
-
-### AsyncIO Streaming Decompressor
-- `AsyncStreamingDecompressor` — `async for chunk in AsyncStreamingDecompressor(result)`
-- Compatible with `asyncio` event loops and `trio`
-- Documents backpressure semantics and `chunk_size` tuning
-- Useful for async RAG inference servers (AIOHTTP, FastAPI, Starlette)
-
-### Milvus Connector
-- `python/integrations/milvus_connector.py` — `MilvusConnector`
-  - `store_batch(vectors, ids, metadata)` → collection upsert
-  - `search(query_vec, top_k)` → ranked results
-  - Optional dep: `pymilvus>=2.4`
-  - Mirrors the interface of `QdrantConnector` and `WeaviateConnector`
-- Exported from `python.integrations` and top-level `python` package
-
-### `vectro info --benchmark` Quick Bench Flag
-- Add `vectro info --benchmark` that runs a 5-second throughput estimation
-  and prints compression ratio and cosine similarity on synthetic data
-- Makes the CLI immediately useful for evaluating hardware performance
-
----
-
-## 🥈 Medium Priority
-
-### ONNX Export
-- `python/onnx_export.py` — export the dequantization computation graph to ONNX
-  so the decompression step can run inside ONNX Runtime (edge/embedded inference)
-- Target: ONNX opset 17, float16 and float32 output modes
-- Provides a `to_onnx_model(result)` function and a `vectro export-onnx` CLI command
-- **Prerequisite:** requires a pure-Python dequantization path (no Mojo binary)
-
-### Chromadb Connector
-- `python/integrations/chroma_connector.py` — `ChromaConnector`
-  - `store_batch`, `search`, `delete`, `collection_stats`
+For a complete view of implementation status, see [PLAN.md](PLAN.md).
   - Optional dep: `chromadb>=0.4`
 - Completes the "Big Four" open-source vector DB coverage
   (Qdrant ✅, Weaviate ✅, Milvus 🚧, Chroma 🚧)
