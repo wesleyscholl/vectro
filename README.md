@@ -2,24 +2,23 @@
 
 # Vectro
 
-**Status**: Production-grade embedding compression library written in Mojo — delivering extreme compression with guaranteed quality.
+**Status**: Production-grade embedding compression library going **100% Rust** — delivering extreme compression with guaranteed quality, zero build-toolchain dependencies.
 
 ### Ultra-High-Performance LLM Embedding Compressor
 
-![Mojo](https://img.shields.io/badge/Mojo-first-orange?logo=fire&style=for-the-badge)
-![Version](https://img.shields.io/badge/version-3.6.0-blue?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-598_passing-green?style=for-the-badge)
-![Python-Only](https://img.shields.io/badge/mode-Python--only-blue?style=for-the-badge)
+![Rust](https://img.shields.io/badge/Rust-first-orange?logo=rust&style=for-the-badge)
+![Version](https://img.shields.io/badge/version-4.0.0--dev-blue?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-745_passing-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 
 ```
 ╦  ╦╔═╗╔═╗╔╦╗╦═╗╔═╗
 ╚╗╔╝║╣ ║   ║ ╠╦╝║ ║
  ╚╝ ╚═╝╚═╝ ╩ ╩╚═╚═╝
-  v3.6.0 — Mojo-Accelerated Vector Quantization
+  v4.0.0-dev — Rust-First Vector Quantization
 ```
 
-> ⚠️ **Note on Performance Claims**: This library includes a compiled Mojo binary (`vectro_quantizer`) for peak performance. Without Mojo installed, all functions work via Python/NumPy fallback at ~60–80K vec/s. With the Mojo binary built, throughput reaches 12M+ vec/s — **4.85× faster than FAISS C++**. See [Requirements](#-requirements) below.
+> **v4.0.0 Direction**: Vectro is migrating to a unified 100% Rust core (`rust/` workspace), eliminating the Mojo toolchain dependency entirely. The Rust codebase already delivers streaming INT8 quantization, cosine ANN search, a web UI + REST API, and PyO3 Python bindings — all from a single `cargo build`. Mojo kernels are preserved in `experimental/mojo/` for reference; algorithm parity + SIMD performance work continues in Rust.
 
 **⚡ INT8 · NF4 · PQ-96 · Binary · HNSW · RQ · AutoQuantize · VQZ**
 

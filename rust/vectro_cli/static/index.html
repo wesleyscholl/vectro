@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vectro+ Interactive Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 3rem;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 0.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .search-section {
+            margin-bottom: 2rem;
+        }
+
+        .input-group {
+            margin-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #333;
+        }
+
+        input[type="text"], input[type="number"], textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        textarea {
+            min-height: 120px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .results {
+            margin-top: 2rem;
+        }
+
+        .result-item {
+            background: #f8f9fa;
+            padding: 1rem;
+            margin-bottom: 0.5rem;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: transform 0.2s;
+        }
+
+        .result-item:hover {
+            transform: translateX(5px);
+        }
+
+        .result-id {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .result-score {
+            background: #667eea;
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-family: 'Monaco', monospace;
+        }
+
+        .query-time {
+            background: #28a745;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            display: inline-block;
+            margin-top: 1rem;
+            font-weight: 600;
+        }
+
+        .error {
+            background: #dc3545;
+            color: white;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-top: 1rem;
+        }
+
+        .success {
+            background: #28a745;
+            color: white;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-top: 1rem;
+        }
+
+        .upload-section {
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 2px solid #e0e0e0;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .tab {
+            padding: 0.75rem 1.5rem;
+            background: #f8f9fa;
+            border: none;
+            border-radius: 6px 6px 0 0;
+            cursor: pointer;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .example-queries {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-top: 1rem;
+        }
+
+        .example-query {
+            display: inline-block;
+            background: white;
+            padding: 0.5rem 1rem;
+            margin: 0.25rem;
+            border-radius: 4px;
+            cursor: pointer;
+            border: 2px solid #e0e0e0;
+            transition: all 0.2s;
+        }
+
+        .example-query:hover {
+            border-color: #667eea;
+            transform: scale(1.05);
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(255,255,255,.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loading {
+            display: none;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 1rem;
+        }
+
+        .loading.active {
+            display: flex;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🚀 Vectro+</h1>
+            <p class="subtitle">High-Performance Embedding Search Engine</p>
+        </header>
+
+        <div class="card">
+            <h2>📊 System Stats</h2>
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-box">
+                    <div class="stat-value" id="statCount">-</div>
+                    <div class="stat-label">Embeddings</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="statDim">-</div>
+                    <div class="stat-label">Dimensions</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="statStatus">-</div>
+                    <div class="stat-label">Index Status</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('search')">🔍 Search</button>
+                <button class="tab" onclick="switchTab('upload')">📤 Upload</button>
+            </div>
+
+            <div id="searchTab" class="tab-content active">
+                <div class="search-section">
+                    <h2>🔍 Semantic Search</h2>
+                    <p style="color: #666; margin-bottom: 1rem;">Enter a vector to find the most similar embeddings</p>
+
+                    <div class="input-group">
+                        <label for="queryVector">Query Vector (comma-separated floats)</label>
+                        <input type="text" id="queryVector" placeholder="0.1, 0.2, 0.3, 0.4, 0.5">
+                    </div>
+
+                    <div class="input-group">
+                        <label for="topK">Number of Results (k)</label>
+                        <input type="number" id="topK" value="10" min="1" max="100">
+                    </div>
+
+                    <button onclick="performSearch()">Search</button>
+
+                    <div class="example-queries">
+                        <strong>Quick examples:</strong>
+                        <div style="margin-top: 0.5rem;">
+                            <span class="example-query" onclick="setQuery('0.9,0.1,0.2,0.3,0.4')">Fruit query</span>
+                            <span class="example-query" onclick="setQuery('0.1,0.9,0.8,0.7,0.6')">Vehicle query</span>
+                            <span class="example-query" onclick="setQuery('0.5,0.5,0.1,0.1,0.9')">Color query</span>
+                        </div>
+                    </div>
+
+                    <div class="loading" id="searchLoading">
+                        <div class="spinner"></div>
+                        <span>Searching...</span>
+                    </div>
+
+                    <div id="searchMessage"></div>
+
+                    <div class="results" id="searchResults"></div>
+                </div>
+            </div>
+
+            <div id="uploadTab" class="tab-content">
+                <div class="upload-section">
+                    <h2>📤 Upload Embeddings</h2>
+                    <p style="color: #666; margin-bottom: 1rem;">Upload embeddings in JSONL format</p>
+
+                    <div class="input-group">
+                        <label for="embeddingsData">Embeddings (JSONL format)</label>
+                        <textarea id="embeddingsData" placeholder='{"id": "doc1", "vector": [0.1, 0.2, 0.3]}
+{"id": "doc2", "vector": [0.4, 0.5, 0.6]}'></textarea>
+                    </div>
+
+                    <button onclick="uploadEmbeddings()">Upload</button>
+
+                    <div class="loading" id="uploadLoading">
+                        <div class="spinner"></div>
+                        <span>Uploading...</span>
+                    </div>
+
+                    <div id="uploadMessage"></div>
+
+                    <div style="margin-top: 2rem; padding-top: 2rem; border-top: 2px solid #e0e0e0;">
+                        <h3>Load from File</h3>
+                        <p style="color: #666; margin-bottom: 1rem;">Load a pre-compressed dataset</p>
+                        <div class="input-group">
+                            <label for="datasetPath">Dataset Path</label>
+                            <input type="text" id="datasetPath" placeholder="./dataset.bin">
+                        </div>
+                        <button onclick="loadDataset()">Load Dataset</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentTab = 'search';
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tab + 'Tab').classList.add('active');
+        }
+
+        function setQuery(query) {
+            document.getElementById('queryVector').value = query;
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const data = await response.json();
+                
+                document.getElementById('statCount').textContent = data.count.toLocaleString();
+                document.getElementById('statDim').textContent = data.dimensions || '-';
+                document.getElementById('statStatus').textContent = data.index_loaded ? '✓ Ready' : '✗ Empty';
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+
+        async function performSearch() {
+            const queryStr = document.getElementById('queryVector').value;
+            const topK = parseInt(document.getElementById('topK').value);
+            
+            if (!queryStr.trim()) {
+                showMessage('searchMessage', 'Please enter a query vector', 'error');
+                return;
+            }
+
+            const query = queryStr.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n));
+            
+            if (query.length === 0) {
+                showMessage('searchMessage', 'Invalid vector format', 'error');
+                return;
+            }
+
+            document.getElementById('searchLoading').classList.add('active');
+            document.getElementById('searchResults').innerHTML = '';
+            document.getElementById('searchMessage').innerHTML = '';
+
+            try {
+                const response = await fetch('/api/search', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query, k: topK })
+                });
+
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+
+                const data = await response.json();
+                displayResults(data);
+            } catch (error) {
+                showMessage('searchMessage', `Search failed: ${error.message}`, 'error');
+            } finally {
+                document.getElementById('searchLoading').classList.remove('active');
+            }
+        }
+
+        function displayResults(data) {
+            const resultsDiv = document.getElementById('searchResults');
+            
+            if (data.results.length === 0) {
+                resultsDiv.innerHTML = '<p style="color: #666;">No results found</p>';
+                return;
+            }
+
+            let html = `<div class="query-time">⚡ ${data.query_time_ms.toFixed(3)} ms</div>`;
+            html += '<h3 style="margin-top: 1.5rem; margin-bottom: 1rem;">Results</h3>';
+            
+            data.results.forEach((result, index) => {
+                html += `
+                    <div class="result-item">
+                        <div>
+                            <span style="color: #999; margin-right: 0.5rem;">${index + 1}.</span>
+                            <span class="result-id">${result.id}</span>
+                        </div>
+                        <span class="result-score">${result.score.toFixed(6)}</span>
+                    </div>
+                `;
+            });
+
+            resultsDiv.innerHTML = html;
+        }
+
+        async function uploadEmbeddings() {
+            const data = document.getElementById('embeddingsData').value;
+            
+            if (!data.trim()) {
+                showMessage('uploadMessage', 'Please enter embeddings data', 'error');
+                return;
+            }
+
+            document.getElementById('uploadLoading').classList.add('active');
+            document.getElementById('uploadMessage').innerHTML = '';
+
+            try {
+                const lines = data.trim().split('\n');
+                const embeddings = lines.map(line => JSON.parse(line));
+
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ embeddings })
+                });
+
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+
+                const result = await response.json();
+                showMessage('uploadMessage', 
+                    `✓ Successfully uploaded ${result.count} embeddings (${result.dimensions} dimensions)`, 
+                    'success');
+                
+                await loadStats();
+            } catch (error) {
+                showMessage('uploadMessage', `Upload failed: ${error.message}`, 'error');
+            } finally {
+                document.getElementById('uploadLoading').classList.remove('active');
+            }
+        }
+
+        async function loadDataset() {
+            const path = document.getElementById('datasetPath').value;
+            
+            if (!path.trim()) {
+                showMessage('uploadMessage', 'Please enter a dataset path', 'error');
+                return;
+            }
+
+            document.getElementById('uploadLoading').classList.add('active');
+            document.getElementById('uploadMessage').innerHTML = '';
+
+            try {
+                const response = await fetch(`/api/load?path=${encodeURIComponent(path)}`);
+
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+
+                const result = await response.json();
+                showMessage('uploadMessage', 
+                    `✓ Successfully loaded ${result.count} embeddings (${result.dimensions} dimensions)`, 
+                    'success');
+                
+                await loadStats();
+            } catch (error) {
+                showMessage('uploadMessage', `Load failed: ${error.message}`, 'error');
+            } finally {
+                document.getElementById('uploadLoading').classList.remove('active');
+            }
+        }
+
+        function showMessage(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="${type}">${message}</div>`;
+        }
+
+        // Load stats on page load and refresh every 5 seconds
+        loadStats();
+        setInterval(loadStats, 5000);
+
+        // Allow Enter key to trigger search
+        document.getElementById('queryVector').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                performSearch();
+            }
+        });
+    </script>
+</body>
+</html>

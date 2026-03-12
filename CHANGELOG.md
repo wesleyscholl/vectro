@@ -5,6 +5,35 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0-dev] — 2026-03-12  Rust-First Migration (Phase 1 Complete)
+
+### Architecture
+
+- **Rust workspace added** — new `rust/` directory contains a 4-crate Cargo workspace
+  (`vectro_lib`, `vectro_cli`, `vectro_py`, `generators`) absorbed from `vectro-plus` v1.1.0.
+- **Mojo kernels archived** — all `src/*.mojo` production files moved to `experimental/mojo/`
+  for reference; they are no longer on the build path. The Mojo toolchain (`pixi`) is no
+  longer required to build or use core functionality.
+- **Unified root `Cargo.toml`** — running `cargo build --release` from the repo root builds
+  all Rust crates in one step.
+- **PyO3 bindings** — `rust/vectro_py` exposes `PyEmbedding`, `PyEmbeddingDataset`,
+  `PySearchIndex`, and `PyQuantizedIndex` directly from Rust with no Mojo bridge.
+- **CLI + Web UI preserved** — `rust/vectro_cli` provides `compress`, `bench`, `search`, and
+  `serve` subcommands; the Axum web server serves the interactive dashboard at `/`.
+
+### Test Results
+
+- **104 Rust tests passing** (46 unit + 24 integration + bench harness; parity with vectro-plus v1.1.0)
+- **641 Python tests passing** (upgraded from 598; 15 skipped; 0 failed)
+
+### Compatibility
+
+- Python API (`python/`) continues to work unchanged; Mojo-backed paths fall back to
+  Python/NumPy automatically since the Mojo binary is no longer built by default.
+- The `pixi.toml` and Mojo build system are preserved for the experimental path only.
+
+---
+
 ## [3.6.0] — 2026-03-12  Full Optimization + Multi-Benchmark Suite
 
 ### Performance Optimizations

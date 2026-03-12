@@ -397,6 +397,138 @@ making the CLI immediately useful for evaluating hardware capability.
 
 ---
 
+---
+
+## Phase 15 — v4.0.0-rc1: Rust-First Consolidated Repository  🔄 IN PROGRESS (2026-03-12) — steps 15a–15f ✅
+
+> **Strategic decision (2026-03-12):** `vectro` absorbs `vectro-plus`. Rust is the sole
+> production runtime going forward. Mojo production dispatch is retired and preserved
+> under `experimental/mojo/` as a reproducible benchmark reference only.
+>
+> **Sources of truth for this merger:**
+> - Canonical repo: **`vectro`** (this repo).
+> - Code from `vectro-plus` is copied in (no foreign git history).
+> - All three release gates must pass simultaneously: install simplicity, feature parity,
+>   performance parity-or-better vs Mojo baseline.
+
+### Merge contract
+
+| Dimension | Decision |
+|-----------|----------|
+| Canonical repo | `vectro` (this repo) |
+| Runtime language | **Rust** (100%) |
+| Python API language | **Python** (PyO3 + maturin wheel) |
+| Mojo scope | `experimental/mojo/` — benchmark reference kernels only |
+| Unified v1 surface | CLI + REST API + Web UI + Python library |
+| Backward compatibility | Python API shape from `python/v3_api.py` preserved |
+| History policy | Keep `vectro` git history; copy `vectro-plus` as files |
+
+### Directory layout
+
+```
+vectro/
+├── Cargo.toml                  # workspace root (NEW)
+├── rust/                       # NEW — all Rust crates
+│   ├── vectro_lib/             # core algorithms (from vectro-plus)
+│   ├── vectro_cli/             # CLI + web server + REST (from vectro-plus)
+│   ├── vectro_py/              # PyO3 Python bindings (from vectro-plus)
+│   └── generators/             # data generators (from vectro-plus)
+├── experimental/               # NEW
+│   └── mojo/                   # Mojo kernels archived here (from src/)
+├── python/                     # Python API (preserved; Rust-backed where applicable)
+├── src/                        # (emptied — Mojo moved to experimental/mojo/)
+├── benchmarks/                 # Python benchmark scripts (preserved)
+└── tests/                      # Python tests (preserved)
+```
+
+### Step-by-step
+
+| Step | Deliverable | Status |
+|------|-------------|--------|
+| 15a | Create `Cargo.toml` workspace at `vectro/` root | ✅ |
+| 15b | Copy `vectro-plus` crates → `vectro/rust/` | ✅ |
+| 15c | Move `vectro/src/*.mojo` → `vectro/experimental/mojo/` | ✅ |
+| 15d | Update `pyproject.toml` to declare Rust extension path | ✅ |
+| 15e | `cargo test --workspace` passes (93+ Rust tests) | ✅ 104 passing |
+| 15f | `pytest tests/ -q` still passes (598 Python tests) | ✅ 641 passing (15 skipped) |
+| 15g | README + CHANGELOG updated with new architecture | ⏳ |
+
+**Acceptance criteria:**
+- `cargo build --release` succeeds from `vectro/` root.
+- `cargo test --workspace` ≥ 93 tests passing (parity with `vectro-plus` v1.1.0).
+- `python -m pytest tests/ -q` ≥ 594 passing (parity with pre-merge baseline).
+- `cargo run --release -p vectro_cli -- --help` prints all commands.
+- `cargo run --release -p vectro_cli -- serve --port 8080` starts the web server.
+
+---
+
+## Phase 16 — v4.0.0-rc2: Algorithm Parity in Rust  🔜
+
+Implement every quantization and ANN algorithm currently backed by Python/Mojo as a
+first-class Rust module in `rust/vectro_lib/`. When done, Python modules can dispatch
+to Rust via PyO3 without the `pixi`/Mojo toolchain.
+
+### Algorithm ports (by priority)
+
+| # | Algorithm | Source reference | Rust target | Priority | Effort |
+|---|-----------|-----------------|-------------|----------|--------|
+| 1 | **INT8 symmetric abs-max + SIMD** | `src/quantizer_simd.mojo` | `rust/vectro_lib/src/quant/int8.rs` | ⭐⭐⭐⭐ | 1 week |
+| 2 | **NF4 normal-float 4-bit** | `python/nf4_api.py` | `rust/vectro_lib/src/quant/nf4.rs` | ⭐⭐⭐⭐ | 1-2 weeks |
+| 3 | **Binary 1-bit (sign)** | `python/binary_api.py` | `rust/vectro_lib/src/quant/binary.rs` | ⭐⭐⭐ | 3-5 days |
+| 4 | **PQ-96 training + inference** | `python/pq_api.py` | `rust/vectro_lib/src/quant/pq.rs` | ⭐⭐⭐⭐ | 3 weeks |
+| 5 | **HNSW ANN index** | `python/hnsw_api.py` | `rust/vectro_lib/src/index/hnsw.rs` | ⭐⭐⭐⭐ | 3-4 weeks |
+| 6 | **AutoQuantize** | `python/auto_quantize_api.py` | `rust/vectro_lib/src/quant/auto.rs` | ⭐⭐ | 1 week |
+| 7 | **Residual PQ (3-pass)** | `python/rq_api.py` | `rust/vectro_lib/src/quant/rq.rs` | ⭐⭐ | 2 weeks |
+
+**Acceptance criteria (per algorithm):**
+- Cosine similarity threshold parity vs Python reference: INT8 ≥ 0.9999, NF4 ≥ 0.985, Binary recall@10 ≥ 0.95, PQ ≥ 0.95.
+- Round-trip encode→decode produces original values within floating-point tolerance.
+- Every algorithm exposed in both CLI (`vectro compress --mode <algo>`) and Python bindings.
+
+---
+
+## Phase 17 — v4.0.0-rc3: Performance Recovery  🔜
+
+Rust hot paths must match or exceed the Mojo SIMD baseline on the canonical benchmark
+set before production Mojo dispatch is removed.
+
+### Benchmark contract
+
+| Metric | Mojo baseline (v3.6.0) | Rust target | Notes |
+|--------|----------------------|-------------|-------|
+| INT8 quantize throughput | 12.1M vec/s @ d=768, n=100K | ≥ 12M vec/s | Use `std::simd` + rayon |
+| INT8 quality (cosine) | ≥ 0.9999 | ≥ 0.9999 | Must not regress |
+| NF4 throughput | — | ≥ 2M vec/s | Once NF4 ported |
+| HNSW recall@10 | ≥ 0.97 | ≥ 0.97 | Once HNSW ported |
+| `pip install` time (cold) | n/a | < 30s | No Mojo toolchain |
+| CLI startup latency | n/a | < 50ms | Rust binary, direct |
+
+### Optimization strategy
+
+1. **Zero-copy Python↔Rust boundary** — PyO3 `ndarray` bridge; share buffer pointers.
+2. **SIMD width** — use `std::arch` NEON intrinsics (ARM64) / AVX2 (x86) via `std::simd`.
+3. **rayon parallel batch** — per-vector quantize rows in parallel.
+4. **Criterion benchmark parity** — add `benches/int8_bench.rs`, `benches/simd_bench.rs`;
+   compare vs Python JSON outputs from `results/faiss_comparison_mojo.json`.
+
+---
+
+## Phase 18 — v4.0.0: Packaging, Docs, and Public Release  🔜
+
+| Step | Deliverable |
+|------|-------------|
+| 18a | Maturin wheel build: `pip install vectro` includes Rust extension, no Mojo required |
+| 18b | Pre-built wheels for macOS/Linux (GitHub Actions matrix) |
+| 18c | CLI binary included in wheel (via `scripts_entrypoints`) |
+| 18d | `docs/how-it-works.md` — math explanations for INT8/NF4/PQ/Binary/HNSW |
+| 18e | `docs/migration.md` — Mojo → Rust runtime migration guide for existing users |
+| 18f | Retrieval-quality evidence publish (Recall@10/NDCG@10 before/after compression) |
+| 18g | End-to-end notebook: load → compress → search → display |
+| 18h | CHANGELOG v4.0.0 section; README updated with Rust-first messaging |
+| 18i | Release tag v4.0.0; publish to PyPI |
+
+---
+
 ## Immediate Next Actions (Ordered)
 
 1. **Run ANN comparison** — `python benchmarks/benchmark_ann_comparison.py`

@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "rust/vectro_lib",
+    "rust/vectro_cli",
+    "rust/vectro_py",
+    "rust/generators",
+]
+resolver = "2"
