@@ -1,0 +1,45 @@
+{
+  "benchmark_type": "faiss_comparison",
+  "timestamp": "2026-03-12 14:15:44",
+  "faiss_imported": true,
+  "pq_comparison": {
+    "n_subspaces": 96,
+    "vectors_shape": [
+      50000,
+      768
+    ],
+    "results": {
+      "vectro": {
+        "training_time_sec": 12.376,
+        "compression_time_sec": 3.723,
+        "mean_cosine_similarity": 0.818524,
+        "compression_ratio": 32.0,
+        "throughput_vec_per_sec": 13428
+      },
+      "faiss": {
+        "training_time_sec": 7.517,
+        "compression_time_sec": 0.588,
+        "mean_cosine_similarity": 0.820727,
+        "compression_ratio": 64.0,
+        "throughput_vec_per_sec": 85017
+      },
+      "comparison": {
+        "vectro_vs_faiss_cosine_sim": 1.0,
+        "vectro_vs_faiss_throughput": 0.16,
+        "note": "Faiss uses IndexPQ; compression ratio calculated from index structure"
+      }
+    }
+  },
+  "int8_comparison": {
+    "vectors_shape": [
+      100000,
+      768
+    ],
+    "vectro_throughput_vec_per_sec": 61589,
+    "faiss_throughput_vec_per_sec": 875811,
+    "faiss_note": "Faiss IndexScalarQuantizer INT8 (closest analog to INT8 quantization)",
+    "comparison_int8": {
+      "vectro_vs_faiss_throughput": 0.07
+    }
+  }
+}

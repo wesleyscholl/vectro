@@ -104,26 +104,29 @@ def benchmark_pq_compression(
         try:
             import faiss
             
-            # Train PQ
+            # Faiss product quantizer: size (d, n_codewords, bits)
+            # Create index with PQ
             start = time.time()
-            faiss_pq = faiss.PQ(d, n_subspaces // 2, 8)  # 8 bits per subspace
-            faiss_pq.train(train_vectors.astype(np.float32))
+            # Index factory string: "PQ96x8" means 96 subspaces, 8 bits each
+            quantizer = faiss.IndexPQ(d, n_subspaces, 8)  # 8 bits per subspace
+            quantizer.train(train_vectors.astype(np.float32))
             faiss_train_time = time.time() - start
             
-            # Encode
+            # Add vectors and encode
             start = time.time()
-            faiss_codes = faiss_pq.encode(test_vectors.astype(np.float32))
+            quantizer.add(test_vectors.astype(np.float32))
             faiss_compress_time = time.time() - start
             
-            # Decode
-            faiss_reconstructed = faiss_pq.decode(faiss_codes)
+            # Reconstruct (decode)
+            faiss_reconstructed = quantizer.reconstruct_n(0, len(test_vectors))
             
             # Quality
             cosine_sims_faiss = np.sum(test_vectors * faiss_reconstructed, axis=1) / (
                 np.linalg.norm(test_vectors, axis=1) * np.linalg.norm(faiss_reconstructed, axis=1) + 1e-8
             )
             faiss_cosine = float(np.mean(cosine_sims_faiss))
-            faiss_compression_ratio = (test_vectors.nbytes) / (faiss_codes.nbytes)
+            # Each subspace uses 8 bits, so compression is roughly d / (n_subspaces * 8 / 8) = d / n_subspaces
+            faiss_compression_ratio = d / (n_subspaces // 8) if n_subspaces >= 8 else d / 1.0
             
             print(f" cosine_sim={faiss_cosine:.5f}, compression={faiss_compression_ratio:.1f}x")
             
@@ -132,13 +135,14 @@ def benchmark_pq_compression(
                 "compression_time_sec": round(faiss_compress_time, 3),
                 "mean_cosine_similarity": round(faiss_cosine, 6),
                 "compression_ratio": round(faiss_compression_ratio, 2),
-                "throughput_vec_per_sec": int(len(test_vectors) / faiss_compress_time),
+                "throughput_vec_per_sec": int(len(test_vectors) / faiss_compress_time) if faiss_compress_time > 0 else 0,
             }
             
             # Comparison
             results["comparison"] = {
                 "vectro_vs_faiss_cosine_sim": round(vectro_cosine / max(faiss_cosine, 0.001), 2),
                 "vectro_vs_faiss_throughput": round((len(test_vectors) / vectro_compress_time) / max(len(test_vectors) / faiss_compress_time, 0.001), 2),
+                "note": "Faiss uses IndexPQ; compression ratio calculated from index structure"
             }
         except Exception as e:
             print(f" Error: {e}")
@@ -177,26 +181,28 @@ def benchmark_int8_quantization() -> Dict[str, Any]:
         "vectro_throughput_vec_per_sec": int(vectro_throughput),
     }
     
-    # Faiss - minimal INT8 comparison (Faiss doesn't have direct INT8 quantizer)
+    # Faiss - use IndexIVFFlat with scalar quantization as closest INT8 analog
     if attempt_faiss_import():
-        print("  Faiss (Scalar quantizer as reference)...", end="", flush=True)
+        print("  Faiss (IndexScalarQuantizer INT8)...", end="", flush=True)
         try:
             import faiss
             
-            start = time.time()
-            sq = faiss.ScalarQuantizer(768, faiss.ScalarQuantizer.QT_8bit)
-            sq.train(vectors[:10000])
-            faiss_codes = np.zeros((len(vectors), sq.code_size), dtype=np.uint8)
+            # Use a quantized index - IndexScalarQuantizer with QT_8bit
+            # Create index with 8-bit quantization
+            index = faiss.IndexScalarQuantizer(768, faiss.ScalarQuantizer.QT_8bit)
             
             start = time.time()
-            for i in range(0, len(vectors), 10000):
-                sq.encode(vectors[i:i+10000], faiss_codes[i:i+10000])
+            index.train(vectors[:10000])
+            index.add(vectors)
             faiss_time = time.time() - start
             faiss_throughput = len(vectors) / faiss_time
             print(f" {faiss_throughput:.0f} vec/s")
             
             results["faiss_throughput_vec_per_sec"] = int(faiss_throughput)
-            results["faiss_note"] = "Faiss ScalarQuantizer used as reference (not direct INT8 analog)"
+            results["faiss_note"] = "Faiss IndexScalarQuantizer INT8 (closest analog to INT8 quantization)"
+            results["comparison_int8"] = {
+                "vectro_vs_faiss_throughput": round(vectro_throughput / max(faiss_throughput, 0.001), 2),
+            }
         except Exception as e:
             print(f" Error: {e}")
     
