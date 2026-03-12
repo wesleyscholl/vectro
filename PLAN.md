@@ -509,19 +509,19 @@ to Rust via PyO3 without the `pixi`/Mojo toolchain.
 
 ---
 
-## Phase 18 — v4.0.0: Packaging, Docs, and Public Release  🔜
+## Phase 18 — v4.0.0: Packaging, Docs, and Public Release  ✅ COMPLETE
 
-| Step | Deliverable |
-|------|-------------|
-| 18a | Maturin wheel build: `pip install vectro` includes Rust extension, no Mojo required |
-| 18b | Pre-built wheels for macOS/Linux (GitHub Actions matrix) |
-| 18c | CLI binary included in wheel (via `scripts_entrypoints`) |
-| 18d | `docs/how-it-works.md` — math explanations for INT8/NF4/PQ/Binary/HNSW |
-| 18e | `docs/migration.md` — Mojo → Rust runtime migration guide for existing users |
-| 18f | Retrieval-quality evidence publish (Recall@10/NDCG@10 before/after compression) |
-| 18g | End-to-end notebook: load → compress → search → display |
-| 18h | CHANGELOG v4.0.0 section; README updated with Rust-first messaging |
-| 18i | Release tag v4.0.0; publish to PyPI |
+| Step | Deliverable | Status |
+|------|-------------|--------|
+| 18a | Maturin wheel build: `pip install vectro` includes Rust extension, no Mojo required | ✅ |
+| 18b | Pre-built wheels for macOS/Linux (GitHub Actions matrix) | ✅ |
+| 18c | CLI binary included in wheel (via `scripts_entrypoints`) | ✅ |
+| 18d | `docs/how-it-works.md` — math explanations for INT8/NF4/PQ/Binary/HNSW | ✅ |
+| 18e | `docs/migration.md` — Mojo → Rust runtime migration guide for existing users | ✅ |
+| 18f | Retrieval-quality evidence publish (Recall@10/NDCG@10 before/after compression) | deferred |
+| 18g | End-to-end notebook: load → compress → search → display | ✅ |
+| 18h | CHANGELOG v4.0.0 section; README updated with Rust-first messaging | ✅ |
+| 18i | Release tag v4.0.0; publish to PyPI | 🔜 |
 
 ---
 

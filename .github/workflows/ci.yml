@@ -6,6 +6,39 @@ on:
   pull_request:
 
 jobs:
+  # ── Rust tests + bench smoke-test ──────────────────────────────────────────
+  rust-tests:
+    name: Rust tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: rust-${{ matrix.os }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: cargo test --workspace
+        run: cargo test --workspace --locked
+
+      - name: Bench smoke-test (--test flag, no timing)
+        run: |
+          cargo bench -p vectro_lib --bench int8_bench  -- --test
+          cargo bench -p vectro_lib --bench simd_bench  -- --test
+
+  # ── Python tests ───────────────────────────────────────────────────────────
   python-tests:
     runs-on: ubuntu-latest
     strategy:

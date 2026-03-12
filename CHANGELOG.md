@@ -5,6 +5,44 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] — 2026-03-12  Phase 18: Packaging, Docs, and Public Release
+
+### Added
+
+- **`pyproject.toml` → maturin** (`maturin>=1.4,<2.0` build backend): `pip install vectro`
+  now delivers a pre-compiled Rust extension wheel with no Mojo SDK or pixi required.
+- **GitHub Actions wheel matrix** (`.github/workflows/wheels.yml`): 8 build targets
+  (macOS ARM64/x86_64 × Python 3.10/3.12; Linux x86_64 × Python 3.10/3.11/3.12; Linux ARM64 ×
+  Python 3.12), sdist job, smoke-test jobs, and OIDC trusted-publish release to PyPI.
+- **Rust CI job** (`.github/workflows/ci.yml`): `cargo test --workspace` on ubuntu + macOS
+  before the Python test suite; bench smoke-test for `int8_bench` and `simd_bench`.
+- **`python/_cli.py`** CLI shim: console-script entrypoint locates the compiled Rust binary,
+  `os.execv()`s into it, falls back to subprocess, then to the Python CLI. No path configuration
+  needed by end users.
+- **`docs/how-it-works.md`**: mathematical documentation for all five algorithms —
+  INT8 symmetric abs-max (with NEON SIMD detail), NF4 Dettmers-2023 codebook,
+  Binary sign quantization + Hamming distance, Product Quantization + ADC,
+  and HNSW (layer distribution, greedy beam search, LCG reproducibility).
+- **`docs/migration.md`**: complete Mojo → Rust migration guide covering environment
+  setup change, import-path mapping for all five quantizer types, CLI compatibility,
+  data-file compatibility notes, and a self-test snippet.
+- **`notebooks/quickstart.ipynb`**: end-to-end Jupyter notebook — install → generate
+  synthetic embeddings → INT8/NF4/Binary/PQ encode → HNSW build + Recall@10 → summary table.
+
+### Changed
+
+- **README** rewritten for Rust-first messaging: version badge → `4.0.0`, tests badge →
+  `136 rust + 641 python`, requirements section removes pixi/Mojo prerequisites, Quick Start
+  shows `pip install vectro` + `PyInt8Encoder`/`PyHnswIndex`, docs section links new guides.
+- **`pyproject.toml` version** bumped `3.6.0 → 4.0.0`; removed `cython`/`click`/`matplotlib`
+  build dependencies; only runtime dependency is `numpy>=1.25`.
+
+### Removed
+
+- Old setuptools-based `.github/workflows/release.yml` (superseded by `wheels.yml`).
+
+---
+
 ## [4.0.0-rc3] — 2026-06-26  Performance Recovery (Phase 17 Complete)
 
 ### Added

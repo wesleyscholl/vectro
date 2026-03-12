@@ -1,11 +1,11 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel", "cython>=0.29", "numpy>=1.25"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.4,<2.0"]
+build-backend = "maturin"
 
 [project]
 name = "vectro"
-version = "3.6.0"
-description = "Mojo-first ultra-high-performance LLM embedding compressor with vector DB integrations, migration tooling, streaming decompression, and a CLI (v2.0: 158 tests, 11 modules)"
+version = "4.0.0"
+description = "Ultra-high-performance LLM embedding compressor — 100% Rust core with NEON SIMD, HNSW, INT8/NF4/Binary/PQ, zero Mojo/Cython toolchain required"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
@@ -16,39 +16,38 @@ classifiers = [
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
+    "Programming Language :: Rust",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Programming Language :: Other",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Information Analysis",
     "Topic :: Software Development :: Libraries :: Python Modules",
-    "Topic :: System :: Hardware",
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
-    "Environment :: GPU",
 ]
 keywords = [
     "embeddings",
-    "quantization", 
+    "quantization",
     "compression",
     "llm",
-    "mojo",
+    "rust",
+    "simd",
+    "neon",
     "performance",
     "high-performance-computing",
     "vector-database",
     "rag",
-    "simd",
-    "optimization",
+    "hnsw",
+    "ann",
+    "int8",
+    "nf4",
+    "product-quantization",
 ]
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.25",
-    "cython>=0.29",
-    "click>=8.0",
-    "matplotlib>=3.5",
-    "scikit-learn>=1.0",
 ]
 
 [project.optional-dependencies]
@@ -131,15 +130,23 @@ Repository = "https://github.com/wesleyscholl/vectro"
 Issues = "https://github.com/wesleyscholl/vectro/issues"
 
 [project.scripts]
-vectro = "python.cli:main"
+vectro = "vectro_py._cli:main"
 
-[tool.setuptools]
-packages = ["python"]
-package-dir = {"python" = "python"}
+[tool.maturin]
+# The Rust crate that contains the PyO3 extension module.
+manifest-path = "rust/vectro_py/Cargo.toml"
+# Python source tree (non-extension modules live here).
+python-source = "python"
+# Include the compiled vectro_cli binary inside the wheel so `vectro` CLI
+# works without a separate Rust installation.
+# The scripts entry-point above wraps this binary via _cli.py.
+features = ["pyo3/extension-module"]
+strip = true
 
-[tool.setuptools.package-data]
-python = ["*.pyx"]
-"*" = ["src/*.mojo"]
+[tool.maturin.target.aarch64-apple-darwin]
+# Enable NEON on Apple Silicon (NEON is mandated by AArch64, so this is just
+# an explicit annotation for documentation purposes; Rust enables it by default).
+rustflags = ["-C", "target-cpu=native"]
 
-[tool.cython]
-language_level = 3
+[tool.maturin.target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=x86-64-v3"]

@@ -1,0 +1,239 @@
+name: Wheels
+
+# Builds maturin wheels on every push to main and on every v* tag.
+# On a version tag the wheels are uploaded to PyPI and a GitHub Release is created.
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - "v*"
+  pull_request:
+
+permissions:
+  contents: write   # needed to create a GitHub Release
+  id-token: write   # needed for trusted PyPI publishing (OIDC)
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  # Build wheels for every target in the matrix
+  # ────────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build ${{ matrix.target }} / py${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS ARM64 (Apple Silicon)
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            python-version: "3.10"
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            python-version: "3.12"
+
+          # macOS x86-64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            python-version: "3.10"
+          - os: macos-13
+            target: x86_64-apple-darwin
+            python-version: "3.12"
+
+          # Linux x86-64 (manylinux)
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            python-version: "3.10"
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            python-version: "3.11"
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            python-version: "3.12"
+
+          # Linux ARM64 (manylinux QEMU cross-compile)
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            python-version: "3.12"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # maturin/action handles Rust toolchain, cross-compilation, manylinux
+      # containers, and wheel signing automatically.
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: >-
+            --release
+            --out dist
+            --manifest-path rust/vectro_py/Cargo.toml
+            --interpreter python${{ matrix.python-version }}
+          # Use the manylinux_2_28 image for broad Linux compatibility.
+          manylinux: "2_28"
+          # Emit compiler output so NEON/AVX2 codegen can be verified in logs.
+          before-script-linux: |
+            echo "RUSTFLAGS=-C target-cpu=x86-64-v3" >> "$GITHUB_ENV"
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.target }}-py${{ matrix.python-version }}
+          path: dist/
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Build an sdist (source distribution) — once, on Linux
+  # ────────────────────────────────────────────────────────────────────────────
+  sdist:
+    name: Build sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist --manifest-path rust/vectro_py/Cargo.toml
+
+      - name: Upload sdist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Smoke-test: install the built wheel and run a quick sanity check
+  # ────────────────────────────────────────────────────────────────────────────
+  smoke-test:
+    name: Smoke-test ${{ matrix.os }} py${{ matrix.python-version }}
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            python-version: "3.12"
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            python-version: "3.12"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Download wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: wheels-${{ matrix.target }}-py${{ matrix.python-version }}
+          path: dist/
+
+      - name: Install wheel + numpy
+        run: pip install dist/*.whl numpy
+
+      - name: Smoke test — INT8 round-trip + HNSW search
+        run: |
+          python - <<'EOF'
+          import numpy as np
+          from vectro_py import PyInt8Encoder, PyHnswIndex
+
+          rng = np.random.default_rng(42)
+          vecs = rng.standard_normal((512, 128)).astype(np.float32)
+
+          # INT8 encode via zero-copy numpy path
+          enc = PyInt8Encoder()
+          enc.encode_np(vecs)
+
+          # HNSW: insert + self-search
+          idx = PyHnswIndex(8, 40)
+          idx.add_np(vecs)
+          assert idx.__len__() == 512, f"expected 512, got {idx.__len__()}"
+
+          q = np.ascontiguousarray(vecs[0])
+          results = idx.search_np(q, k=5, ef=50)
+          ids = [r[0] for r in results]
+          assert 0 in ids, f"vec[0] not found in top-5: {ids}"
+          print(f"smoke test ok — INT8 encoder + HNSW top-5 self-search passed (ids={ids})")
+          EOF
+
+  # ────────────────────────────────────────────────────────────────────────────
+  # Release: upload wheels to PyPI + create GitHub Release (tags only)
+  # ────────────────────────────────────────────────────────────────────────────
+  release:
+    name: Publish release
+    needs: [build, sdist, smoke-test]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: pypi
+      url: https://pypi.org/project/vectro/
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist/
+          merge-multiple: true
+
+      - name: Download sdist
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist/
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Extract changelog entry
+        id: notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          python - <<PYEOF > release_notes.md
+          import re, pathlib
+          text = pathlib.Path("CHANGELOG.md").read_text()
+          pattern = rf"## \[{re.escape("$VERSION")}\].*?(?=\n## \[|\Z)"
+          m = re.search(pattern, text, re.DOTALL)
+          print(m.group(0).strip() if m else "Release $VERSION")
+          PYEOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Vectro ${{ github.ref_name }}
+          body_path: release_notes.md
+          files: dist/*
+          prerelease: >-
+            ${{ contains(github.ref_name, 'rc') ||
+                contains(github.ref_name, 'alpha') ||
+                contains(github.ref_name, 'beta') }}
+
+      # Trusted OIDC publishing — no API token required (requires PyPI project
+      # to be configured to trust this repo + workflow, see docs.pypi.org/oidc).
+      - name: Publish to PyPI
+        if: >-
+          !contains(github.ref_name, 'rc') &&
+          !contains(github.ref_name, 'alpha') &&
+          !contains(github.ref_name, 'beta')
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
+          skip-existing: true
