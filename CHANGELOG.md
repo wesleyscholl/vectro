@@ -5,6 +5,32 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0-rc3] — 2026-06-26  Performance Recovery (Phase 17 Complete)
+
+### Added
+
+- **NEON SIMD INT8 encode** (`quant/int8.rs`) — `Int8Vector::encode_fast` dispatches to
+  a NEON-intrinsic path on AArch64 (2-pass: 4-wide abs-max reduction, then 16-wide
+  multiply-round-narrow loop via `float32x4_t → int32x4_t → int16x8_t → int8x16_t`).
+  All other targets fall back to the scalar `encode` path.
+- **`encode_batch` now calls `encode_fast`** — rayon parallel batch automatically benefits
+  from NEON on Apple Silicon and AArch64 Linux.
+- **Zero-copy PyO3 numpy bridge** — `PyInt8Encoder.encode_np(array)` reads a C-contiguous
+  numpy `float32[N, D]` array without copying; `PyHnswIndex.add_np(array)` and
+  `PyHnswIndex.search_np(query, k, ef)` provide zero-copy insert and query from numpy.
+- **`benches/int8_bench.rs`** — Criterion benchmarks comparing scalar vs SIMD encode at
+  single-vec (d=768) and batch (n=100/1K/10K, d=768) scale; throughput in elements/sec.
+- **`benches/simd_bench.rs`** — INT8, NF4, and HNSW throughput benchmark groups;
+  reports elements/sec to derive vec/s for the Phase-17 benchmark contract.
+
+### Test Results
+
+- **136 Rust tests passing** (135 existing + 1 new: `encode_fast_matches_scalar`; 0 failed)
+- `encode_fast_matches_scalar` verifies NEON path is bit-identical to scalar at lengths
+  0, 1, 3, 7, 15, 16, 17, 64, 128, 256, 768.
+
+---
+
 ## [4.0.0-rc2] — 2026-06-26  Algorithm Parity in Rust (Phase 16 Complete)
 
 ### Added

@@ -403,6 +403,35 @@ impl PyInt8Encoder {
         self.vectors = int8::encode_batch(&vectors);
     }
 
+    /// Zero-copy encode from a numpy array (shape [N, D]).
+    ///
+    /// For C-contiguous arrays, row slices are read directly from the NumPy
+    /// buffer without any copy.  Non-contiguous arrays fall back to a
+    /// row-by-row copy.
+    fn encode_np(&mut self, array: PyReadonlyArray2<f32>) -> PyResult<()> {
+        let arr = array.as_array();
+        let (n, d) = (arr.nrows(), arr.ncols());
+        self.vectors = match arr.as_slice() {
+            Some(flat) => {
+                // C-contiguous: each row is a direct slice of the buffer
+                (0..n)
+                    .map(|i| int8::Int8Vector::encode_fast(&flat[i * d..(i + 1) * d]))
+                    .collect()
+            }
+            None => {
+                // Non-contiguous layout: copy each row
+                arr.rows()
+                    .into_iter()
+                    .map(|r| {
+                        let v: Vec<f32> = r.iter().copied().collect();
+                        int8::Int8Vector::encode_fast(&v)
+                    })
+                    .collect()
+            }
+        };
+        Ok(())
+    }
+
     fn search(&self, query: Vec<f32>, top_k: usize) -> Vec<(usize, f32)> {
         let mut scored: Vec<(usize, f32)> = self
             .vectors
@@ -547,6 +576,35 @@ impl PyHnswIndex {
 
     fn add_batch(&mut self, vectors: Vec<Vec<f32>>) {
         self.inner.add_batch(&vectors);
+    }
+
+    /// Zero-copy batch insert from a numpy array (shape [N, D]).
+    fn add_np(&mut self, array: PyReadonlyArray2<f32>) -> PyResult<()> {
+        let arr = array.as_array();
+        let (n, d) = (arr.nrows(), arr.ncols());
+        if let Some(flat) = arr.as_slice() {
+            for i in 0..n {
+                self.inner.add(&flat[i * d..(i + 1) * d]);
+            }
+        } else {
+            for row in arr.rows() {
+                let v: Vec<f32> = row.iter().copied().collect();
+                self.inner.add(&v);
+            }
+        }
+        Ok(())
+    }
+
+    /// Zero-copy nearest-neighbour search from a 1-D numpy query vector.
+    fn search_np(&self, query: PyReadonlyArray1<f32>, k: usize, ef: usize) -> Vec<(usize, f32)> {
+        let q = query.as_array();
+        match q.as_slice() {
+            Some(s) => self.inner.search(s, k, ef),
+            None => {
+                let v: Vec<f32> = q.iter().copied().collect();
+                self.inner.search(&v, k, ef)
+            }
+        }
     }
 
     fn search(&self, query: Vec<f32>, k: usize, ef: usize) -> Vec<(usize, f32)> {

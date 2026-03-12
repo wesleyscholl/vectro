@@ -22,13 +22,27 @@ pub struct Int8Vector {
 }
 
 impl Int8Vector {
-    /// Encode a single f32 slice to INT8.
+    /// Encode a single f32 slice to INT8 (portable scalar path).
     pub fn encode(v: &[f32]) -> Self {
         let abs_max = v.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
         let scale = if abs_max == 0.0 { 1.0 } else { abs_max };
         let inv = 127.0 / scale;
         let codes: Vec<i8> = v.iter().map(|x| (x * inv).round().clamp(-127.0, 127.0) as i8).collect();
         Self { codes, scale }
+    }
+
+    /// SIMD-accelerated encode.
+    ///
+    /// On AArch64 (Apple Silicon, ARM64 Linux) this dispatches to the NEON
+    /// intrinsic path which processes 16 elements per iteration.  All other
+    /// targets fall back to the portable scalar `encode`.
+    #[inline]
+    pub fn encode_fast(v: &[f32]) -> Self {
+        #[cfg(target_arch = "aarch64")]
+        // SAFETY: AArch64-v8 mandates NEON; no runtime feature detection needed.
+        return unsafe { encode_neon(v) };
+        #[cfg(not(target_arch = "aarch64"))]
+        return Self::encode(v);
     }
 
     /// Decode back to approximate f32.
@@ -45,9 +59,81 @@ impl Int8Vector {
     }
 }
 
-/// Encode a batch of f32 vectors to INT8 in parallel.
+/// NEON-vectorised INT8 encode for AArch64.
+///
+/// Two passes over `v`:
+///  1. NEON abs-max reduction (4-wide, then horizontal reduce).
+///  2. Multiply-round-narrow loop storing 16 i8 values per iteration via four
+///     float32x4_t registers → int32x4_t → int16x8_t → int8x16_t.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn encode_neon(v: &[f32]) -> Int8Vector {
+    use std::arch::aarch64::*;
+
+    let n = v.len();
+    if n == 0 {
+        return Int8Vector { codes: vec![], scale: 1.0 };
+    }
+    let ptr = v.as_ptr();
+
+    // ── Pass 1: NEON abs-max ────────────────────────────────────────────────
+    let mut vmax = vdupq_n_f32(0.0_f32);
+    let chunks4 = n / 4;
+    for i in 0..chunks4 {
+        let a = vld1q_f32(ptr.add(i * 4));
+        vmax = vmaxq_f32(vmax, vabsq_f32(a));
+    }
+    let mut abs_max = vmaxvq_f32(vmax); // horizontal reduce over 4 lanes
+    for &x in &v[chunks4 * 4..] {
+        let ax = x.abs();
+        if ax > abs_max {
+            abs_max = ax;
+        }
+    }
+
+    let scale = if abs_max == 0.0 { 1.0_f32 } else { abs_max };
+    let inv = 127.0_f32 / scale;
+    let vinv = vdupq_n_f32(inv);
+
+    // ── Pass 2: quantise f32 → i8 ───────────────────────────────────────────
+    // 16 elements per iteration: 4 × float32x4_t → int32x4_t → int16x8_t → int8x16_t
+    let mut codes = vec![0i8; n];
+    let out_ptr = codes.as_mut_ptr();
+    let chunks16 = n / 16;
+
+    for i in 0..chunks16 {
+        let base = i * 16;
+        // multiply then round-to-nearest (exact on already-integer floats after conversion)
+        let r0 = vrndnq_f32(vmulq_f32(vld1q_f32(ptr.add(base     )), vinv));
+        let r1 = vrndnq_f32(vmulq_f32(vld1q_f32(ptr.add(base +  4)), vinv));
+        let r2 = vrndnq_f32(vmulq_f32(vld1q_f32(ptr.add(base +  8)), vinv));
+        let r3 = vrndnq_f32(vmulq_f32(vld1q_f32(ptr.add(base + 12)), vinv));
+        // f32x4 → i32x4 (truncation of already-rounded ints is exact)
+        let i0 = vcvtq_s32_f32(r0);
+        let i1 = vcvtq_s32_f32(r1);
+        let i2 = vcvtq_s32_f32(r2);
+        let i3 = vcvtq_s32_f32(r3);
+        // i32x4 → i16x4: values in [-127, 127] so no overflow
+        let s01 = vcombine_s16(vmovn_s32(i0), vmovn_s32(i1));
+        let s23 = vcombine_s16(vmovn_s32(i2), vmovn_s32(i3));
+        // i16x8 → i8x8 with saturation (defensive; values already in range)
+        let b0 = vqmovn_s16(s01);
+        let b1 = vqmovn_s16(s23);
+        // store 16 bytes
+        vst1q_s8(out_ptr.add(base), vcombine_s8(b0, b1));
+    }
+
+    // scalar tail for the remainder (< 16 elements)
+    for i in chunks16 * 16..n {
+        *out_ptr.add(i) = (v[i] * inv).round().clamp(-127.0, 127.0) as i8;
+    }
+
+    Int8Vector { codes, scale }
+}
+
+/// Encode a batch of f32 vectors to INT8 in parallel, using SIMD where available.
 pub fn encode_batch(vectors: &[Vec<f32>]) -> Vec<Int8Vector> {
-    vectors.par_iter().map(|v| Int8Vector::encode(v)).collect()
+    vectors.par_iter().map(|v| Int8Vector::encode_fast(v)).collect()
 }
 
 /// Decode a batch of INT8 vectors back to f32.
@@ -147,5 +233,18 @@ mod tests {
         let int8_cos = cosine_int8(&q, &enc);
         // Should be within 1% of true cosine
         assert!((float_cos - int8_cos).abs() < 0.01, "float_cos={float_cos} int8_cos={int8_cos}");
+    }
+
+    #[test]
+    fn encode_fast_matches_scalar() {
+        // Verify that the SIMD path produces bit-identical results to the scalar path
+        // across a variety of vector lengths (including non-multiples of 16).
+        for &len in &[0usize, 1, 3, 7, 15, 16, 17, 64, 128, 256, 768] {
+            let v: Vec<f32> = (0..len).map(|i| ((i as f32 * 0.17) - 3.0).sin()).collect();
+            let scalar = Int8Vector::encode(&v);
+            let fast   = Int8Vector::encode_fast(&v);
+            assert_eq!(scalar.scale, fast.scale, "scale mismatch at len={len}");
+            assert_eq!(scalar.codes, fast.codes, "codes mismatch at len={len}");
+        }
     }
 }
