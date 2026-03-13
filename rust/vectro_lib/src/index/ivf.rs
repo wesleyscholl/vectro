@@ -1,0 +1,602 @@
+//! IVF-Flat (Inverted File Index) — coarse cluster search over raw float32 vectors.
+//!
+//! Algorithm summary
+//! -----------------
+//! **Build:** train `n_lists` centroids via Lloyd's k-means (same implementation
+//! used by PQ, seeded deterministically).  Each inserted vector is assigned to
+//! its nearest centroid and stored in that centroid's posting list.
+//!
+//! **Search:** for a query `q`, score all `n_lists` centroids, keep the closest
+//! `n_probe` ones, scan only those posting lists by exact cosine distance, and
+//! return the global top-k.
+//!
+//! Complexity
+//! ----------
+//! - Build:   O(n · d · n_lists · max_iter)
+//! - Add:     O(n_lists · d)  per vector
+//! - Search:  O(n_lists · d + n_probe · cluster_size · d)
+//!
+//! When the dataset is clustered (`n_probe` << `n_lists`) this is dramatically
+//! faster than brute-force and uses far less RAM than HNSW for large n.
+
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+use simsimd::SpatialSimilarity;
+
+// ---------------------------------------------------------------------------
+// Internal k-means helpers (identical LCG seed + Lloyd's used by pq.rs)
+// ---------------------------------------------------------------------------
+
+#[inline]
+fn l2_sq(a: &[f32], b: &[f32]) -> f32 {
+    a.iter().zip(b.iter()).map(|(x, y)| (x - y) * (x - y)).sum()
+}
+
+/// k-means++ centroid initialisation (D²-weighted sampling, LCG RNG).
+fn kmeans_pp_init(data: &[&[f32]], k: usize, d: usize, seed: u64) -> Vec<f32> {
+    let n = data.len();
+    debug_assert!(n >= k);
+
+    let mut state = seed.wrapping_add(1_442_695_040_888_963_407);
+    let mut lcg = || -> f64 {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 11) as f64 / (1u64 << 53) as f64
+    };
+
+    let mut cents = vec![0.0f32; k * d];
+    let first = (lcg() * n as f64) as usize % n;
+    cents[..d].copy_from_slice(data[first]);
+
+    let mut min_d2 = vec![f32::INFINITY; n];
+
+    for ki in 1..k {
+        let new_cent = &cents[(ki - 1) * d..ki * d];
+        for (i, v) in data.iter().enumerate() {
+            let dist = l2_sq(v, new_cent);
+            if dist < min_d2[i] {
+                min_d2[i] = dist;
+            }
+        }
+        let total: f64 = min_d2.iter().map(|&x| x as f64).sum();
+        let chosen = if total == 0.0 {
+            ki % n
+        } else {
+            let r = lcg() * total;
+            let mut acc = 0.0f64;
+            let mut idx = n - 1;
+            for (i, &d2) in min_d2.iter().enumerate() {
+                acc += d2 as f64;
+                if acc >= r {
+                    idx = i;
+                    break;
+                }
+            }
+            idx
+        };
+        cents[ki * d..(ki + 1) * d].copy_from_slice(data[chosen]);
+    }
+    cents
+}
+
+/// Lloyd's k-means; returns flat [k * d] centroid array.
+fn kmeans_lloyd(data: &[&[f32]], k: usize, d: usize, max_iter: usize, seed: u64) -> Vec<f32> {
+    let n = data.len();
+    let mut cents = kmeans_pp_init(data, k, d, seed);
+    let mut assignments = vec![0usize; n];
+
+    for _ in 0..max_iter {
+        let new_asgn: Vec<usize> = data
+            .par_iter()
+            .map(|v| {
+                let mut best = 0;
+                let mut best_d = f32::INFINITY;
+                for ki in 0..k {
+                    let c = &cents[ki * d..(ki + 1) * d];
+                    let dist = l2_sq(v, c);
+                    if dist < best_d {
+                        best_d = dist;
+                        best = ki;
+                    }
+                }
+                best
+            })
+            .collect();
+
+        if new_asgn == assignments {
+            break;
+        }
+        assignments = new_asgn;
+
+        // Update step.
+        let mut sums = vec![0.0f32; k * d];
+        let mut counts = vec![0usize; k];
+        for (v, &ki) in data.iter().zip(assignments.iter()) {
+            let start = ki * d;
+            for (s, &x) in sums[start..start + d].iter_mut().zip(v.iter()) {
+                *s += x;
+            }
+            counts[ki] += 1;
+        }
+        for ki in 0..k {
+            if counts[ki] == 0 {
+                continue;
+            }
+            let inv = 1.0 / counts[ki] as f32;
+            let start = ki * d;
+            for s in &mut cents[start..start + d] {
+                *s *= 0.0; // reset
+            }
+            for s_add in &sums[start..start + d] {
+                cents[start..start + d]
+                    .iter_mut()
+                    .zip(std::iter::once(s_add))
+                    .for_each(|(c, &a)| *c += a * inv);
+            }
+            // Simpler: just copy
+            for (c, s) in cents[start..start + d].iter_mut().zip(sums[start..start + d].iter()) {
+                *c = s * inv;
+            }
+        }
+    }
+    cents
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/// IVF-Flat index.
+///
+/// Stores the full `f32` vectors inside hashed posting lists partitioned by
+/// coarse centroid assignment.  Best suited for datasets of up to ~50 M vectors
+/// where memory is not the primary constraint.  For larger scales or memory
+/// pressure, use [`crate::index::ivf_pq::IvfPqIndex`] which stores PQ codes
+/// instead of raw vectors.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IvfIndex {
+    /// Number of Voronoi cells (coarse centroids).
+    pub n_lists: usize,
+    /// Default probe width: how many posting lists to scan on `search`.
+    pub n_probe: usize,
+    /// Flat array of coarse centroids, shape [n_lists * dim].
+    centroids: Vec<f32>,
+    /// Per-list global vector IDs.
+    posting_lists: Vec<Vec<usize>>,
+    /// All raw vectors stored as unit-norm f32.
+    store: Vec<Vec<f32>>,
+    /// Soft-deletion tombstones, aligned to `store`.
+    #[serde(default)]
+    deleted: Vec<bool>,
+    /// Vector dimension (set at training time).
+    dim: usize,
+    /// Whether the index has been trained.
+    trained: bool,
+}
+
+impl IvfIndex {
+    /// Create an empty, untrained index.
+    ///
+    /// Call [`train`] with representative data before inserting vectors.
+    pub fn new(n_lists: usize, n_probe: usize) -> Self {
+        assert!(n_lists >= 1, "n_lists must be >= 1");
+        assert!(n_probe >= 1 && n_probe <= n_lists, "n_probe must be in [1, n_lists]");
+        Self {
+            n_lists,
+            n_probe,
+            centroids: Vec::new(),
+            posting_lists: vec![Vec::new(); n_lists],
+            store: Vec::new(),
+            deleted: Vec::new(),
+            dim: 0,
+            trained: false,
+        }
+    }
+
+    /// Whether the index has been trained.
+    pub fn is_trained(&self) -> bool {
+        self.trained
+    }
+
+    /// Number of vectors currently stored.
+    pub fn len(&self) -> usize {
+        self.store.len()
+    }
+
+    /// True when no vectors have been inserted after training.
+    pub fn is_empty(&self) -> bool {
+        self.store.is_empty()
+    }
+
+    // ──────────────────────────── internal helpers ───────────────────────────
+
+    fn normalize(v: &[f32]) -> Vec<f32> {
+        let sq: f32 = v.iter().map(|x| x * x).sum();
+        if sq == 0.0 {
+            return v.to_vec();
+        }
+        let inv = 1.0 / sq.sqrt();
+        v.iter().map(|x| x * inv).collect()
+    }
+
+    #[inline]
+    fn cosine_dist(a: &[f32], b: &[f32]) -> f32 {
+        let dot: f64 = <f32 as SpatialSimilarity>::dot(a, b).unwrap_or(-1.0);
+        (1.0 - dot as f32).max(0.0)
+    }
+
+    /// Find the nearest centroid to `v`; returns `(centroid_id, distance)`.
+    fn nearest_centroid(&self, v: &[f32]) -> (usize, f32) {
+        let mut best = 0;
+        let mut best_d = f32::INFINITY;
+        for ci in 0..self.n_lists {
+            let c = &self.centroids[ci * self.dim..(ci + 1) * self.dim];
+            let d = Self::cosine_dist(v, c);
+            if d < best_d {
+                best_d = d;
+                best = ci;
+            }
+        }
+        (best, best_d)
+    }
+
+    /// Top-`n_probe` centroid IDs for `v`, ascending by cosine distance.
+    fn top_centroids(&self, v: &[f32], n_probe: usize) -> Vec<usize> {
+        let mut scores: Vec<(usize, f32)> = (0..self.n_lists)
+            .map(|ci| {
+                let c = &self.centroids[ci * self.dim..(ci + 1) * self.dim];
+                (ci, Self::cosine_dist(v, c))
+            })
+            .collect();
+        scores.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        scores.into_iter().take(n_probe).map(|(ci, _)| ci).collect()
+    }
+
+    #[inline]
+    fn is_deleted(&self, id: usize) -> bool {
+        self.deleted.get(id).copied().unwrap_or(false)
+    }
+
+    // ──────────────────────────── public API ────────────────────────────────
+
+    /// Train the coarse quantizer on `training_data`.
+    ///
+    /// Must be called exactly once before [`add`] / [`search`].
+    ///
+    /// # Errors
+    /// Returns an error string when `training_data.len() < n_lists`.
+    pub fn train(
+        &mut self,
+        training_data: &[Vec<f32>],
+        max_iter: usize,
+        seed: u64,
+    ) -> Result<(), String> {
+        if training_data.len() < self.n_lists {
+            return Err(format!(
+                "training_data.len()={} must be >= n_lists={}",
+                training_data.len(),
+                self.n_lists
+            ));
+        }
+        let d = training_data[0].len();
+        if d == 0 {
+            return Err("vector dimension must be > 0".into());
+        }
+
+        let norms: Vec<Vec<f32>> = training_data.iter().map(|v| Self::normalize(v)).collect();
+        let refs: Vec<&[f32]> = norms.iter().map(|v| v.as_slice()).collect();
+        self.centroids = kmeans_lloyd(&refs, self.n_lists, d, max_iter, seed);
+        self.dim = d;
+        self.trained = true;
+        Ok(())
+    }
+
+    /// Insert a single vector; returns its global ID.
+    ///
+    /// # Panics
+    /// Panics when the index has not been trained.
+    pub fn add(&mut self, vector: &[f32]) -> usize {
+        assert!(self.trained, "IvfIndex must be trained before calling add()");
+        let norm_vec = Self::normalize(vector);
+        let id = self.store.len();
+        let (ci, _) = self.nearest_centroid(&norm_vec);
+        self.posting_lists[ci].push(id);
+        self.store.push(norm_vec);
+        self.deleted.push(false);
+        id
+    }
+
+    /// Insert a batch of vectors; returns their global IDs.
+    pub fn add_batch(&mut self, vectors: &[Vec<f32>]) -> Vec<usize> {
+        vectors.iter().map(|v| self.add(v)).collect()
+    }
+
+    /// Approximate k-nearest-neighbour search.
+    ///
+    /// Scans the `n_probe` closest posting lists.  Uses `self.n_probe` by
+    /// default; override with [`search_with_probe`].
+    ///
+    /// Returns `Vec<(global_id, cosine_distance)>` sorted ascending by distance.
+    pub fn search(&self, query: &[f32], k: usize) -> Vec<(usize, f32)> {
+        self.search_with_probe(query, k, self.n_probe)
+    }
+
+    /// Like [`search`] but with an explicit `n_probe` override.
+    pub fn search_with_probe(&self, query: &[f32], k: usize, n_probe: usize) -> Vec<(usize, f32)> {
+        assert!(self.trained, "IvfIndex must be trained before calling search()");
+        let n_probe = n_probe.min(self.n_lists);
+        let q = Self::normalize(query);
+        let probe_lists = self.top_centroids(&q, n_probe);
+
+        // Collect candidates from all probed posting lists.
+        let mut candidates: Vec<(usize, f32)> = probe_lists
+            .par_iter()
+            .flat_map(|&ci| {
+                self.posting_lists[ci]
+                    .iter()
+                    .filter(|&&id| !self.is_deleted(id))
+                    .map(|&id| (id, Self::cosine_dist(&q, &self.store[id])))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        candidates.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        candidates.dedup_by_key(|e| e.0);
+        candidates.truncate(k);
+        candidates
+    }
+
+    /// Soft-delete a vector by global ID.
+    pub fn delete(&mut self, id: usize) {
+        if id < self.store.len() {
+            if self.deleted.len() < self.store.len() {
+                self.deleted.resize(self.store.len(), false);
+            }
+            self.deleted[id] = true;
+        }
+    }
+
+    /// Compute mean recall@k against brute-force ground truth.
+    pub fn recall_at_k(
+        &self,
+        queries: &[Vec<f32>],
+        ground_truth: &[Vec<usize>],
+        k: usize,
+        n_probe: usize,
+    ) -> f32 {
+        use std::collections::HashSet;
+        let total: f32 = queries
+            .iter()
+            .zip(ground_truth.iter())
+            .map(|(q, gt)| {
+                let res = self.search_with_probe(q, k, n_probe);
+                let found: HashSet<usize> = res.iter().map(|&(id, _)| id).collect();
+                let hits = gt.iter().take(k).filter(|&&id| found.contains(&id)).count();
+                hits as f32 / k.min(gt.len()).max(1) as f32
+            })
+            .sum();
+        total / queries.len() as f32
+    }
+
+    /// Persist to a file (bincode).
+    pub fn save(&self, path: &std::path::Path) -> anyhow::Result<()> {
+        let bytes = bincode::serialize(self)?;
+        std::fs::write(path, bytes)?;
+        Ok(())
+    }
+
+    /// Load from a file saved with [`save`].
+    pub fn load(path: &std::path::Path) -> anyhow::Result<Self> {
+        let bytes = std::fs::read(path)?;
+        Ok(bincode::deserialize(&bytes)?)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_vecs(n: usize, d: usize) -> Vec<Vec<f32>> {
+        (0..n)
+            .map(|i| (0..d).map(|j| ((i * d + j) as f32 * 0.031 + 0.1).sin()).collect())
+            .collect()
+    }
+
+    fn brute_force_gt(vecs: &[Vec<f32>], queries: &[Vec<f32>], k: usize) -> Vec<Vec<usize>> {
+        queries
+            .iter()
+            .map(|q| {
+                let nq: f32 = q.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
+                let mut scores: Vec<(usize, f32)> = vecs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| {
+                        let nv: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-9);
+                        let dot: f32 = q.iter().zip(v.iter()).map(|(a, b)| a * b).sum();
+                        (i, dot / (nq * nv))
+                    })
+                    .collect();
+                scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+                scores.into_iter().take(k).map(|(i, _)| i).collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn train_and_add_smoke() {
+        let vecs = make_vecs(100, 32);
+        let mut idx = IvfIndex::new(8, 4);
+        idx.train(&vecs, 20, 42).expect("train failed");
+        for v in &vecs {
+            idx.add(v);
+        }
+        assert_eq!(idx.len(), 100);
+        // Every vector should appear exactly once across all posting lists.
+        let total: usize = idx.posting_lists.iter().map(|l| l.len()).sum();
+        assert_eq!(total, 100);
+    }
+
+    #[test]
+    fn search_empty_after_train() {
+        let train = make_vecs(10, 8);
+        let mut idx = IvfIndex::new(4, 2);
+        idx.train(&train, 10, 1).unwrap();
+        let q = vec![0.1f32; 8];
+        let res = idx.search(&q, 5);
+        assert!(res.is_empty());
+    }
+
+    #[test]
+    fn search_self_nearest() {
+        let vecs = make_vecs(50, 16);
+        let mut idx = IvfIndex::new(5, 5); // n_probe == n_lists → exact
+        idx.train(&vecs, 20, 7).unwrap();
+        for v in &vecs {
+            idx.add(v);
+        }
+        for (i, v) in vecs.iter().enumerate() {
+            let res = idx.search(v, 1);
+            assert_eq!(res.len(), 1);
+            assert_eq!(res[0].0, i, "self-query failed at i={i}");
+            assert!(res[0].1 < 1e-4, "dist to self = {}", res[0].1);
+        }
+    }
+
+    #[test]
+    fn n_probe_full_equals_exact() {
+        // When n_probe == n_lists the result must equal brute-force.
+        let vecs = make_vecs(80, 16);
+        let queries = &vecs[..10];
+        let k = 5;
+        let gt = brute_force_gt(&vecs, queries, k);
+
+        let mut idx = IvfIndex::new(4, 4);
+        idx.train(&vecs, 20, 99).unwrap();
+        for v in &vecs {
+            idx.add(v);
+        }
+        let recall = idx.recall_at_k(queries, &gt, k, 4);
+        assert!(recall >= 0.99, "full-probe recall={recall:.3}");
+    }
+
+    #[test]
+    fn delete_excludes_from_search() {
+        let vecs = make_vecs(20, 8);
+        let mut idx = IvfIndex::new(4, 4);
+        idx.train(&vecs, 10, 5).unwrap();
+        for v in &vecs {
+            idx.add(v);
+        }
+        idx.delete(0);
+        let res = idx.search(&vecs[0], 5);
+        let ids: Vec<usize> = res.iter().map(|&(id, _)| id).collect();
+        assert!(!ids.contains(&0), "deleted id 0 appeared in results: {ids:?}");
+    }
+
+    #[test]
+    fn delete_out_of_bounds_no_panic() {
+        let vecs = make_vecs(5, 4);
+        let mut idx = IvfIndex::new(2, 2);
+        idx.train(&vecs, 5, 1).unwrap();
+        idx.delete(9999); // must not panic
+    }
+
+    #[test]
+    fn save_load_roundtrip() {
+        let vecs = make_vecs(40, 16);
+        let mut idx = IvfIndex::new(4, 4);
+        idx.train(&vecs, 15, 13).unwrap();
+        for v in &vecs {
+            idx.add(v);
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("ivf.bin");
+        idx.save(&path).unwrap();
+        let loaded = IvfIndex::load(&path).unwrap();
+        assert_eq!(loaded.len(), idx.len());
+        let q = vecs[0].clone();
+        let r1 = idx.search(&q, 5);
+        let r2 = loaded.search(&q, 5);
+        assert_eq!(
+            r1.iter().map(|&(id, _)| id).collect::<Vec<_>>(),
+            r2.iter().map(|&(id, _)| id).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn train_error_too_few_vectors() {
+        let vecs = make_vecs(3, 4);
+        let mut idx = IvfIndex::new(8, 2);
+        let err = idx.train(&vecs, 10, 0);
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn untrained_add_panics() {
+        let mut idx = IvfIndex::new(4, 2);
+        let result = std::panic::catch_unwind(move || {
+            idx.add(&[1.0f32, 0.0, 0.0]);
+        });
+        assert!(result.is_err());
+    }
+}
+
+#[cfg(test)]
+mod proptest_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn make_idx(data: &[Vec<f32>], n_lists: usize) -> IvfIndex {
+        let n_lists = n_lists.min(data.len()).max(1);
+        let mut idx = IvfIndex::new(n_lists, n_lists);
+        idx.train(data, 10, 42).unwrap();
+        for v in data {
+            idx.add(v);
+        }
+        idx
+    }
+
+    proptest! {
+        /// With n_probe == n_lists every inserted vector must be its own nearest neighbour.
+        #[test]
+        fn self_is_nearest_full_probe(
+            n in 4usize..20,
+            d in 4usize..16usize,
+        ) {
+            let vecs: Vec<Vec<f32>> = (0..n)
+                .map(|i| (0..d).map(|j| ((i * d + j) as f32 * 0.1 + 0.05).sin()).collect())
+                .collect();
+            let idx = make_idx(&vecs, 2);
+            for (i, v) in vecs.iter().enumerate() {
+                let res = idx.search(v, 1);
+                prop_assert_eq!(res[0].0, i, "self-query failed at i={i}");
+            }
+        }
+
+        /// Search must never return a deleted ID.
+        #[test]
+        fn delete_never_returned(
+            n in 8usize..30,
+            del_id in 0usize..8,
+        ) {
+            let d = 8;
+            let vecs: Vec<Vec<f32>> = (0..n)
+                .map(|i| (0..d).map(|j| ((i + j) as f32 * 0.07).cos()).collect())
+                .collect();
+            let del = del_id % n;
+            let mut idx = make_idx(&vecs, 2);
+            idx.delete(del);
+            for v in &vecs {
+                let res = idx.search(v, n);
+                for &(id, _) in &res {
+                    prop_assert_ne!(id, del, "deleted id {del} appeared in results");
+                }
+            }
+        }
+    }
+}

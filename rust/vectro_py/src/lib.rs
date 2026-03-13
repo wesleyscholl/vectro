@@ -385,6 +385,8 @@ fn benchmark_search_performance(
 
 use vectro_lib::quant::{int8, nf4, binary, pq, bf16};
 use vectro_lib::index::hnsw::HnswIndex;
+use vectro_lib::index::ivf::IvfIndex;
+use vectro_lib::index::ivf_pq::IvfPqIndex;
 
 /// INT8 symmetric abs-max quantizer (Python binding).
 #[pyclass]
@@ -754,6 +756,206 @@ impl PyBf16Encoder {
     }
 }
 
+/// IVF-Flat approximate nearest-neighbour index (Python binding).
+#[pyclass]
+struct PyIvfIndex {
+    inner: IvfIndex,
+}
+
+#[pymethods]
+impl PyIvfIndex {
+    #[new]
+    fn new(n_lists: usize, n_probe: usize) -> Self {
+        Self { inner: IvfIndex::new(n_lists, n_probe) }
+    }
+
+    /// Train the coarse quantizer from example vectors.
+    fn train(&mut self, vectors: Vec<Vec<f32>>, max_iter: usize, seed: u64) -> PyResult<()> {
+        self.inner
+            .train(&vectors, max_iter, seed)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+    }
+
+    /// Zero-copy train from a numpy array (shape [N, D]).
+    fn train_np(&mut self, array: PyReadonlyArray2<f32>, max_iter: usize, seed: u64) -> PyResult<()> {
+        let arr = array.as_array();
+        let (n, d) = (arr.nrows(), arr.ncols());
+        let vecs: Vec<Vec<f32>> = match arr.as_slice() {
+            Some(flat) => (0..n).map(|i| flat[i * d..(i + 1) * d].to_vec()).collect(),
+            None => arr.rows().into_iter().map(|r| r.iter().copied().collect()).collect(),
+        };
+        self.inner.train(&vecs, max_iter, seed)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+    }
+
+    /// Add a single vector; returns its global id.
+    fn add(&mut self, vector: Vec<f32>) -> usize {
+        self.inner.add(&vector)
+    }
+
+    /// Zero-copy batch insert from a numpy array (shape [N, D]).
+    fn add_np(&mut self, array: PyReadonlyArray2<f32>) -> PyResult<()> {
+        let arr = array.as_array();
+        let (n, d) = (arr.nrows(), arr.ncols());
+        if let Some(flat) = arr.as_slice() {
+            self.inner.add_batch(
+                &(0..n).map(|i| flat[i * d..(i + 1) * d].to_vec()).collect::<Vec<_>>(),
+            );
+        } else {
+            let vecs: Vec<Vec<f32>> = arr.rows().into_iter().map(|r| r.iter().copied().collect()).collect();
+            self.inner.add_batch(&vecs);
+        }
+        Ok(())
+    }
+
+    /// Search for the k nearest neighbours.  Returns list of (id, distance).
+    fn search(&self, query: Vec<f32>, k: usize) -> Vec<(usize, f32)> {
+        self.inner.search(&query, k)
+    }
+
+    /// Zero-copy search from a 1-D numpy query vector.
+    fn search_np(&self, query: PyReadonlyArray1<f32>, k: usize) -> Vec<(usize, f32)> {
+        let q = query.as_array();
+        match q.as_slice() {
+            Some(s) => self.inner.search(s, k),
+            None => { let v: Vec<f32> = q.iter().copied().collect(); self.inner.search(&v, k) }
+        }
+    }
+
+    /// Search with explicit n_probe override.
+    fn search_with_probe(&self, query: Vec<f32>, k: usize, n_probe: usize) -> Vec<(usize, f32)> {
+        self.inner.search_with_probe(&query, k, n_probe)
+    }
+
+    /// Soft-delete a vector by global id.
+    fn delete(&mut self, id: usize) {
+        self.inner.delete(id);
+    }
+
+    /// Persist to file (bincode).
+    fn save(&self, path: &str) -> PyResult<()> {
+        self.inner.save(std::path::Path::new(path))
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+    }
+
+    /// Load from file.
+    #[staticmethod]
+    fn load(path: &str) -> PyResult<Self> {
+        let inner = IvfIndex::load(std::path::Path::new(path))
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        Ok(Self { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!("PyIvfIndex(n_lists={}, trained={})", self.inner.n_lists, self.inner.is_trained())
+    }
+}
+
+/// IVF-PQ approximate nearest-neighbour index with ADC scoring (Python binding).
+#[pyclass]
+struct PyIvfPqIndex {
+    inner: IvfPqIndex,
+}
+
+#[pymethods]
+impl PyIvfPqIndex {
+    #[new]
+    fn new(n_lists: usize, n_probe: usize) -> Self {
+        Self { inner: IvfPqIndex::new(n_lists, n_probe) }
+    }
+
+    /// Train the coarse quantizer and PQ codebook.
+    fn train(
+        &mut self,
+        vectors: Vec<Vec<f32>>,
+        n_subspaces: usize,
+        n_centroids: usize,
+        max_iter: usize,
+        seed: u64,
+    ) -> PyResult<()> {
+        self.inner
+            .train(&vectors, n_subspaces, n_centroids, max_iter, seed)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+    }
+
+    /// Zero-copy train from a numpy array (shape [N, D]).
+    fn train_np(
+        &mut self,
+        array: PyReadonlyArray2<f32>,
+        n_subspaces: usize,
+        n_centroids: usize,
+        max_iter: usize,
+        seed: u64,
+    ) -> PyResult<()> {
+        let arr = array.as_array();
+        let (n, d) = (arr.nrows(), arr.ncols());
+        let vecs: Vec<Vec<f32>> = match arr.as_slice() {
+            Some(flat) => (0..n).map(|i| flat[i * d..(i + 1) * d].to_vec()).collect(),
+            None => arr.rows().into_iter().map(|r| r.iter().copied().collect()).collect(),
+        };
+        self.inner.train(&vecs, n_subspaces, n_centroids, max_iter, seed)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+    }
+
+    /// Add a single vector; returns its global id.
+    fn add(&mut self, vector: Vec<f32>) -> usize {
+        self.inner.add(&vector)
+    }
+
+    /// Zero-copy batch insert from a numpy array (shape [N, D]).
+    fn add_np(&mut self, array: PyReadonlyArray2<f32>) -> PyResult<()> {
+        let arr = array.as_array();
+        let (n, d) = (arr.nrows(), arr.ncols());
+        let vecs: Vec<Vec<f32>> = match arr.as_slice() {
+            Some(flat) => (0..n).map(|i| flat[i * d..(i + 1) * d].to_vec()).collect(),
+            None => arr.rows().into_iter().map(|r| r.iter().copied().collect()).collect(),
+        };
+        for v in &vecs { self.inner.add(v); }
+        Ok(())
+    }
+
+    /// Search for the k nearest neighbours using ADC.  Returns list of (id, distance).
+    fn search(&self, query: Vec<f32>, k: usize) -> Vec<(usize, f32)> {
+        self.inner.search(&query, k)
+    }
+
+    /// Zero-copy search from a 1-D numpy query vector.
+    fn search_np(&self, query: PyReadonlyArray1<f32>, k: usize) -> Vec<(usize, f32)> {
+        let q = query.as_array();
+        match q.as_slice() {
+            Some(s) => self.inner.search(s, k),
+            None => { let v: Vec<f32> = q.iter().copied().collect(); self.inner.search(&v, k) }
+        }
+    }
+
+    /// Search with explicit n_probe override.
+    fn search_with_probe(&self, query: Vec<f32>, k: usize, n_probe: usize) -> Vec<(usize, f32)> {
+        self.inner.search_with_probe(&query, k, n_probe)
+    }
+
+    /// Soft-delete a vector by global id.
+    fn delete(&mut self, id: usize) {
+        self.inner.delete(id);
+    }
+
+    /// Persist to file (bincode).
+    fn save(&self, path: &str) -> PyResult<()> {
+        self.inner.save(path).map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+    }
+
+    /// Load from file.
+    #[staticmethod]
+    fn load(path: &str) -> PyResult<Self> {
+        let inner = IvfPqIndex::load(path)
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        Ok(Self { inner })
+    }
+
+    fn __repr__(&self) -> String {
+        format!("PyIvfPqIndex(n_lists={}, trained={})", self.inner.n_lists(), self.inner.is_trained())
+    }
+}
+
 /// Main Python module
 #[pymodule]
 fn vectro_py(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
@@ -767,6 +969,8 @@ fn vectro_py(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyPQCodebook>()?;
     m.add_class::<PyHnswIndex>()?;
     m.add_class::<PyBf16Encoder>()?;
+    m.add_class::<PyIvfIndex>()?;
+    m.add_class::<PyIvfPqIndex>()?;
     m.add_function(wrap_pyfunction!(compress_embeddings, m)?)?;
     m.add_function(wrap_pyfunction!(analyze_compression_quality, m)?)?;
     m.add_function(wrap_pyfunction!(benchmark_search_performance, m)?)?;

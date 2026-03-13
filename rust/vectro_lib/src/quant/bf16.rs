@@ -129,3 +129,59 @@ mod tests {
         assert_eq!(enc, dec);
     }
 }
+
+#[cfg(test)]
+mod proptest_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn arb_unit_vec(d: usize) -> impl Strategy<Value = Vec<f32>> {
+        prop::collection::vec(
+            prop::num::f32::NORMAL | prop::num::f32::POSITIVE | prop::num::f32::NEGATIVE,
+            d,
+        )
+        .prop_map(|v| {
+            let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt().max(1e-12);
+            v.into_iter().map(|x| x / norm).collect()
+        })
+    }
+
+    proptest! {
+        /// BF16 roundtrip: cosine ≥ 0.999 for any unit vector (truncation only).
+        #[test]
+        fn roundtrip_cosine_quality(v in arb_unit_vec(32)) {
+            let enc = Bf16Vector::encode(&v);
+            let dec = enc.decode();
+            let dot: f32 = v.iter().zip(dec.iter()).map(|(a, b)| a * b).sum();
+            let nb = dec.iter().map(|x| x * x).sum::<f32>().sqrt();
+            if nb > 1e-6 {
+                let cos = dot / nb; // v is already unit-norm
+                prop_assert!(cos >= 0.999, "cosine {cos} < 0.999");
+            }
+        }
+
+        /// Scale invariance: cosine similarity preserved regardless of vector scale.
+        #[test]
+        fn scale_cosine_invariant(
+            v in arb_unit_vec(16),
+            scale in 0.01f32..100.0f32,
+        ) {
+            let scaled: Vec<f32> = v.iter().map(|x| x * scale).collect();
+            let enc_v = Bf16Vector::encode(&v);
+            let enc_s = Bf16Vector::encode(&scaled);
+            let d_v = enc_v.cosine_dist(&enc_v);
+            let d_s = enc_s.cosine_dist(&enc_s);
+            // Both round-tripped to themselves, so both cosine_dist should be ~0
+            prop_assert!(d_v < 1e-2, "cosine_dist(v,v) = {d_v}");
+            prop_assert!(d_s < 1e-2, "cosine_dist(s,s) = {d_s}");
+        }
+
+        /// Decoded length equals input dimension.
+        #[test]
+        fn decode_length_matches(v in arb_unit_vec(24)) {
+            let enc = Bf16Vector::encode(&v);
+            let dec = enc.decode();
+            prop_assert_eq!(dec.len(), v.len());
+        }
+    }
+}

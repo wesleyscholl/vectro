@@ -560,17 +560,51 @@ to Rust via PyO3 without the `pixi`/Mojo toolchain.
 
 ---
 
+---
+
+## Phase 20 — v4.1.0: IVF Indexes, Proptest Coverage, NF4 AVX2, Python+JS Bindings  ✅ COMPLETE
+
+> Released: v4.1.0
+
+### Summary
+
+Full ANN index suite, extended property-based testing, a NF4 AVX2 hot-path,
+updated Python bindings, and a working N-API addon that reads `.vqz` files from
+Node.js.
+
+| Step | Deliverable | Status |
+|------|-------------|--------|
+| 20a | `rust/vectro_lib/src/index/ivf.rs` — IvfIndex: k-means++ coarse quantizer, posting lists, n_lists/n_probe, train/add/search_with_probe/delete/save/load, recall_at_k; 9 unit tests + 2 proptests | ✅ |
+| 20b | `rust/vectro_lib/src/index/ivf_pq.rs` — IvfPqIndex: IVF with Asymmetric Distance Computation (ADC); O(M) score vs O(d); same API surface + 9 tests + 2 proptests | ✅ |
+| 20c | `rust/vectro_lib/src/index/mod.rs` — re-export `pub mod ivf; pub mod ivf_pq;` | ✅ |
+| 20d | `rust/vectro_lib/src/quant/binary.rs` — proptest module: hamming_symmetry, hamming_self_zero, hamming_complement_equals_dim, normalize_preserves_encoding | ✅ |
+| 20e | `rust/vectro_lib/src/quant/nf4.rs` — proptest module (roundtrip_cosine_quality, scale_invariance, decode_length_matches) + `encode_fast` 3-way dispatch: x86_64+AVX2 → `avx2_abs_max` SIMD; aarch64 → fold; scalar fallback | ✅ |
+| 20f | `rust/vectro_lib/src/quant/bf16.rs` — proptest module: roundtrip_cosine_quality, scale_cosine_invariant, decode_length_matches | ✅ |
+| 20g | `rust/vectro_py/src/lib.rs` — PyIvfIndex + PyIvfPqIndex: numpy zero-copy train/add/search; module registration | ✅ |
+| 20h | `js/src/vectro_napi.cpp` — full ADR-001 Phase 2 implementation: dequantize (scalar kernel, compiler-autovectorised), readVqz (64-byte header, magic validation, zlib decompression, body split), VqzReader class | ✅ |
+| 20i | `js/binding.gyp` — added `-lz` (macOS/Linux) and `zlib.lib` (Windows) | ✅ |
+| 20j | `.github/workflows/ci.yml` — `node-bindings` job: npm install → npm run build → smoke-test exports | ✅ |
+| 20k | `PLAN.md` updated; commit tagged and pushed | ✅ |
+
+### ADR-001 Phase 2 — VQZ N-API implementation notes
+
+- MAGIC: `"VECTRO\x03\x00"` (8 bytes); header total = 64 bytes.
+- Header parse: `comp_flags` (uint16 @ 10), `n_vectors` (uint64 @ 12), `dims` (uint32 @ 20), `metadata_len` (uint32 @ 26).
+- Decompression: `comp_flags=0` → raw; `comp_flags=2` → zlib `uncompress()`; `comp_flags=1` (zstd) → error with helpful message; no libzstd dep needed.
+- Body: `int8[n*d] || float32[n]`.
+- `dequantize`: `out[i*d+j] = (float)q[i*d+j] * scales[i]` — auto-vectorised by clang/gcc at `-O2`.
+
+---
+
 ## Immediate Next Actions (Ordered)
 
 1. **Run ANN comparison** — `python benchmarks/benchmark_ann_comparison.py`
    after `pip install "vectro[bench-ann]"` to produce `results/ann_comparison.json`.
 2. **Run real-embeddings benchmark** — `python benchmarks/benchmark_real_embeddings_v2.py`
    (downloads GloVe-100 on first run, ~862 MB cache).
-3. **ADR-001 Phase 2** — implement `js/src/vectro_napi.cpp` for real: `.vqz` header parser,
-   zstd decompressor, SIMD dequantize kernel; `npm run build` should succeed on macOS-arm64.
-4. **Provision GPU runner** — uncomment the `gpu-throughput` CI job in `.github/workflows/ci.yml`
+3. **Provision GPU runner** — uncomment the `gpu-throughput` CI job in `.github/workflows/ci.yml`
    when a CUDA self-hosted runner is available.
-5. **ONNX Runtime CI lane** — promote `test_onnx_runtime.py` to non-conditional once `onnxruntime`
+4. **ONNX Runtime CI lane** — promote `test_onnx_runtime.py` to non-conditional once `onnxruntime`
    is added to the default dev dependency set.
 
 ---

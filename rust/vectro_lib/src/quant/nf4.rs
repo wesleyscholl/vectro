@@ -14,6 +14,9 @@
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::*;
+
 /// NF4 codebook — quantiles of N(0, 1), exactly reproducing the Python reference.
 pub const NF4_LEVELS: [f32; 16] = [
     -1.0,
@@ -100,7 +103,55 @@ impl Nf4Vector {
         Self { packed, scale, dim }
     }
 
-    /// Decode packed NF4 back to approximate f32.
+    /// Encode using a platform-optimised abs-max pass when available.
+    ///
+    /// On x86-64 with AVX2 the abs-max scan uses 256-bit SIMD (8-wide).
+    /// The nibble quantisation loop stays scalar because it is a table lookup
+    /// that doesn't benefit from float SIMD.  Falls back to `encode` on other
+    /// targets.
+    pub fn encode_fast(v: &[f32]) -> Self {
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx2") {
+                // SAFETY: we checked avx2 at runtime.
+                let abs_max = unsafe { avx2_abs_max(v) };
+                return Self::encode_with_absmax(v, abs_max);
+            }
+        }
+        // aarch64 NEON: use fold-based abs-max (compiler auto-vectorises well)
+        #[cfg(target_arch = "aarch64")]
+        {
+            let abs_max = v.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+            return Self::encode_with_absmax(v, abs_max);
+        }
+        #[allow(unreachable_code)]
+        Self::encode(v)
+    }
+
+    /// Internal: encode given a pre-computed abs-max.
+    fn encode_with_absmax(v: &[f32], abs_max: f32) -> Self {
+        let dim = v.len();
+        let scale = if abs_max == 0.0 { 1.0 } else { abs_max };
+        let inv = 1.0 / scale;
+
+        let bytes_per_vec = (dim + 1) / 2;
+        let mut packed = vec![0u8; bytes_per_vec];
+
+        let mut i = 0;
+        while i + 1 < dim {
+            let lo = nearest_nf4((v[i] * inv).clamp(-1.0, 1.0));
+            let hi = nearest_nf4((v[i + 1] * inv).clamp(-1.0, 1.0));
+            packed[i / 2] = lo | (hi << 4);
+            i += 2;
+        }
+        if dim % 2 == 1 {
+            let lo = nearest_nf4((v[dim - 1] * inv).clamp(-1.0, 1.0));
+            packed[bytes_per_vec - 1] = lo;
+        }
+
+        Self { packed, scale, dim }
+    }
+
     pub fn decode(&self) -> Vec<f32> {
         let mut out = Vec::with_capacity(self.dim);
         let mut i = 0;
@@ -118,9 +169,54 @@ impl Nf4Vector {
     }
 }
 
+/// AVX2 horizontal abs-max over a f32 slice.
+///
+/// Processes 8 floats per iteration with 256-bit registers.
+/// # Safety
+/// Caller must ensure `avx2` is available (`is_x86_feature_detected!("avx2")`).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn avx2_abs_max(v: &[f32]) -> f32 {
+    let n = v.len();
+    let ptr = v.as_ptr();
+
+    // Sign-mask: clear sign bit of each f32 lane → |x|
+    let sign_mask = _mm256_set1_ps(-0.0f32);
+
+    let mut acc = _mm256_setzero_ps();
+    let chunks = n / 8;
+    for i in 0..chunks {
+        let vals = _mm256_loadu_ps(ptr.add(i * 8));
+        let abs_vals = _mm256_andnot_ps(sign_mask, vals); // |v[i]|
+        acc = _mm256_max_ps(acc, abs_vals);
+    }
+
+    // Horizontal max across 8 lanes
+    let hi128 = _mm256_extractf128_ps(acc, 1);
+    let lo128 = _mm256_castps256_ps128(acc);
+    let max128 = _mm_max_ps(lo128, hi128);
+    // Shuffle hi64 → lo64, take max
+    let shuf = _mm_movehl_ps(max128, max128);
+    let max64 = _mm_max_ps(max128, shuf);
+    // max of two remaining lanes
+    let shuf2 = _mm_shuffle_ps(max64, max64, 0x55);
+    let max32 = _mm_max_ss(max64, shuf2);
+    let mut result = _mm_cvtss_f32(max32);
+
+    // Scalar tail
+    let tail_start = chunks * 8;
+    for i in tail_start..n {
+        let val = v[i].abs();
+        if val > result {
+            result = val;
+        }
+    }
+    result
+}
+
 /// Encode a batch of f32 vectors to NF4 in parallel.
 pub fn encode_batch(vectors: &[Vec<f32>]) -> Vec<Nf4Vector> {
-    vectors.par_iter().map(|v| Nf4Vector::encode(v)).collect()
+    vectors.par_iter().map(|v| Nf4Vector::encode_fast(v)).collect()
 }
 
 /// Decode a batch of NF4 vectors back to f32 in parallel.
@@ -207,5 +303,58 @@ mod tests {
         assert_eq!(nearest_nf4(-1.0), 0);
         // nearest_nf4(1.0) → index 15
         assert_eq!(nearest_nf4(1.0), 15);
+    }
+}
+
+#[cfg(test)]
+mod proptest_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    fn arb_nonzero_vec(d: usize) -> impl Strategy<Value = Vec<f32>> {
+        prop::collection::vec(
+            prop::num::f32::NORMAL | prop::num::f32::POSITIVE | prop::num::f32::NEGATIVE,
+            d,
+        )
+        .prop_filter("degenerate zero vector", |v| {
+            v.iter().any(|x| x.abs() > 1e-6)
+        })
+    }
+
+    proptest! {
+        /// Encode then decode should yield cosine ≥ 0.97 with a normal vector.
+        #[test]
+        fn roundtrip_cosine_quality(v in arb_nonzero_vec(32)) {
+            let enc = Nf4Vector::encode(&v);
+            let dec = enc.decode();
+            let dot: f32 = v.iter().zip(dec.iter()).map(|(a, b)| a * b).sum();
+            let na = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+            let nb = dec.iter().map(|x| x * x).sum::<f32>().sqrt();
+            if na > 1e-6 && nb > 1e-6 {
+                let cos = dot / (na * nb);
+                prop_assert!(cos >= 0.97, "cosine {cos} < 0.97 for v={v:?}");
+            }
+        }
+
+        /// Scale invariance: encoding v and α·v (α > 0) gives same nibbles.
+        #[test]
+        fn scale_invariance(
+            v in arb_nonzero_vec(16),
+            scale in 0.1f32..20.0f32,
+        ) {
+            let scaled: Vec<f32> = v.iter().map(|x| x * scale).collect();
+            let enc1 = Nf4Vector::encode(&v);
+            let enc2 = Nf4Vector::encode(&scaled);
+            prop_assert_eq!(enc1.packed, enc2.packed,
+                "packed bytes differ under scale factor {scale}");
+        }
+
+        /// Decoded length always equals the original dimension.
+        #[test]
+        fn decode_length_matches(v in arb_nonzero_vec(24)) {
+            let enc = Nf4Vector::encode(&v);
+            let dec = enc.decode();
+            prop_assert_eq!(dec.len(), v.len());
+        }
     }
 }

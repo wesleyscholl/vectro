@@ -129,6 +129,42 @@ jobs:
           files: lcov.info
           fail_ci_if_error: false
 
+  # ── Node.js N-API native addon build ──────────────────────────────────────
+  node-bindings:
+    name: Node.js N-API build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: js/node_modules
+          key: node-${{ hashFiles('js/package.json') }}
+
+      - name: Install dependencies
+        run: cd js && npm install
+
+      - name: Build native addon
+        run: cd js && npm run build
+
+      - name: Smoke-test exports
+        run: |
+          node -e "
+            const v = require('./js');
+            const keys = Object.keys(v);
+            console.log('Exported symbols:', keys.join(', '));
+            if (!keys.includes('dequantize'))  process.exit(1);
+            if (!keys.includes('readVqz'))     process.exit(1);
+            if (!keys.includes('VqzReader'))   process.exit(1);
+            console.log('All required exports present.');
+          "
+
 # gpu-throughput:
 #   runs-on: [self-hosted, gpu, cuda-12]
 #   # Phase 12 target: >= 50M vec/s on A10G.

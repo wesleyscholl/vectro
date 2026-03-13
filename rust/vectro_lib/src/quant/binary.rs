@@ -195,3 +195,63 @@ mod tests {
         assert_eq!(decoded[0].len(), 32);
     }
 }
+
+#[cfg(test)]
+mod proptest_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    /// Strategy: non-zero f32 vector of fixed dimension d
+    fn arb_nonzero_vec(d: usize) -> impl Strategy<Value = Vec<f32>> {
+        prop::collection::vec(
+            prop::num::f32::NORMAL | prop::num::f32::POSITIVE | prop::num::f32::NEGATIVE,
+            d,
+        )
+        .prop_filter("degenerate zero vector", |v| {
+            v.iter().any(|x| x.abs() > 1e-10)
+        })
+    }
+
+    proptest! {
+        /// Hamming distance is symmetric.
+        #[test]
+        fn hamming_symmetry(
+            v1 in arb_nonzero_vec(32),
+            v2 in arb_nonzero_vec(32),
+        ) {
+            let a = BinaryVector::encode(&v1, false);
+            let b = BinaryVector::encode(&v2, false);
+            prop_assert_eq!(a.hamming(&b), b.hamming(&a));
+        }
+
+        /// Hamming distance of a vector with itself is 0.
+        #[test]
+        fn hamming_self_zero(v in arb_nonzero_vec(32)) {
+            let enc = BinaryVector::encode(&v, false);
+            prop_assert_eq!(enc.hamming(&enc), 0);
+        }
+
+        /// Complementing every element flips every bit → Hamming == dim.
+        #[test]
+        fn hamming_complement_equals_dim(v in arb_nonzero_vec(8)) {
+            let d = v.len();
+            let negated: Vec<f32> = v.iter().map(|x| -x).collect();
+            let a = BinaryVector::encode(&v, false);
+            let b = BinaryVector::encode(&negated, false);
+            // Each sign flips → every bit differs
+            prop_assert_eq!(a.hamming(&b) as usize, d);
+        }
+
+        /// Normalize flag: scaling doesn't change binary encoding.
+        #[test]
+        fn normalize_preserves_encoding(
+            v in arb_nonzero_vec(16),
+            scale in 0.1f32..10.0f32,
+        ) {
+            let scaled: Vec<f32> = v.iter().map(|x| x * scale).collect();
+            let enc1 = BinaryVector::encode(&v, true);
+            let enc2 = BinaryVector::encode(&scaled, true);
+            prop_assert_eq!(enc1.packed, enc2.packed);
+        }
+    }
+}
