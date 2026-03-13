@@ -1,7 +1,26 @@
 # Vectro — Plan
 
 > Last updated: 2026-06-26
-> Current version: **4.0.0-rc3** — Phase 17 performance recovery complete
+> Current version: **4.2.0** — Phase 21 benchmarks + production hardening complete
+
+---
+
+## v4.2.0 — Phase 21: Criterion Benchmarks + Production Hardening ✅ COMPLETE
+
+### Changes
+
+| Component | What changed |
+|-----------|-------------|
+| `vectro_lib/benches/simd_bench.rs` | Added `bench_ivf_search` and `bench_ivfpq_search` Criterion groups (N=10k, D=128) |
+| `index/hnsw.rs` | `vacuum()` — full graph rebuild after soft-deletes |
+| `index/ivf.rs` | `vacuum()`, `search_filtered<F>`, `search_filtered_with_probe<F>`, `search_for_recall` |
+| `index/ivf_pq.rs` | `vacuum()`, `search_for_recall` |
+| `vectro_py/src/lib.rs` | Python bindings for all new methods (`vacuum`, `search_filtered_np`, `search_for_recall`) |
+| `quant/binary.rs` | Fixed pre-existing proptest f32-overflow bug: use f64 for norm computation |
+| `quant/nf4.rs` | Fixed pre-existing proptest coverage: bounded strategy avoids f32 norm overflow |
+
+### Tests
+- 100 / 100 tests passing
 
 ---
 

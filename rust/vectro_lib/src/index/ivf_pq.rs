@@ -390,6 +390,80 @@ impl IvfPqIndex {
         Ok(index)
     }
 
+    /// Compact the index by permanently removing soft-deleted vectors and
+    /// remapping posting lists to contiguous global IDs.
+    ///
+    /// Returns the number of vectors removed.  If no vectors are deleted this
+    /// is a cheap no-op.
+    pub fn vacuum(&mut self) -> usize {
+        let deleted_count = self.deleted.iter().filter(|&&d| d).count();
+        if deleted_count == 0 {
+            return 0;
+        }
+
+        // Build old_id → new_id mapping.
+        let mut mapping: Vec<Option<usize>> = Vec::with_capacity(self.pq_codes.len());
+        let mut new_id = 0usize;
+        for &del in &self.deleted {
+            if del {
+                mapping.push(None);
+            } else {
+                mapping.push(Some(new_id));
+                new_id += 1;
+            }
+        }
+
+        // Compact PQ codes.
+        let new_codes: Vec<Vec<u8>> = self
+            .pq_codes
+            .iter()
+            .zip(self.deleted.iter())
+            .filter(|(_, &d)| !d)
+            .map(|(c, _)| c.clone())
+            .collect();
+
+        // Remap posting lists.
+        for list in &mut self.posting_lists {
+            *list = list.iter().filter_map(|&id| mapping[id]).collect();
+        }
+
+        self.pq_codes = new_codes;
+        self.deleted = vec![false; self.pq_codes.len()];
+        deleted_count
+    }
+
+    /// Find the minimum `n_probe` that achieves at least `target_recall` for
+    /// `query` relative to exhaustive ADC search.
+    ///
+    /// Uses an exponential doubling probe schedule.  Returns
+    /// `(results, n_probe_used)`.
+    pub fn search_for_recall(
+        &self,
+        query: &[f32],
+        k: usize,
+        target_recall: f32,
+    ) -> (Vec<(usize, f32)>, usize) {
+        // Exhaustive ground truth.
+        let exhaustive = self.search_with_probe(query, k, self.n_lists);
+        let gt_ids: std::collections::HashSet<usize> =
+            exhaustive.iter().map(|&(id, _)| id).collect();
+        let gt_k = gt_ids.len().max(1);
+
+        let mut n_probe = 1usize;
+        loop {
+            let results = self.search_with_probe(query, k, n_probe);
+            let hits = results
+                .iter()
+                .filter(|(id, _)| gt_ids.contains(id))
+                .count();
+            let recall = hits as f32 / gt_k as f32;
+            if recall >= target_recall || n_probe >= self.n_lists {
+                return (results, n_probe);
+            }
+            n_probe = (n_probe * 2).min(self.n_lists);
+        }
+    }
+
     // ── private helpers ──────────────────────────────────────────────────────
 
     /// Index of the nearest coarse centroid (cosine distance on unit-norm `v`).
@@ -574,6 +648,39 @@ mod tests {
             idx.add(&[0.0f32; 16]);
         }));
         assert!(result.is_err(), "expected panic for untrained add");
+    }
+
+    #[test]
+    fn vacuum_compacts_deleted_codes() {
+        let data = random_unit_vecs(80, 32, 7);
+        let mut idx = IvfPqIndex::new(4, 4);
+        idx.train(&data, 4, 8, 10, 7).unwrap();
+        for v in &data {
+            idx.add(v);
+        }
+        for id in [0, 3, 7, 12, 20] {
+            idx.delete(id);
+        }
+        let removed = idx.vacuum();
+        assert_eq!(removed, 5, "vacuum should report 5 removed");
+        // Total entries in posting lists should equal survivors.
+        let total: usize = idx.posting_lists.iter().map(|l| l.len()).sum();
+        assert_eq!(total, 75);
+        assert!(!idx.deleted.iter().any(|&d| d));
+        assert_eq!(idx.vacuum(), 0, "second vacuum is a no-op");
+    }
+
+    #[test]
+    fn search_for_recall_returns_valid_probe() {
+        let data = random_unit_vecs(200, 32, 99);
+        let mut idx = IvfPqIndex::new(4, 4);
+        idx.train(&data, 4, 8, 10, 99).unwrap();
+        for v in &data {
+            idx.add(v);
+        }
+        let (results, n_probe) = idx.search_for_recall(&data[0], 5, 0.8);
+        assert!(n_probe >= 1 && n_probe <= 4);
+        assert!(!results.is_empty());
     }
 
     #[test]

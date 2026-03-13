@@ -35,16 +35,16 @@ impl BinaryVector {
         let bytes_per_vec = (dim + 7) / 8;
         let mut packed = vec![0u8; bytes_per_vec];
 
-        // Normalize in-place on a local copy when requested.
-        let norm_factor = if normalize {
-            let sq: f32 = v.iter().map(|x| x * x).sum();
+        // Use f64 for the norm to avoid f32 overflow on extreme-valued vectors.
+        let norm_factor_f64: f64 = if normalize {
+            let sq: f64 = v.iter().map(|&x| (x as f64) * (x as f64)).sum();
             if sq > 0.0 { sq.sqrt() } else { 1.0 }
         } else {
-            1.0
+            1.0_f64
         };
 
         for (i, &x) in v.iter().enumerate() {
-            if (x / norm_factor) > 0.0 {
+            if (x as f64) / norm_factor_f64 > 0.0 {
                 packed[i / 8] |= 1u8 << (i % 8);
             }
         }
@@ -203,13 +203,12 @@ mod proptest_tests {
 
     /// Strategy: non-zero f32 vector of fixed dimension d
     fn arb_nonzero_vec(d: usize) -> impl Strategy<Value = Vec<f32>> {
-        prop::collection::vec(
-            prop::num::f32::NORMAL | prop::num::f32::POSITIVE | prop::num::f32::NEGATIVE,
-            d,
-        )
-        .prop_filter("degenerate zero vector", |v| {
-            v.iter().any(|x| x.abs() > 1e-10)
-        })
+        // Use a range where x² * d stays well below f32::MAX (3.4e38).
+        // With max |x| ≤ 1e18: sum(x²) ≤ d * 1e36 ≤ 3.2e37 for d=32.
+        prop::collection::vec(-1e18f32..1e18f32, d)
+            .prop_filter("degenerate zero vector", |v| {
+                v.iter().any(|x| x.abs() > 1e-10)
+            })
     }
 
     proptest! {
@@ -248,6 +247,7 @@ mod proptest_tests {
             v in arb_nonzero_vec(16),
             scale in 0.1f32..10.0f32,
         ) {
+            // With max |v[i]| ≤ 1e18 and scale ≤ 10, no overflow in f32.
             let scaled: Vec<f32> = v.iter().map(|x| x * scale).collect();
             let enc1 = BinaryVector::encode(&v, true);
             let enc2 = BinaryVector::encode(&scaled, true);

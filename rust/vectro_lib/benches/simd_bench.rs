@@ -12,6 +12,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use vectro_lib::quant::{int8, nf4};
 use vectro_lib::index::hnsw::HnswIndex;
+use vectro_lib::index::ivf::IvfIndex;
+use vectro_lib::index::ivf_pq::IvfPqIndex;
 
 fn make_vecs(n: usize, d: usize) -> Vec<Vec<f32>> {
     (0..n)
@@ -65,5 +67,46 @@ fn bench_hnsw_search(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_int8_throughput, bench_nf4_throughput, bench_hnsw_search);
+/// IVF-Flat search throughput (index trained and populated outside the timed loop).
+fn bench_ivf_search(c: &mut Criterion) {
+    const N: usize = 10_000;
+    const D: usize = 128;
+    let vecs = make_vecs(N, D);
+    let query = vecs[0].clone();
+
+    let mut idx = IvfIndex::new(64, 8);
+    idx.train(&vecs, 10, 42).expect("IvfIndex train failed");
+    idx.add_batch(&vecs);
+
+    let mut group = c.benchmark_group("ivf_search");
+    group.throughput(Throughput::Elements(N as u64));
+    group.bench_function("search_k10_n10k_d128", |b| {
+        b.iter(|| idx.search(black_box(&query), 10))
+    });
+    group.finish();
+}
+
+/// IVF-PQ ADC search throughput (index trained and populated outside the timed loop).
+fn bench_ivfpq_search(c: &mut Criterion) {
+    const N: usize = 10_000;
+    const D: usize = 128;
+    let vecs = make_vecs(N, D);
+    let query = vecs[0].clone();
+
+    let mut idx = IvfPqIndex::new(64, 8);
+    // D=128, M=8 sub-spaces → sub_dim=16; 64 PQ centroids per sub-space.
+    idx.train(&vecs, 8, 64, 10, 42).expect("IvfPqIndex train failed");
+    for v in &vecs {
+        idx.add(v);
+    }
+
+    let mut group = c.benchmark_group("ivfpq_search");
+    group.throughput(Throughput::Elements(N as u64));
+    group.bench_function("adc_k10_n10k_d128", |b| {
+        b.iter(|| idx.search(black_box(&query), 10))
+    });
+    group.finish();
+}
+
+criterion_group!(benches, bench_int8_throughput, bench_nf4_throughput, bench_hnsw_search, bench_ivf_search, bench_ivfpq_search);
 criterion_main!(benches);

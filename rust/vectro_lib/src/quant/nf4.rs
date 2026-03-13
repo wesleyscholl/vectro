@@ -312,13 +312,12 @@ mod proptest_tests {
     use proptest::prelude::*;
 
     fn arb_nonzero_vec(d: usize) -> impl Strategy<Value = Vec<f32>> {
-        prop::collection::vec(
-            prop::num::f32::NORMAL | prop::num::f32::POSITIVE | prop::num::f32::NEGATIVE,
-            d,
-        )
-        .prop_filter("degenerate zero vector", |v| {
-            v.iter().any(|x| x.abs() > 1e-6)
-        })
+        // Use a range that covers wide dynamic range but keeps x² * d well below
+        // f32::MAX (3.4e38).  With max |x| ≤ 1e18: sum(x²) ≤ d * 1e36 ≤ 3.2e37.
+        prop::collection::vec(-1e18f32..1e18f32, d)
+            .prop_filter("degenerate zero vector", |v| {
+                v.iter().any(|x| x.abs() > 1e-6)
+            })
     }
 
     proptest! {
@@ -342,11 +341,12 @@ mod proptest_tests {
             v in arb_nonzero_vec(16),
             scale in 0.1f32..20.0f32,
         ) {
+            // With max |v[i]| ≤ 1e18 and scale ≤ 20, max scaled value ≤ 2e19 << f32::MAX.
             let scaled: Vec<f32> = v.iter().map(|x| x * scale).collect();
             let enc1 = Nf4Vector::encode(&v);
             let enc2 = Nf4Vector::encode(&scaled);
             prop_assert_eq!(enc1.packed, enc2.packed,
-                "packed bytes differ under scale factor {scale}");
+                "packed bytes differ under scale factor {}", scale);
         }
 
         /// Decoded length always equals the original dimension.

@@ -664,6 +664,12 @@ impl PyHnswIndex {
         self.inner.delete(id);
     }
 
+    /// Compact the index by permanently removing all soft-deleted nodes and
+    /// rebuilding the graph.  Returns the number of nodes removed.
+    fn vacuum(&mut self) -> usize {
+        self.inner.vacuum()
+    }
+
     /// Persist the index to a file (bincode format).
     fn save(&self, path: &str) -> PyResult<()> {
         self.inner
@@ -832,6 +838,42 @@ impl PyIvfIndex {
         self.inner.delete(id);
     }
 
+    /// Compact the index by permanently removing soft-deleted vectors.
+    /// Returns the number of vectors removed.
+    fn vacuum(&mut self) -> usize {
+        self.inner.vacuum()
+    }
+
+    /// Filtered search: only return vectors whose id is in `allowed_ids`.
+    fn search_filtered_np(
+        &self,
+        query: PyReadonlyArray1<f32>,
+        k: usize,
+        allowed_ids: Vec<usize>,
+    ) -> Vec<(usize, f32)> {
+        use std::collections::HashSet;
+        let allowed: HashSet<usize> = allowed_ids.into_iter().collect();
+        let q = query.as_array();
+        match q.as_slice() {
+            Some(s) => self.inner.search_filtered(s, k, |id| allowed.contains(&id)),
+            None => {
+                let v: Vec<f32> = q.iter().copied().collect();
+                self.inner.search_filtered(&v, k, |id| allowed.contains(&id))
+            }
+        }
+    }
+
+    /// Find the minimum n_probe achieving `target_recall` for `query`.
+    /// Returns `(results, n_probe_used)`.
+    fn search_for_recall(
+        &self,
+        query: Vec<f32>,
+        k: usize,
+        target_recall: f32,
+    ) -> (Vec<(usize, f32)>, usize) {
+        self.inner.search_for_recall(&query, k, target_recall)
+    }
+
     /// Persist to file (bincode).
     fn save(&self, path: &str) -> PyResult<()> {
         self.inner.save(std::path::Path::new(path))
@@ -936,6 +978,23 @@ impl PyIvfPqIndex {
     /// Soft-delete a vector by global id.
     fn delete(&mut self, id: usize) {
         self.inner.delete(id);
+    }
+
+    /// Compact the index by permanently removing soft-deleted vectors.
+    /// Returns the number of vectors removed.
+    fn vacuum(&mut self) -> usize {
+        self.inner.vacuum()
+    }
+
+    /// Find the minimum n_probe achieving `target_recall` for `query`.
+    /// Returns `(results, n_probe_used)`.
+    fn search_for_recall(
+        &self,
+        query: Vec<f32>,
+        k: usize,
+        target_recall: f32,
+    ) -> (Vec<(usize, f32)>, usize) {
+        self.inner.search_for_recall(&query, k, target_recall)
     }
 
     /// Persist to file (bincode).

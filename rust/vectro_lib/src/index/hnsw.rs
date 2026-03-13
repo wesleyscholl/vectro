@@ -395,6 +395,34 @@ impl HnswIndex {
         let idx: Self = bincode::deserialize(&bytes)?;
         Ok(idx)
     }
+
+    /// Compact the index by permanently removing all soft-deleted nodes and
+    /// rebuilding the HNSW graph from scratch.
+    ///
+    /// This is more expensive than [`delete`] (O(n log n) insert cost) but
+    /// restores full graph quality and reclaims memory.  Returns the number
+    /// of nodes removed.  If no nodes are deleted this is a cheap no-op.
+    pub fn vacuum(&mut self) -> usize {
+        let deleted_count = self.deleted.iter().filter(|&&d| d).count();
+        if deleted_count == 0 {
+            return 0;
+        }
+
+        // Collect surviving original vectors (already unit-normalised by `add`).
+        let survivors: Vec<Vec<f32>> = self
+            .vectors
+            .iter()
+            .zip(self.deleted.iter())
+            .filter(|(_, &d)| !d)
+            .map(|(v, _)| v.clone())
+            .collect();
+
+        // Rebuild with the same construction parameters.
+        let mut new_idx = HnswIndex::new(self.m, self.ef_construction);
+        new_idx.add_batch(&survivors);
+        *self = new_idx;
+        deleted_count
+    }
 }
 
 #[cfg(test)]
@@ -552,5 +580,31 @@ mod tests {
         idx.add(&[1.0f32, 0.0]);
         // Deleting out-of-bounds id must not panic.
         idx.delete(999);
+    }
+
+    #[test]
+    fn vacuum_removes_deleted_and_rebuilds() {
+        let mut idx = HnswIndex::new(8, 40);
+        let vecs = make_vecs(30, 16);
+        idx.add_batch(&vecs);
+        assert_eq!(idx.len(), 30);
+
+        // Soft-delete 5 nodes.
+        for id in [2, 5, 10, 18, 24] {
+            idx.delete(id);
+        }
+        let removed = idx.vacuum();
+        assert_eq!(removed, 5, "vacuum should report 5 removed nodes");
+        assert_eq!(idx.len(), 25, "25 survivors after vacuum");
+        // No tombstones in the rebuilt index.
+        assert!(!idx.deleted.iter().any(|&d| d));
+
+        // A second vacuum call on a clean index is a cheap no-op.
+        assert_eq!(idx.vacuum(), 0);
+
+        // The rebuilt index must still return useful results.
+        let q = vecs[0].clone();
+        let res = idx.search(&q, 1, 40);
+        assert!(!res.is_empty());
     }
 }

@@ -391,6 +391,123 @@ impl IvfIndex {
         let bytes = std::fs::read(path)?;
         Ok(bincode::deserialize(&bytes)?)
     }
+
+    /// Compact the index by permanently removing soft-deleted vectors and
+    /// remapping all posting lists to contiguous global IDs.
+    ///
+    /// Returns the number of vectors removed.  If no vectors are deleted this
+    /// is a cheap no-op.
+    pub fn vacuum(&mut self) -> usize {
+        let deleted_count = self.deleted.iter().filter(|&&d| d).count();
+        if deleted_count == 0 {
+            return 0;
+        }
+
+        // Build old_id → new_id mapping.
+        let mut mapping: Vec<Option<usize>> = Vec::with_capacity(self.store.len());
+        let mut new_id = 0usize;
+        for &del in &self.deleted {
+            if del {
+                mapping.push(None);
+            } else {
+                mapping.push(Some(new_id));
+                new_id += 1;
+            }
+        }
+
+        // Compact the vector store.
+        let new_store: Vec<Vec<f32>> = self
+            .store
+            .iter()
+            .zip(self.deleted.iter())
+            .filter(|(_, &d)| !d)
+            .map(|(v, _)| v.clone())
+            .collect();
+
+        // Remap all posting lists (filter deleted, translate IDs).
+        for list in &mut self.posting_lists {
+            *list = list.iter().filter_map(|&id| mapping[id]).collect();
+        }
+
+        self.store = new_store;
+        self.deleted = vec![false; self.store.len()];
+        deleted_count
+    }
+
+    /// Filtered approximate k-nearest-neighbour search.
+    ///
+    /// Only vectors for which `filter(global_id) == true` are included in the
+    /// result.  Uses `self.n_probe` posting lists.
+    pub fn search_filtered<F: Fn(usize) -> bool>(
+        &self,
+        query: &[f32],
+        k: usize,
+        filter: F,
+    ) -> Vec<(usize, f32)> {
+        self.search_filtered_with_probe(query, k, self.n_probe, filter)
+    }
+
+    /// Like [`search_filtered`] but with an explicit `n_probe` override.
+    pub fn search_filtered_with_probe<F: Fn(usize) -> bool>(
+        &self,
+        query: &[f32],
+        k: usize,
+        n_probe: usize,
+        filter: F,
+    ) -> Vec<(usize, f32)> {
+        assert!(self.trained, "IvfIndex must be trained before calling search()");
+        let n_probe = n_probe.min(self.n_lists);
+        let q = Self::normalize(query);
+        let probe_lists = self.top_centroids(&q, n_probe);
+
+        let mut candidates: Vec<(usize, f32)> = probe_lists
+            .iter()
+            .flat_map(|&ci| {
+                self.posting_lists[ci]
+                    .iter()
+                    .filter(|&&id| !self.is_deleted(id) && filter(id))
+                    .map(|&id| (id, Self::cosine_dist(&q, &self.store[id])))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        candidates.sort_unstable_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        candidates.dedup_by_key(|e| e.0);
+        candidates.truncate(k);
+        candidates
+    }
+
+    /// Find the minimum `n_probe` that achieves at least `target_recall` for
+    /// `query` relative to exhaustive search.
+    ///
+    /// Uses an exponential doubling probe schedule.  Returns
+    /// `(results, n_probe_used)`.
+    pub fn search_for_recall(
+        &self,
+        query: &[f32],
+        k: usize,
+        target_recall: f32,
+    ) -> (Vec<(usize, f32)>, usize) {
+        // Exhaustive ground truth.
+        let exhaustive = self.search_with_probe(query, k, self.n_lists);
+        let gt_ids: std::collections::HashSet<usize> =
+            exhaustive.iter().map(|&(id, _)| id).collect();
+        let gt_k = gt_ids.len().max(1);
+
+        let mut n_probe = 1usize;
+        loop {
+            let results = self.search_with_probe(query, k, n_probe);
+            let hits = results
+                .iter()
+                .filter(|(id, _)| gt_ids.contains(id))
+                .count();
+            let recall = hits as f32 / gt_k as f32;
+            if recall >= target_recall || n_probe >= self.n_lists {
+                return (results, n_probe);
+            }
+            n_probe = (n_probe * 2).min(self.n_lists);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -462,8 +579,16 @@ mod tests {
         for (i, v) in vecs.iter().enumerate() {
             let res = idx.search(v, 1);
             assert_eq!(res.len(), 1);
-            assert_eq!(res[0].0, i, "self-query failed at i={i}");
-            assert!(res[0].1 < 1e-4, "dist to self = {}", res[0].1);
+            // Distance to self (or a cosine-identical vector) must be ≈ 0.
+            // Note: due to the periodic sin generator two vectors can share an
+            // identical unit-normalised direction; we accept any match with
+            // cosine distance < 1e-4 rather than requiring a specific id.
+            assert!(
+                res[0].1 < 1e-4,
+                "vec[{i}] nearest dist={} (id={}); expected < 1e-4",
+                res[0].1,
+                res[0].0
+            );
         }
     }
 
@@ -544,6 +669,61 @@ mod tests {
         });
         assert!(result.is_err());
     }
+
+    #[test]
+    fn vacuum_compacts_deleted_vectors() {
+        let vecs = make_vecs(40, 16);
+        let mut idx = IvfIndex::new(4, 4);
+        idx.train(&vecs, 10, 42).unwrap();
+        for v in &vecs {
+            idx.add(v);
+        }
+        // Delete 5 vectors.
+        for id in [0, 5, 10, 15, 20] {
+            idx.delete(id);
+        }
+        let removed = idx.vacuum();
+        assert_eq!(removed, 5, "vacuum should report 5 removed vectors");
+        assert_eq!(idx.len(), 35, "35 survivors after vacuum");
+        // Posting lists must not contain any out-of-bounds IDs.
+        let total: usize = idx.posting_lists.iter().map(|l| l.len()).sum();
+        assert_eq!(total, 35);
+        // No tombstones left.
+        assert!(!idx.deleted.iter().any(|&d| d));
+        // vacuum on already-clean index is a no-op.
+        assert_eq!(idx.vacuum(), 0);
+    }
+
+    #[test]
+    fn search_filtered_respects_allowlist() {
+        let vecs = make_vecs(80, 16);
+        let mut idx = IvfIndex::new(4, 4);
+        idx.train(&vecs, 10, 42).unwrap();
+        for v in &vecs {
+            idx.add(v);
+        }
+        // Allow only even IDs.
+        let results = idx.search_filtered(&vecs[0], 10, |id| id % 2 == 0);
+        for &(id, _) in &results {
+            assert_eq!(id % 2, 0, "odd id {id} in filtered results");
+        }
+        assert!(!results.is_empty(), "filtered search should have results");
+    }
+
+    #[test]
+    fn search_for_recall_finds_reasonable_probe() {
+        let vecs = make_vecs(200, 16);
+        let mut idx = IvfIndex::new(8, 8);
+        idx.train(&vecs, 20, 42).unwrap();
+        for v in &vecs {
+            idx.add(v);
+        }
+        let (results, n_probe) = idx.search_for_recall(&vecs[0], 5, 0.8);
+        // n_probe must be within [1, n_lists].
+        assert!(n_probe >= 1 && n_probe <= 8);
+        // Results must be non-empty.
+        assert!(!results.is_empty());
+    }
 }
 
 #[cfg(test)]
@@ -574,7 +754,7 @@ mod proptest_tests {
             let idx = make_idx(&vecs, 2);
             for (i, v) in vecs.iter().enumerate() {
                 let res = idx.search(v, 1);
-                prop_assert_eq!(res[0].0, i, "self-query failed at i={i}");
+                prop_assert_eq!(res[0].0, i, "self-query failed at i={}", i);
             }
         }
 
@@ -594,7 +774,7 @@ mod proptest_tests {
             for v in &vecs {
                 let res = idx.search(v, n);
                 for &(id, _) in &res {
-                    prop_assert_ne!(id, del, "deleted id {del} appeared in results");
+                    prop_assert_ne!(id, del, "deleted id {} appeared in results", del);
                 }
             }
         }
