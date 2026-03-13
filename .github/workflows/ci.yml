@@ -90,6 +90,45 @@ jobs:
           files: coverage.xml
           fail_ci_if_error: false
 
+  # ── Rust line-coverage gate (≥ 90 %) ──────────────────────────────────────
+  rust-coverage:
+    name: Rust coverage (≥90%)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable + llvm-tools
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Cache Cargo registry + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: rust-cov-ubuntu-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Generate LCOV report and enforce ≥ 90% line coverage
+        run: |
+          cargo llvm-cov --workspace \
+            --lcov --output-path lcov.info \
+            --fail-under-lines 90
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: lcov.info
+          fail_ci_if_error: false
+
 # gpu-throughput:
 #   runs-on: [self-hosted, gpu, cuda-12]
 #   # Phase 12 target: >= 50M vec/s on A10G.

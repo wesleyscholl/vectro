@@ -16,6 +16,7 @@
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use simsimd::BinarySimilarity;
 
 /// One binary-quantized vector (packed bits, original dimension stored).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,8 +60,12 @@ impl BinaryVector {
     }
 
     /// Hamming distance to another BinaryVector of the same dimension.
+    ///
+    /// Uses SimSIMD's SIMD popcount path (NEON/SVE on ARM, Haswell/Ice on x86)
+    /// with a scalar fallback for other targets.
     pub fn hamming(&self, other: &BinaryVector) -> u32 {
-        self.packed.iter().zip(other.packed.iter()).map(|(a, b)| (a ^ b).count_ones()).sum()
+        <u8 as BinarySimilarity>::hamming(&self.packed, &other.packed)
+            .unwrap_or(0.0) as u32
     }
 }
 

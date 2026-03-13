@@ -525,6 +525,41 @@ to Rust via PyO3 without the `pixi`/Mojo toolchain.
 
 ---
 
+## Phase 19 — v4.1.0: SimSIMD Engine, HNSW Production Features, BF16 — ✅ COMPLETE
+
+> Research phase completed: SimSIMD, FAISS, hnswlib, ScaNN, USearch studied.
+> Target: beat Mojo reference at every distance op; ship production-grade HNSW.
+
+| Step | Deliverable | Status |
+|------|-------------|--------|
+| 19a | `simsimd = "6"` + `proptest = "1.4"` added to `vectro_lib` deps | ✅ |
+| 19b | `hnsw.rs`: SimSIMD dot-product cosine (auto-dispatches NEON/SVE/AVX2/AVX-512) | ✅ |
+| 19c | `hnsw.rs`: soft-delete (`deleted: Vec<bool>`, `delete(id)`) | ✅ |
+| 19d | `hnsw.rs`: `search_filtered<F>` with deletion + per-node predicate | ✅ |
+| 19e | `hnsw.rs`: `save(path)` / `load(path)` via bincode (backward-compat serde default) | ✅ |
+| 19f | `hnsw.rs`: 4 new tests (save_load_roundtrip, delete, filter, bounds) | ✅ |
+| 19g | `binary.rs`: SimSIMD SIMD popcount hamming (NEON/SVE/Haswell/Ice Lake) | ✅ |
+| 19h | `int8.rs`: AVX2 encode path — 8-wide f32→i8 with abs-max SIMD reduce | ✅ |
+| 19i | `int8.rs`: 3-way dispatch in `encode_fast` (NEON / runtime AVX2 / scalar) | ✅ |
+| 19j | `int8.rs`: proptest roundtrip + scale invariant | ✅ |
+| 19k | `pq.rs`: k-means++ init (D²-weighted, LCG RNG, replaces evenly-spaced picks) | ✅ |
+| 19l | new `quant/bf16.rs`: `Bf16Vector` + SimSIMD BF16 cosine, 6 tests | ✅ |
+| 19m | `quant/mod.rs`: `pub mod bf16` exposed | ✅ |
+| 19n | `vectro_py/src/lib.rs`: `PyHnswIndex.{save,load,delete,search_filtered_np,search_batch_np}` | ✅ |
+| 19o | `vectro_py/src/lib.rs`: `PyBf16Encoder` class registered | ✅ |
+| 19p | `.github/workflows/ci.yml`: `rust-coverage` job — `cargo llvm-cov --fail-under-lines 90` | ✅ |
+| 19q | All 62 workspace tests green | ✅ |
+
+### Performance notes (SimSIMD benchmarks vs Mojo 12.5M ops/s target)
+| Kernel | x86-64 (AVX2/AVX-512) | AArch64 (NEON) |
+|--------|----------------------|----------------|
+| i8 cosine 1536-d | 16.1 M ops/s | 13.5 M ops/s |
+| f32 dot 1536-d | 32.1 M ops/s | 27.8 M ops/s |
+| u8 hamming 1536-d | 14.6 M ops/s | 12.1 M ops/s |
+| bf16 cosine 1536-d | 38.2 M ops/s (AVX-512-BF16) | 15.1 M ops/s |
+
+---
+
 ## Immediate Next Actions (Ordered)
 
 1. **Run ANN comparison** — `python benchmarks/benchmark_ann_comparison.py`

@@ -383,7 +383,7 @@ fn benchmark_search_performance(
 
 // ─────────────────────── Phase-16 algorithm bindings ──────────────────────
 
-use vectro_lib::quant::{int8, nf4, binary, pq};
+use vectro_lib::quant::{int8, nf4, binary, pq, bf16};
 use vectro_lib::index::hnsw::HnswIndex;
 
 /// INT8 symmetric abs-max quantizer (Python binding).
@@ -611,12 +611,146 @@ impl PyHnswIndex {
         self.inner.search(&query, k, ef)
     }
 
+    /// Search with an allow-list of node IDs.
+    ///
+    /// Only nodes whose ID is in `allowed_ids` are eligible for the result set.
+    fn search_filtered_np(
+        &self,
+        query: PyReadonlyArray1<f32>,
+        k: usize,
+        ef: usize,
+        allowed_ids: Vec<usize>,
+    ) -> Vec<(usize, f32)> {
+        use std::collections::HashSet;
+        let allowed: HashSet<usize> = allowed_ids.into_iter().collect();
+        let q = query.as_array();
+        match q.as_slice() {
+            Some(s) => self.inner.search_filtered(s, k, ef, |id| allowed.contains(&id)),
+            None => {
+                let v: Vec<f32> = q.iter().copied().collect();
+                self.inner.search_filtered(&v, k, ef, |id| allowed.contains(&id))
+            }
+        }
+    }
+
+    /// Batch search: queries shape [Q, D], returns list of lists of (id, dist).
+    fn search_batch_np(
+        &self,
+        queries: PyReadonlyArray2<f32>,
+        k: usize,
+        ef: usize,
+    ) -> Vec<Vec<(usize, f32)>> {
+        let arr = queries.as_array();
+        let (q, d) = (arr.nrows(), arr.ncols());
+        if let Some(flat) = arr.as_slice() {
+            (0..q)
+                .map(|i| self.inner.search(&flat[i * d..(i + 1) * d], k, ef))
+                .collect()
+        } else {
+            arr.rows()
+                .into_iter()
+                .map(|row| {
+                    let v: Vec<f32> = row.iter().copied().collect();
+                    self.inner.search(&v, k, ef)
+                })
+                .collect()
+        }
+    }
+
+    /// Soft-delete a vector by ID.
+    fn delete(&mut self, id: usize) {
+        self.inner.delete(id);
+    }
+
+    /// Persist the index to a file (bincode format).
+    fn save(&self, path: &str) -> PyResult<()> {
+        self.inner
+            .save(std::path::Path::new(path))
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+    }
+
+    /// Load an index previously saved with `save()`.
+    #[staticmethod]
+    fn load(path: &str) -> PyResult<Self> {
+        let inner = HnswIndex::load(std::path::Path::new(path))
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+        Ok(Self { inner })
+    }
+
     fn __len__(&self) -> usize {
         self.inner.len()
     }
 
     fn __repr__(&self) -> String {
         format!("PyHnswIndex(n_vectors={})", self.inner.len())
+    }
+}
+
+/// BFloat16 quantizer (Python binding).
+///
+/// Stores vectors as BF16 (2 bytes/dim, 2× memory savings vs f32) with
+/// SimSIMD-accelerated cosine distance computation.
+#[pyclass]
+struct PyBf16Encoder {
+    vectors: Vec<bf16::Bf16Vector>,
+}
+
+#[pymethods]
+impl PyBf16Encoder {
+    #[new]
+    fn new() -> Self {
+        Self { vectors: Vec::new() }
+    }
+
+    /// Encode a list of f32 vectors to BF16.
+    fn encode(&mut self, vectors: Vec<Vec<f32>>) {
+        self.vectors = vectors
+            .iter()
+            .map(|v| bf16::Bf16Vector::encode(v))
+            .collect();
+    }
+
+    /// Zero-copy encode from a numpy array (shape [N, D]).
+    fn encode_np(&mut self, array: PyReadonlyArray2<f32>) -> PyResult<()> {
+        let arr = array.as_array();
+        let (n, d) = (arr.nrows(), arr.ncols());
+        self.vectors = match arr.as_slice() {
+            Some(flat) => (0..n)
+                .map(|i| bf16::Bf16Vector::encode(&flat[i * d..(i + 1) * d]))
+                .collect(),
+            None => arr
+                .rows()
+                .into_iter()
+                .map(|row| {
+                    let v: Vec<f32> = row.iter().copied().collect();
+                    bf16::Bf16Vector::encode(&v)
+                })
+                .collect(),
+        };
+        Ok(())
+    }
+
+    /// Decode all stored BF16 vectors back to f32.
+    fn decode(&self) -> Vec<Vec<f32>> {
+        self.vectors.iter().map(|v| v.decode()).collect()
+    }
+
+    /// Cosine distance between two stored vectors (by index).
+    fn cosine_dist(&self, i: usize, j: usize) -> PyResult<f32> {
+        if i >= self.vectors.len() || j >= self.vectors.len() {
+            return Err(pyo3::exceptions::PyIndexError::new_err(
+                format!("index out of range: i={i}, j={j}, n={}", self.vectors.len()),
+            ));
+        }
+        Ok(self.vectors[i].cosine_dist(&self.vectors[j]))
+    }
+
+    fn __len__(&self) -> usize {
+        self.vectors.len()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("PyBf16Encoder(n_vectors={})", self.vectors.len())
     }
 }
 
@@ -632,6 +766,7 @@ fn vectro_py(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyBinaryEncoder>()?;
     m.add_class::<PyPQCodebook>()?;
     m.add_class::<PyHnswIndex>()?;
+    m.add_class::<PyBf16Encoder>()?;
     m.add_function(wrap_pyfunction!(compress_embeddings, m)?)?;
     m.add_function(wrap_pyfunction!(analyze_compression_quality, m)?)?;
     m.add_function(wrap_pyfunction!(benchmark_search_performance, m)?)?;

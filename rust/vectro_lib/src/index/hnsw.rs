@@ -10,6 +10,7 @@
 //! Recall@10 parity target (PLAN.md Phase 16): ≥ 0.97.
 
 use serde::{Deserialize, Serialize};
+use simsimd::SpatialSimilarity;
 use std::collections::{BinaryHeap, HashSet};
 
 /// Newtype wrapping f32 with a total order so we can use a standard
@@ -45,6 +46,9 @@ pub struct HnswIndex {
     neighbors: Vec<Vec<Vec<usize>>>,   // neighbors[node][layer] = [node_id, ...]
     entry_point: Option<usize>,
     max_level: usize,
+    /// Soft-deletion tombstones; index aligns with `vectors`.
+    #[serde(default)]
+    deleted: Vec<bool>,
 }
 
 impl HnswIndex {
@@ -66,6 +70,7 @@ impl HnswIndex {
             neighbors: Vec::new(),
             entry_point: None,
             max_level: 0,
+            deleted: Vec::new(),
         }
     }
 
@@ -83,7 +88,10 @@ impl HnswIndex {
 
     #[inline]
     fn cosine_dist(a: &[f32], b: &[f32]) -> f32 {
-        1.0 - a.iter().zip(b.iter()).map(|(x, y)| x * y).sum::<f32>()
+        // Stored vectors are pre-normalised; dot product == cosine similarity.
+        // SimSIMD dispatches to NEON/SVE on ARM or AVX2/AVX-512 on x86 at runtime.
+        let dot: f64 = <f32 as SpatialSimilarity>::dot(a, b).unwrap_or(-1.0);
+        (1.0 - dot as f32).max(0.0)
     }
 
     fn normalize(v: &[f32]) -> Vec<f32> {
@@ -93,6 +101,11 @@ impl HnswIndex {
         }
         let inv = 1.0 / sq.sqrt();
         v.iter().map(|x| x * inv).collect()
+    }
+
+    #[inline]
+    fn is_deleted(&self, id: usize) -> bool {
+        self.deleted.get(id).copied().unwrap_or(false)
     }
 
     fn random_level(&self) -> usize {
@@ -109,15 +122,21 @@ impl HnswIndex {
         ((-frac.ln()) * self.ml) as usize
     }
 
-    /// Beam search on a single layer.
+    /// Core beam search with an optional per-node inclusion filter.
     ///
-    /// Returns up to `ef` nearest nodes as `(cosine_dist, node_id)` sorted ascending.
-    fn search_layer(
+    /// `filter(id)` controls whether a node may appear in the result window.
+    /// Deleted nodes (via [`HnswIndex::delete`]) are always excluded regardless
+    /// of `filter`.  Excluded nodes are still _traversed_ so graph connectivity
+    /// is preserved for non-excluded neighbours.
+    ///
+    /// Returns up to `ef` nearest eligible nodes as `(cosine_dist, node_id)` sorted ascending.
+    fn search_layer_impl<F: Fn(usize) -> bool>(
         &self,
         query: &[f32],
         entry_points: &[usize],
         ef: usize,
         layer: usize,
+        filter: F,
     ) -> Vec<(f32, usize)> {
         let mut visited: HashSet<usize> = HashSet::with_capacity(ef * 4);
 
@@ -130,7 +149,9 @@ impl HnswIndex {
             let d = Self::cosine_dist(query, &self.vectors[ep]);
             visited.insert(ep);
             cands.push((std::cmp::Reverse(OrdF32(d)), ep));
-            window.push((OrdF32(d), ep));
+            if !self.is_deleted(ep) && filter(ep) {
+                window.push((OrdF32(d), ep));
+            }
         }
 
         while let Some((std::cmp::Reverse(OrdF32(d_c)), c)) = cands.pop() {
@@ -153,9 +174,11 @@ impl HnswIndex {
                 let worst2 = window.peek().map(|e| e.0 .0).unwrap_or(f32::INFINITY);
                 if d_nb < worst2 || window.len() < ef {
                     cands.push((std::cmp::Reverse(OrdF32(d_nb)), nb));
-                    window.push((OrdF32(d_nb), nb));
-                    if window.len() > ef {
-                        window.pop();
+                    if !self.is_deleted(nb) && filter(nb) {
+                        window.push((OrdF32(d_nb), nb));
+                        if window.len() > ef {
+                            window.pop();
+                        }
                     }
                 }
             }
@@ -168,6 +191,19 @@ impl HnswIndex {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         result
+    }
+
+    /// Beam search on a single layer (no filter, deletion-aware).
+    ///
+    /// Returns up to `ef` nearest nodes as `(cosine_dist, node_id)` sorted ascending.
+    fn search_layer(
+        &self,
+        query: &[f32],
+        entry_points: &[usize],
+        ef: usize,
+        layer: usize,
+    ) -> Vec<(f32, usize)> {
+        self.search_layer_impl(query, entry_points, ef, layer, |_| true)
     }
 
     fn select_neighbors(candidates: &[(f32, usize)], m: usize) -> Vec<usize> {
@@ -184,6 +220,7 @@ impl HnswIndex {
 
         self.vectors.push(norm_vec.clone());
         self.neighbors.push(vec![vec![]; node_level + 1]);
+        self.deleted.push(false);
 
         match self.entry_point {
             None => {
@@ -294,6 +331,70 @@ impl HnswIndex {
             .sum();
         total / queries.len() as f32
     }
+
+    /// Soft-delete a vector by ID.
+    ///
+    /// The vector is excluded from all future search results but stays in the
+    /// graph structure to maintain connectivity for its non-deleted neighbours.
+    pub fn delete(&mut self, id: usize) {
+        if id < self.vectors.len() {
+            // Backfill tombstone vec in case this index was loaded from a file
+            // saved before the `deleted` field was introduced.
+            if self.deleted.len() < self.vectors.len() {
+                self.deleted.resize(self.vectors.len(), false);
+            }
+            self.deleted[id] = true;
+        }
+    }
+
+    /// Approximate k-nearest-neighbour search with a predicate filter.
+    ///
+    /// Only nodes where `predicate(id) == true` are eligible for the result
+    /// set. Filtered-out nodes are still traversed to find non-filtered
+    /// neighbours further in the graph.
+    pub fn search_filtered<F: Fn(usize) -> bool>(
+        &self,
+        query: &[f32],
+        k: usize,
+        ef: usize,
+        predicate: F,
+    ) -> Vec<(usize, f32)> {
+        let ep = match self.entry_point {
+            None => return vec![],
+            Some(ep) => ep,
+        };
+        let ef = ef.max(k);
+        let q = Self::normalize(query);
+        let mut curr_ep = vec![ep];
+
+        // Greedy descent through upper layers without filter (structural path-finding).
+        for lc in (1..=self.max_level).rev() {
+            let res = self.search_layer(&q, &curr_ep, 1, lc);
+            if !res.is_empty() {
+                curr_ep = vec![res[0].1];
+            }
+        }
+
+        // Full ef-width beam search at layer 0 applying the user predicate.
+        let res = self.search_layer_impl(&q, &curr_ep, ef, 0, predicate);
+        res.into_iter().take(k).map(|(d, id)| (id, d)).collect()
+    }
+
+    /// Persist the index to a file using bincode serialization.
+    ///
+    /// Restore with [`HnswIndex::load`].
+    pub fn save(&self, path: &std::path::Path) -> anyhow::Result<()> {
+        let bytes = bincode::serialize(self)?;
+        std::fs::write(path, bytes)?;
+        Ok(())
+    }
+
+    /// Load an index previously saved with [`HnswIndex::save`].
+    pub fn load(path: &std::path::Path) -> anyhow::Result<Self> {
+        let bytes = std::fs::read(path)?;
+        let idx: Self = bincode::deserialize(&bytes)?;
+        Ok(idx)
+    }
 }
 
 #[cfg(test)]
@@ -393,5 +494,63 @@ mod tests {
         }
         let r = idx.search(&[0.1f32; 8], 10, 20);
         assert!(r.len() <= 3, "got {} results for 3-element index", r.len());
+    }
+
+    #[test]
+    fn save_load_roundtrip() {
+        let mut idx = HnswIndex::new(8, 40);
+        for v in make_vecs(30, 16) {
+            idx.add(&v);
+        }
+        let dir = tempfile::TempDir::new().unwrap();
+        let path = dir.path().join("index.bin");
+        idx.save(&path).expect("save failed");
+        let loaded = HnswIndex::load(&path).expect("load failed");
+        assert_eq!(loaded.len(), idx.len());
+
+        // Verify search results are identical after round-trip.
+        let q = make_vecs(1, 16).remove(0);
+        let r1 = idx.search(&q, 5, 40);
+        let r2 = loaded.search(&q, 5, 40);
+        let ids1: Vec<usize> = r1.iter().map(|&(id, _)| id).collect();
+        let ids2: Vec<usize> = r2.iter().map(|&(id, _)| id).collect();
+        assert_eq!(ids1, ids2, "search results differ after save/load");
+    }
+
+    #[test]
+    fn delete_removes_from_results() {
+        let mut idx = HnswIndex::new(8, 40);
+        let vecs = make_vecs(20, 16);
+        for v in &vecs {
+            idx.add(v);
+        }
+        // Deleting a vector must exclude it from its own self-query.
+        idx.delete(0);
+        let results = idx.search(&vecs[0], 5, 40);
+        let ids: Vec<usize> = results.iter().map(|&(id, _)| id).collect();
+        assert!(!ids.contains(&0), "deleted node 0 appeared in search results: {:?}", ids);
+    }
+
+    #[test]
+    fn search_filtered_respects_predicate() {
+        let mut idx = HnswIndex::new(8, 40);
+        let vecs = make_vecs(30, 16);
+        for v in &vecs {
+            idx.add(v);
+        }
+        // Allow only even-indexed nodes.
+        let results = idx.search_filtered(&vecs[0], 5, 40, |id| id % 2 == 0);
+        for &(id, _) in &results {
+            assert_eq!(id % 2, 0, "odd id {id} appeared in filtered results");
+        }
+        assert!(!results.is_empty(), "filtered search returned no results");
+    }
+
+    #[test]
+    fn delete_does_not_panic_on_out_of_bounds() {
+        let mut idx = HnswIndex::new(4, 16);
+        idx.add(&[1.0f32, 0.0]);
+        // Deleting out-of-bounds id must not panic.
+        idx.delete(999);
     }
 }

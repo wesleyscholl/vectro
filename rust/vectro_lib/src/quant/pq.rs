@@ -104,6 +104,70 @@ pub fn train_pq_codebook(
     })
 }
 
+/// k-means++ centroid initialisation.
+///
+/// Selects `k` initial centroids from `data` using D²-weighted sampling:
+/// the first centroid is chosen uniformly at random, and each subsequent
+/// centroid is chosen with probability proportional to its squared distance
+/// to the nearest already-chosen centroid.  This produces better-spread
+/// initial centroids than uniform sampling and typically halves the number of
+/// Lloyd iterations required to converge.
+fn kmeans_pp_init(data: &[&[f32]], k: usize, sub_dim: usize, seed: u64) -> Vec<f32> {
+    let n = data.len();
+    debug_assert!(n >= k, "kmeans_pp_init: need n >= k");
+
+    // Deterministic LCG RNG seeded per subspace.
+    let mut state = seed.wrapping_add(1_442_695_040_888_963_407);
+    let mut lcg = || -> f64 {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        (state >> 11) as f64 / (1u64 << 53) as f64
+    };
+
+    let mut cents = vec![0.0f32; k * sub_dim];
+
+    // First centroid: uniform random pick.
+    let first = (lcg() * n as f64) as usize % n;
+    cents[..sub_dim].copy_from_slice(data[first]);
+
+    // Maintain min-squared-distance to the nearest chosen centroid.
+    let mut min_d2 = vec![f32::INFINITY; n];
+
+    for ki in 1..k {
+        // Update min_d2 with the most recently added centroid.
+        let new_cent = &cents[(ki - 1) * sub_dim..ki * sub_dim];
+        for (i, v) in data.iter().enumerate() {
+            let d = l2_sq(v, new_cent);
+            if d < min_d2[i] {
+                min_d2[i] = d;
+            }
+        }
+
+        // D²-weighted sampling via prefix sums.
+        let total: f64 = min_d2.iter().map(|&d| d as f64).sum();
+        let chosen = if total == 0.0 {
+            // Degenerate: all remaining points are identical to chosen centroids.
+            ki % n
+        } else {
+            let r = lcg() * total;
+            let mut acc = 0.0f64;
+            let mut idx = n - 1;
+            for (i, &d) in min_d2.iter().enumerate() {
+                acc += d as f64;
+                if acc >= r {
+                    idx = i;
+                    break;
+                }
+            }
+            idx
+        };
+        cents[ki * sub_dim..(ki + 1) * sub_dim].copy_from_slice(data[chosen]);
+    }
+
+    cents
+}
+
 /// Lloyd's K-means for a set of equal-length sub-vector slices.
 /// Returns a flat [K * sub_dim] vector of centroids.
 fn kmeans_lloyd(
@@ -115,15 +179,8 @@ fn kmeans_lloyd(
 ) -> Vec<f32> {
     let n = data.len();
 
-    // Initialise: evenly-spaced picks (deterministic; Kmeans++ omitted for speed)
-    let mut cents = vec![0.0f32; k * sub_dim];
-    let step = n / k;
-    for ki in 0..k {
-        let src = data[(ki * step).min(n - 1)];
-        cents[ki * sub_dim..(ki + 1) * sub_dim].copy_from_slice(src);
-    }
-    // Tiny LCG shuffle to vary initialisation across subspaces
-    let _ = seed; // seed kept for API compatibility
+    // k-means++ initialisation: better-spread initial centroids.
+    let mut cents = kmeans_pp_init(data, k, sub_dim, seed);
 
     let mut assignments = vec![0usize; n];
 

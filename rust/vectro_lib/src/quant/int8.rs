@@ -33,14 +33,22 @@ impl Int8Vector {
 
     /// SIMD-accelerated encode.
     ///
-    /// On AArch64 (Apple Silicon, ARM64 Linux) this dispatches to the NEON
-    /// intrinsic path which processes 16 elements per iteration.  All other
-    /// targets fall back to the portable scalar `encode`.
+    /// Dispatch priority:
+    ///  1. AArch64 — NEON (compile-time; mandated by ARMv8).
+    ///  2. x86-64 + AVX2 — AVX2 path via runtime `is_x86_feature_detected!`.
+    ///  3. All other targets — portable scalar `encode`.
     #[inline]
     pub fn encode_fast(v: &[f32]) -> Self {
         #[cfg(target_arch = "aarch64")]
         // SAFETY: AArch64-v8 mandates NEON; no runtime feature detection needed.
         return unsafe { encode_neon(v) };
+
+        #[cfg(target_arch = "x86_64")]
+        if is_x86_feature_detected!("avx2") {
+            // SAFETY: guarded by runtime AVX2 feature detection.
+            return unsafe { encode_avx2(v) };
+        }
+
         #[cfg(not(target_arch = "aarch64"))]
         return Self::encode(v);
     }
@@ -57,6 +65,81 @@ impl Int8Vector {
         let raw: f32 = self.codes.iter().zip(query_norm.iter()).map(|(&q, &qv)| (q as f32) * qv).sum();
         raw * (self.scale / 127.0)
     }
+}
+
+/// AVX2-vectorised INT8 encode for x86-64.
+///
+/// Two passes over `v`:
+///  1. AVX2 abs-max reduction (8-wide float, then horizontal reduce).
+///  2. Multiply-round-narrow loop: float32x8 → int32x8 → pack to int16x8
+///     → pack to int8 (low 8 bytes), stored with `_mm_storel_epi64`.
+///
+/// Processes 8 elements per iteration; scalar tail for remainder.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn encode_avx2(v: &[f32]) -> Int8Vector {
+    use std::arch::x86_64::*;
+
+    let n = v.len();
+    if n == 0 {
+        return Int8Vector { codes: vec![], scale: 1.0 };
+    }
+    let ptr = v.as_ptr();
+
+    // ── Pass 1: abs-max reduction (8 floats per iteration) ──────────────────
+    let sign_mask = _mm256_set1_ps(-0.0_f32); // 0x8000_0000 in every lane
+    let mut vmax256 = _mm256_setzero_ps();
+    let chunks8 = n / 8;
+    for i in 0..chunks8 {
+        let a = _mm256_loadu_ps(ptr.add(i * 8));
+        let abs_a = _mm256_andnot_ps(sign_mask, a); // clear sign bit = abs(a)
+        vmax256 = _mm256_max_ps(vmax256, abs_a);
+    }
+    // Reduce 8 lanes → 4 lanes
+    let hi128 = _mm256_extractf128_ps(vmax256, 1);
+    let lo128 = _mm256_castps256_ps128(vmax256);
+    let max128 = _mm_max_ps(hi128, lo128);
+    // Reduce 4 lanes → 1 scalar
+    let m2 = _mm_movehl_ps(max128, max128);     // [max128[2], max128[3], …]
+    let m3 = _mm_max_ps(max128, m2);             // [max(0,2), max(1,3), …]
+    let m4 = _mm_shuffle_ps(m3, m3, 0x55);      // broadcast index-1 element
+    let m5 = _mm_max_ps(m3, m4);                 // [max(0,1,2,3), …]
+    let mut abs_max = _mm_cvtss_f32(m5);
+    // Scalar tail
+    for &x in &v[chunks8 * 8..] {
+        let ax = x.abs();
+        if ax > abs_max {
+            abs_max = ax;
+        }
+    }
+
+    let scale = if abs_max == 0.0 { 1.0_f32 } else { abs_max };
+    let inv   = 127.0_f32 / scale;
+    let vinv  = _mm256_set1_ps(inv);
+
+    // ── Pass 2: quantise f32 → i8 (8 per iteration) ──────────────────
+    let mut codes  = vec![0i8; n];
+    let out_ptr = codes.as_mut_ptr();
+
+    for i in 0..chunks8 {
+        let base = i * 8;
+        let x = _mm256_loadu_ps(ptr.add(base));
+        // Round-to-nearest (current MXCSR mode; default = nearest-even).
+        let i32s = _mm256_cvtps_epi32(_mm256_mul_ps(x, vinv));
+        // Extract low and high 128-bit halves as integer registers (AVX2).
+        let lo   = _mm256_castsi256_si128(i32s);        // low  4 × i32
+        let hi   = _mm256_extracti128_si256(i32s, 1);   // high 4 × i32
+        let i16s = _mm_packs_epi32(lo, hi);              // 8 × i16, saturating
+        let i8s  = _mm_packs_epi16(i16s, i16s);          // 16 × i8 (low 8 valid)
+        // Store low 8 bytes (= our 8 quantised values) without alignment req.
+        _mm_storel_epi64(out_ptr.add(base) as *mut __m128i, i8s);
+    }
+    // Scalar tail
+    for i in chunks8 * 8..n {
+        *out_ptr.add(i) = (v[i] * inv).round().clamp(-127.0, 127.0) as i8;
+    }
+
+    Int8Vector { codes, scale }
 }
 
 /// NEON-vectorised INT8 encode for AArch64.
@@ -245,6 +328,65 @@ mod tests {
             let fast   = Int8Vector::encode_fast(&v);
             assert_eq!(scalar.scale, fast.scale, "scale mismatch at len={len}");
             assert_eq!(scalar.codes, fast.codes, "codes mismatch at len={len}");
+        }
+    }
+
+    /// AVX2-specific parity test (only compiled and run on x86-64 with AVX2).
+    #[test]
+    #[cfg(target_arch = "x86_64")]
+    fn encode_avx2_matches_scalar() {
+        if !is_x86_feature_detected!("avx2") {
+            return; // skip on CPUs without AVX2
+        }
+        for &len in &[0usize, 1, 3, 7, 8, 9, 15, 16, 17, 64, 128, 256, 768] {
+            let v: Vec<f32> = (0..len).map(|i| ((i as f32 * 0.13) - 2.5).cos()).collect();
+            let scalar = Int8Vector::encode(&v);
+            // SAFETY: guarded by feature check above.
+            let avx2   = unsafe { encode_avx2(&v) };
+            assert_eq!(scalar.scale, avx2.scale, "scale mismatch at len={len}");
+            assert_eq!(scalar.codes, avx2.codes, "codes mismatch at len={len}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod proptest_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn encode_decode_roundtrip(
+            v in proptest::collection::vec(proptest::num::f32::NORMAL, 1..512usize)
+        ) {
+            let enc = Int8Vector::encode(&v);
+            let dec = enc.decode();
+            let dot: f32 = v.iter().zip(dec.iter()).map(|(a, b)| a * b).sum();
+            let n1: f32  = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+            let n2: f32  = dec.iter().map(|x| x * x).sum::<f32>().sqrt();
+            // Skip vectors whose squared-norm overflows f32 (>~ 1e19 per element).
+            if n1 > 0.0 && n1.is_finite() && n2 > 0.0 && n2.is_finite() && dot.is_finite() {
+                prop_assert!(
+                    dot / (n1 * n2) >= 0.999,
+                    "cosine {:.6} < 0.999 at len {}",
+                    dot / (n1 * n2),
+                    v.len()
+                );
+            }
+        }
+
+        #[test]
+        fn scale_matches_abs_max(
+            v in proptest::collection::vec(proptest::num::f32::NORMAL, 1..256usize)
+        ) {
+            let enc = Int8Vector::encode(&v);
+            let true_max = v.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+            prop_assert!(
+                (enc.scale - true_max).abs() < 1e-6,
+                "scale {} != abs_max {}",
+                enc.scale,
+                true_max
+            );
         }
     }
 }
