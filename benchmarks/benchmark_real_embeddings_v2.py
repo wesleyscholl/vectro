@@ -180,7 +180,7 @@ def benchmark_mode(
     Returns:
         Dict with throughput_vec_per_sec, mean_cosine_similarity, compression_ratio.
     """
-    from python import compress_vectors, decompress_result  # type: ignore[import]
+    from python import compress_vectors, decompress_vectors  # type: ignore[import]
 
     # Warm up
     for _ in range(n_warmup):
@@ -200,7 +200,7 @@ def benchmark_mode(
 
     # Quality: reconstruct and measure cosine similarity
     try:
-        reconstructed = decompress_result(result, n=len(vectors), d=vectors.shape[1])
+        reconstructed = decompress_vectors(result)
         cosine = _cosine_sim(vectors, reconstructed)
     except Exception:
         cosine = float("nan")
@@ -236,7 +236,7 @@ def run_benchmark(
         Results dict.
     """
     if modes is None:
-        modes = ["int8", "nf4", "binary", "auto"]
+        modes = ["fast", "binary"]
 
     print("=" * 70)
     print(f"Real Embedding Benchmark v2 — {dataset}  (max {max_vectors:,} vectors)")
@@ -308,8 +308,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--modes", type=str, nargs="+",
-        default=["int8", "nf4", "binary", "auto"],
-        help="Quantization modes to benchmark",
+        default=["fast", "ultra", "binary"],
+        help="Quantization modes (fast=int8 4x, ultra=int4 8x d÷64 only, binary=1-bit 32x)",
     )
     parser.add_argument(
         "--output", type=str, default="results/real_embeddings_v2.json",

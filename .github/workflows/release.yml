@@ -1,0 +1,76 @@
+name: Release (token-based fallback)
+
+# This workflow provides a token-based PyPI publish path using PYPI_API_TOKEN.
+# The primary publish path uses OIDC trusted publishing and lives in wheels.yml.
+# Use this workflow when OIDC publishing is unavailable (e.g., forked repos,
+# emergency re-publishes, or environments that don't support trusted publishing).
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Git tag to release (e.g. v3.7.0)"
+        required: true
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to PyPI (PYPI_API_TOKEN)
+    runs-on: ubuntu-latest
+    # Only run on actual version tags or manual dispatch; skip pre-release tags.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (startsWith(github.ref, 'refs/tags/v') &&
+       !contains(github.ref_name, 'rc') &&
+       !contains(github.ref_name, 'alpha') &&
+       !contains(github.ref_name, 'beta'))
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: pip install --upgrade build twine
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build source distribution
+        run: |
+          maturin sdist \
+            --out dist \
+            --manifest-path rust/vectro_py/Cargo.toml
+
+      - name: Build wheel (current platform)
+        uses: PyO3/maturin-action@v1
+        with:
+          target: x86_64-unknown-linux-gnu
+          args: >-
+            --release
+            --out dist
+            --manifest-path rust/vectro_py/Cargo.toml
+            --interpreter python3.12
+          manylinux: "2_28"
+
+      - name: Verify distributions
+        run: |
+          ls -lh dist/
+          twine check dist/*
+
+      - name: Publish to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: twine upload --skip-existing dist/*

@@ -110,18 +110,24 @@ def _build_vectro(
 ) -> tuple[Any, int]:
     """Build a Vectro HNSW index. Returns (index, byte_size)."""
     from python.hnsw_api import HNSWIndex  # type: ignore[import]
-    idx = HNSWIndex(dim=corpus.shape[1], max_elements=len(corpus), m=m, ef_construction=ef_construction)
-    idx.add_items(corpus, ids=list(range(len(corpus))))
-    byte_size = getattr(idx, "size_bytes", lambda: 0)()
+    idx = HNSWIndex(M=m, ef_construction=ef_construction, space="cosine")
+    idx.add(corpus)
+    # Approximate memory: n * d * 4 bytes for float32 vectors + graph links
+    byte_size = len(corpus) * corpus.shape[1] * 4 + len(corpus) * m * 2 * 8
     return idx, byte_size
 
 
 def _query_vectro(idx: Any, queries: np.ndarray, k: int, ef_search: int) -> np.ndarray:
     """Query a Vectro HNSW index. Returns (q, k) int64 index array."""
-    if hasattr(idx, "set_ef"):
-        idx.set_ef(ef_search)
-    labels, _ = idx.knn_query(queries, k=k)
-    return np.array(labels, dtype=np.int64)
+    results = np.empty((len(queries), k), dtype=np.int64)
+    for i, q in enumerate(queries):
+        indices, _ = idx.search(q, k=k, ef=ef_search)
+        # pad with -1 if fewer than k results returned
+        if len(indices) < k:
+            pad = np.full(k - len(indices), -1, dtype=np.int64)
+            indices = np.concatenate([indices, pad])
+        results[i] = indices[:k]
+    return results
 
 
 def _build_hnswlib(

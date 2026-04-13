@@ -1,0 +1,24 @@
+{
+  "benchmark": "real_embeddings_v2",
+  "dataset": "glove-100",
+  "n_vectors": 10000,
+  "d": 100,
+  "modes": {
+    "int8": {
+      "status": "error",
+      "message": "cannot import name 'decompress_result' from 'python' (/Users/wscholl/vectro/python/__init__.py)"
+    },
+    "nf4": {
+      "status": "error",
+      "message": "cannot import name 'decompress_result' from 'python' (/Users/wscholl/vectro/python/__init__.py)"
+    },
+    "binary": {
+      "status": "error",
+      "message": "cannot import name 'decompress_result' from 'python' (/Users/wscholl/vectro/python/__init__.py)"
+    },
+    "auto": {
+      "status": "error",
+      "message": "cannot import name 'decompress_result' from 'python' (/Users/wscholl/vectro/python/__init__.py)"
+    }
+  }
+}

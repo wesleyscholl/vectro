@@ -1,0 +1,26 @@
+{
+  "benchmark": "real_embeddings_v2",
+  "dataset": "glove-100",
+  "n_vectors": 10000,
+  "d": 100,
+  "modes": {
+    "int8": {
+      "status": "error",
+      "message": "Profile 'int8' not found. Available profiles: ['fast', 'balanced', 'quality', 'ultra', 'binary']"
+    },
+    "nf4": {
+      "status": "error",
+      "message": "Profile 'nf4' not found. Available profiles: ['fast', 'balanced', 'quality', 'ultra', 'binary']"
+    },
+    "binary": {
+      "throughput_vec_per_sec": 205271,
+      "mean_cosine_similarity": 0.99997,
+      "compression_ratio": 3.8461538461538463,
+      "best_time_sec": 0.0487
+    },
+    "auto": {
+      "status": "error",
+      "message": "Profile 'auto' not found. Available profiles: ['fast', 'balanced', 'quality', 'ultra', 'binary']"
+    }
+  }
+}

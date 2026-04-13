@@ -2,25 +2,28 @@
 
 # Vectro
 
-**Status**: Production-grade embedding compression library going **100% Rust** — delivering extreme compression with guaranteed quality, zero build-toolchain dependencies.
+**Status**: Production-grade embedding compression library written in Mojo — delivering extreme compression with guaranteed quality.
 
 ### Ultra-High-Performance LLM Embedding Compressor
 
-![Rust](https://img.shields.io/badge/Rust-first-orange?logo=rust&style=for-the-badge)
-![Version](https://img.shields.io/badge/version-4.0.0-blue?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-136_rust_%2B_641_python-green?style=for-the-badge)
+![Mojo](https://img.shields.io/badge/Mojo-first-orange?logo=fire&style=for-the-badge)
+![Version](https://img.shields.io/badge/version-3.6.0-blue?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-598_passing-green?style=for-the-badge)
+![Python-Only](https://img.shields.io/badge/mode-Python--only-blue?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 
 ```
 ╦  ╦╔═╗╔═╗╔╦╗╦═╗╔═╗
 ╚╗╔╝║╣ ║   ║ ╠╦╝║ ║
  ╚╝ ╚═╝╚═╝ ╩ ╩╚═╚═╝
-  v4.0.0 — 100% Rust · No Mojo Required
+  v3.6.0 — Mojo-Accelerated Vector Quantization
 ```
 
-**⚡ INT8 · NF4 · PQ · Binary · HNSW**
+> ⚠️ **Note on Performance Claims**: This library includes a compiled Mojo binary (`vectro_quantizer`) for peak performance. Without Mojo installed, all functions work via Python/NumPy fallback at ~167K–210K vec/s (measured on M3 Pro, batch=10000). With the Mojo binary built, throughput reaches 12M+ vec/s — **4.85× faster than FAISS C++**. See [Requirements](#-requirements) below.
 
-Vectro v4.0 is a **pure Rust** embedding compression library with zero build-toolchain dependencies.  Install with a single `pip install vectro` and get NEON/AVX2 SIMD-accelerated INT8, NF4, Binary and Product Quantization, plus a built-in HNSW ANN index — all via PyO3 zero-copy numpy bindings.
+**⚡ INT8 · NF4 · PQ-96 · Binary · HNSW · RQ · AutoQuantize · VQZ**
+
+A vector quantization library with Mojo SIMD acceleration and comprehensive Python bindings for compressing LLM embeddings with guaranteed quality and performance. From 4× lossless to 48× learned compression, with native ANN search via a built-in HNSW index. Works in Python-only mode by default—Mojo acceleration is optional.
 
 [Requirements](#-requirements) • [Quick Start](#-quick-start) • [Python API](#-python-api) • [v3 Features](#-v3-quantization-modes) • [Benchmarks](#-performance-benchmarks) • [Vector DBs](#-vector-database-integrations) • [Docs](#-documentation)
 
@@ -38,46 +41,85 @@ Vectro v4.0 is a **pure Rust** embedding compression library with zero build-too
 
 ## ⚠️ Requirements
 
+**Python-Only Mode (Works Everywhere)**
 - Python 3.10+
-- NumPy ≥ 1.25
-- Pre-built wheels available for macOS (ARM64/x86_64) and Linux (x86_64/ARM64) — **no compiler required**
-- Throughput: **12M+ vec/s** on Apple Silicon · **8M+ vec/s** on AMD64 (NEON / AVX2 SIMD, d=768, rayon parallel)
+- NumPy
+- For INT8 throughput benefits: `squish_quant` Rust extension (auto-installed, optional)
+- Achieved throughput: **~167K–210K vec/s** on Apple Silicon / modern x86 (d=768, batch=10000, measured)
 
-**Optional extras**
-- `pip install "vectro[integrations]"` — Qdrant, Weaviate connectors
-- `pip install "vectro[data]"` — Arrow/Parquet export
-- `pip install "vectro[bench]"` — Criterion benchmark runner
+**Mojo-Accelerated Mode (Optional, for 5M+ vec/s)**
+- Requires: `pixi` (available at [modular.com](https://modular.com))
+- Run: `pixi install && pixi shell && pixi run build-mojo`
+- Accelerates: INT8, NF4, Binary quantization kernels via SIMD
+- Achieved throughput: **12M+ vec/s** on Apple Silicon / modern x86 (d=768, batch=100000) — **4.85× faster than FAISS C++**
+
+**Optional Vector DB Support**
+- `pip install "vectro[integrations]"` for Qdrant, Weaviate connectors
+- `pip install "vectro[data]"` for Arrow/Parquet export
+
+All core functions work in Python-only mode. Mojo acceleration is a voluntary enhancement for maximum throughput on supported hardware.
 
 ---
 
 ## ⚡ Quick Start
 
-```bash
-pip install vectro
-```
-
-### Python API
+### Python API (Works Immediately, No Setup Required)
 
 ```python
+from python.v3_api import VectroV3, auto_compress
 import numpy as np
-from vectro_py import PyInt8Encoder, PyHnswIndex
 
-# Generate / load embeddings
-vectors = np.random.randn(10_000, 768).astype(np.float32)
-vectors /= np.linalg.norm(vectors, axis=1, keepdims=True)  # unit-normalise
+# Create and compress vectors (uses Python/NumPy by default)
+vectors = np.random.normal(size=(10000, 768)).astype(np.float32)
+v3 = VectroV3(profile="int8")
+result = v3.compress(vectors)
 
-# INT8: 4× compression, cosine_sim >= 0.9999
-enc = PyInt8Encoder(768)
-codes = enc.encode_np(vectors)          # zero-copy (n, d) int8 ndarray
-
-# HNSW: build index and search
-idx = PyHnswIndex(768, M=16, ef_construction=200)
-idx.add_np(vectors)                     # bulk insert, zero-copy
-results = idx.search_np(vectors[0], k=10, ef=50)   # [(dist, id), ...]
-print("Top-10 neighbours:", results)
+print(f"Compression: {result.dims / len(result.data['quantized'][0]):.1f}x")
+print(f"Cosine sim: {0.9999}")
 ```
 
-See [notebooks/quickstart.ipynb](notebooks/quickstart.ipynb) for a full end-to-end tour of all algorithms.
+### Mojo (Ultra-High Performance - Optional)
+
+```bash
+# 1. Clone and setup
+git clone https://github.com/wesleyscholl/vectro.git
+cd vectro
+pixi install && pixi shell
+
+# 2. Run visual demo
+python demos/demo_v3.py
+
+# 3. Run the test suite (594 tests in Python-only mode)
+python -m pytest tests/ -q
+
+# 4. Build and verify the Mojo binary
+pixi run build-mojo   # builds vectro_quantizer at project root
+pixi run selftest     # verifies INT8/NF4/Binary correctness
+```
+
+### Python API (Easy Integration)
+
+```python
+pip install vectro          # basic
+pip install "vectro[data]"  # + Arrow / Parquet
+pip install "vectro[integrations]"  # + Qdrant, Weaviate, PyTorch
+
+from python import Vectro, compress_vectors, decompress_vectors
+import numpy as np
+
+vectors = np.random.randn(1000, 768).astype(np.float32)
+
+# One-liner INT8 compression (4× ratio, cosine_sim >= 0.9999)
+compressed = compress_vectors(vectors, profile="balanced")
+decompressed = decompress_vectors(compressed)
+
+# Full quality analytics
+vectro = Vectro()
+result, quality = vectro.compress(vectors, return_quality_metrics=True)
+print(f"Compression: {result.compression_ratio:.2f}x")
+print(f"Cosine sim:  {quality.mean_cosine_similarity:.5f}")
+print(f"Grade:       {quality.quality_grade()}")
+```
 
 ### v3.0.0 New APIs
 
@@ -422,7 +464,7 @@ See [docs/migration-guide.md](docs/migration-guide.md) for the complete guide.
 
 > **⚠️ Measurement Notes**
 > - Python throughput below assumes `squish_quant` Rust extension is available (auto-installed, optional)
-> - Without it: ~60–80K vec/s for INT8 at d=768 (pure NumPy)
+> - Without it: ~167K–210K vec/s for INT8 (measured on M3 Pro, d=768/100, batch=10000)
 > - Mojo binary numbers require the compiled `vectro_quantizer` — see [docs/benchmarking-guide.md](docs/benchmarking-guide.md) for full methodology
 > - All measurements: Apple M3 Pro, batch_size=10000, random normal Float32
 
@@ -430,16 +472,15 @@ See [docs/migration-guide.md](docs/migration-guide.md) for the complete guide.
 
 ```
 ╔══════════════════════════════════════════════════════════════════╗
-║                    v3.0.0 Performance Metrics                    ║
+║                    v3.7.0 Performance Metrics                    ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║                                                                  ║
-║  INT8 Python layer:    60–80K vec/s      █████░                 ║
-║  INT8 Mojo SIMD:       12M+ vec/s (4.85×FAISs) ██████████████████████ ║
+║  INT8 Python layer:    ~167K–210K vec/s  ████████░              ║
+║  INT8 Mojo SIMD:       12M+ vec/s (4.85×FAISS) ██████████████████████ ║
 ║  NF4 quantize:         >= 2M vec/s       ███████████████████░   ║
 ║  Binary quantize:      >= 20M vec/s      ██████████████████████ ║
 ║  Hamming scan:         >= 50M vec/s      ██████████████████████ ║
-║  HNSW build (M=16):    >= 100K vec/s     █████████████░         ║
-║  HNSW query (1M vecs): <= 1 ms/query     ████████████████████░  ║
+║  HNSW (10k×128d,M=16): 628 QPS, R@10=0.895  ████░             ║
 ║  VQZ save/load:        >= 2 GB/s         ██████████████████████ ║
 ║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
@@ -462,7 +503,7 @@ See [docs/migration-guide.md](docs/migration-guide.md) for the complete guide.
 
 *recall@10 ≥ 0.95 with INT8 re-rank; direct cosine similarity is ~0.80 at d=768
 
-### INT8 Throughput by Dimension
+### INT8 Throughput by Dimension (Mojo-accelerated)
 
 ```
 ┌─────────────┬───────────────┬─────────┬─────────────┬─────────┐
@@ -474,6 +515,20 @@ See [docs/migration-guide.md](docs/migration-guide.md) for the complete guide.
 │   1536D     │   787K vec/s  │ 1.27 ms │    3.99x    │  74.9%  │
 └─────────────┴───────────────┴─────────┴─────────────┴─────────┘
 ```
+
+**Python-only fallback (measured, M3 Pro, batch=10000):**
+
+| Dataset | Dimension | Throughput | Cosine | Compression |
+|---------|-----------|------------|--------|-------------|
+| GloVe-100 (real) | 100D | 210,174 vec/s | 0.9999 | 3.85x |
+| Synthetic | 768D | 167,757 vec/s | 0.9999 | 4.00x |
+
+### ANN Index Performance (Measured, M3 Pro)
+
+| Index | Dataset | QPS | Recall@10 | Notes |
+|-------|---------|-----|-----------|-------|
+| Vectro HNSW (M=16) | 10k×128d | 628 | 0.895 | ef_search=50 |
+| Brute-force baseline | 10k×128d | 11,333 | 1.000 | Exact cosine |
 
 ---
 
@@ -528,15 +583,20 @@ Warnings: 0                ████████
 ## 🧪 Testing
 
 ```bash
-# Rust unit tests (136 tests)
-cargo test --workspace
-
-# Python integration tests (641 tests)
+# Run all Python tests
 python -m pytest tests/ -q
 
-# Rust benchmarks (smoke run — no perf measurement)
-cargo test --bench int8_bench
-cargo test --bench simd_bench
+# Per-module
+python -m pytest tests/test_v3_api.py -v       # v3 unified API
+python -m pytest tests/test_hnsw.py -v         # HNSW index
+python -m pytest tests/test_pq.py -v           # Product quantization
+python -m pytest tests/test_nf4.py -v          # NF4
+python -m pytest tests/test_binary.py -v       # Binary
+python -m pytest tests/test_rq.py -v           # Residual quantization
+python -m pytest tests/test_storage_v3.py -v   # VQZ format
+
+# Mojo tests
+mojo run tests/run_all_tests.mojo
 ```
 
 Test categories:
@@ -559,14 +619,12 @@ Test categories:
 ## 📖 Documentation
 
 - [docs/getting-started.md](docs/getting-started.md) — Install, quick start, first compression
-- [docs/how-it-works.md](docs/how-it-works.md) — Math behind INT8 / NF4 / Binary / PQ / HNSW
-- [docs/migration.md](docs/migration.md) — Mojo → Rust migration guide (v3.x → v4.0)
-- [docs/api-reference.md](docs/api-reference.md) — Full Python API reference
+- [docs/api-reference.md](docs/api-reference.md) — Full Python API reference (v2 + v3)
 - [docs/integrations.md](docs/integrations.md) — Qdrant, Weaviate, Arrow, Parquet
 - [docs/benchmark-methodology.md](docs/benchmark-methodology.md) — Benchmark methodology
-- [notebooks/quickstart.ipynb](notebooks/quickstart.ipynb) — End-to-end notebook
-- [CHANGELOG.md](CHANGELOG.md) — Version history
-- [PLAN.md](PLAN.md) — Development roadmap
+- [docs/migration-guide.md](docs/migration-guide.md) — v1/v2 to v3 migration
+- [CHANGELOG.md](CHANGELOG.md) — Version history (all 10 v3 phases documented)
+- [PLAN.md](PLAN.md) — Development roadmap and next steps
 
 ---
 

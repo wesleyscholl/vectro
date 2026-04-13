@@ -1,0 +1,35 @@
+{
+  "benchmark": "ann_comparison",
+  "config": {
+    "n_corpus": 10000,
+    "d": 128,
+    "n_queries": 1000,
+    "k": 10,
+    "hnsw_M": 16,
+    "ef_construction": 200,
+    "ef_search": 100,
+    "n_trees_annoy": 10
+  },
+  "libraries": {
+    "Vectro HNSW": {
+      "status": "error",
+      "message": "HNSWIndex.__init__() got an unexpected keyword argument 'dim'"
+    },
+    "hnswlib": {
+      "status": "not_installed"
+    },
+    "annoy": {
+      "status": "not_installed"
+    },
+    "usearch": {
+      "status": "not_installed"
+    }
+  },
+  "exact_brute_force": {
+    "build_sec": 0,
+    "qps": 11635.3,
+    "recall_at_1": 1.0,
+    "recall_at_5": 1.0,
+    "recall_at_10": 1.0
+  }
+}

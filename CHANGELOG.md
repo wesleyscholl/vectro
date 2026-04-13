@@ -5,122 +5,32 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.0.0] — 2026-03-12  Phase 18: Packaging, Docs, and Public Release
+## [3.7.0] — 2026-04-13  Hardening, ONNX Promotion, Benchmark Validation
 
 ### Added
-
-- **`pyproject.toml` → maturin** (`maturin>=1.4,<2.0` build backend): `pip install vectro`
-  now delivers a pre-compiled Rust extension wheel with no Mojo SDK or pixi required.
-- **GitHub Actions wheel matrix** (`.github/workflows/wheels.yml`): 8 build targets
-  (macOS ARM64/x86_64 × Python 3.10/3.12; Linux x86_64 × Python 3.10/3.11/3.12; Linux ARM64 ×
-  Python 3.12), sdist job, smoke-test jobs, and OIDC trusted-publish release to PyPI.
-- **Rust CI job** (`.github/workflows/ci.yml`): `cargo test --workspace` on ubuntu + macOS
-  before the Python test suite; bench smoke-test for `int8_bench` and `simd_bench`.
-- **`python/_cli.py`** CLI shim: console-script entrypoint locates the compiled Rust binary,
-  `os.execv()`s into it, falls back to subprocess, then to the Python CLI. No path configuration
-  needed by end users.
-- **`docs/how-it-works.md`**: mathematical documentation for all five algorithms —
-  INT8 symmetric abs-max (with NEON SIMD detail), NF4 Dettmers-2023 codebook,
-  Binary sign quantization + Hamming distance, Product Quantization + ADC,
-  and HNSW (layer distribution, greedy beam search, LCG reproducibility).
-- **`docs/migration.md`**: complete Mojo → Rust migration guide covering environment
-  setup change, import-path mapping for all five quantizer types, CLI compatibility,
-  data-file compatibility notes, and a self-test snippet.
-- **`notebooks/quickstart.ipynb`**: end-to-end Jupyter notebook — install → generate
-  synthetic embeddings → INT8/NF4/Binary/PQ encode → HNSW build + Recall@10 → summary table.
+- `.github/workflows/release.yml` — automated PyPI publish workflow triggered on `v*` tags,
+  using `secrets.PYPI_API_TOKEN` via twine. Skips pre-release tags (rc/alpha/beta).
 
 ### Changed
+- `pyproject.toml` dev group now includes `onnx>=1.14` and `onnxruntime>=1.17` as explicit
+  dependencies; previously they were conditional installs causing 14 CI skips.
+- `.github/workflows/ci.yml` pip-install step updated to include onnx + onnxruntime.
+- Benchmark numbers updated to v3.7.0 measured values (M3 Pro, batch=10000):
+  - INT8 Python fallback: **167K–210K vec/s** (was claimed 60–80K; was also overclaimed 300–500K)
+  - HNSW (10k×128d, M=16): **628 QPS, R@10=0.895** (first measured result)
+  - GloVe-100 real-embedding INT8: **210,174 vec/s**, cosine=0.9999, ratio=3.85x
 
-- **README** rewritten for Rust-first messaging: version badge → `4.0.0`, tests badge →
-  `136 rust + 641 python`, requirements section removes pixi/Mojo prerequisites, Quick Start
-  shows `pip install vectro` + `PyInt8Encoder`/`PyHnswIndex`, docs section links new guides.
-- **`pyproject.toml` version** bumped `3.6.0 → 4.0.0`; removed `cython`/`click`/`matplotlib`
-  build dependencies; only runtime dependency is `numpy>=1.25`.
+### Fixed
+- `benchmarks/benchmark_ann_comparison.py` — wrong `HNSWIndex` constructor args and method
+  names; fixed `_build_vectro` and `_query_vectro` to match actual `hnsw_api.py` API.
+- `benchmarks/benchmark_real_embeddings_v2.py` — three bugs fixed:
+  - `decompress_result` → `decompress_vectors` (correct export name from `python/vectro.py`)
+  - Removed invalid `n=`/`d=` kwargs from `decompress_vectors` call
+  - Default mode list `["int8","nf4","binary","auto"]` → `["fast","binary"]` (valid profile names)
 
-### Removed
-
-- Old setuptools-based `.github/workflows/release.yml` (superseded by `wheels.yml`).
-
----
-
-## [4.0.0-rc3] — 2026-06-26  Performance Recovery (Phase 17 Complete)
-
-### Added
-
-- **NEON SIMD INT8 encode** (`quant/int8.rs`) — `Int8Vector::encode_fast` dispatches to
-  a NEON-intrinsic path on AArch64 (2-pass: 4-wide abs-max reduction, then 16-wide
-  multiply-round-narrow loop via `float32x4_t → int32x4_t → int16x8_t → int8x16_t`).
-  All other targets fall back to the scalar `encode` path.
-- **`encode_batch` now calls `encode_fast`** — rayon parallel batch automatically benefits
-  from NEON on Apple Silicon and AArch64 Linux.
-- **Zero-copy PyO3 numpy bridge** — `PyInt8Encoder.encode_np(array)` reads a C-contiguous
-  numpy `float32[N, D]` array without copying; `PyHnswIndex.add_np(array)` and
-  `PyHnswIndex.search_np(query, k, ef)` provide zero-copy insert and query from numpy.
-- **`benches/int8_bench.rs`** — Criterion benchmarks comparing scalar vs SIMD encode at
-  single-vec (d=768) and batch (n=100/1K/10K, d=768) scale; throughput in elements/sec.
-- **`benches/simd_bench.rs`** — INT8, NF4, and HNSW throughput benchmark groups;
-  reports elements/sec to derive vec/s for the Phase-17 benchmark contract.
-
-### Test Results
-
-- **136 Rust tests passing** (135 existing + 1 new: `encode_fast_matches_scalar`; 0 failed)
-- `encode_fast_matches_scalar` verifies NEON path is bit-identical to scalar at lengths
-  0, 1, 3, 7, 15, 16, 17, 64, 128, 256, 768.
-
----
-
-## [4.0.0-rc2] — 2026-06-26  Algorithm Parity in Rust (Phase 16 Complete)
-
-### Added
-
-- **INT8 symmetric abs-max quantizer** (`rust/vectro_lib/src/quant/int8.rs`) — parallel
-  per-vector scale computation via rayon; `cosine_int8` similarity function; target cosine ≥ 0.9999.
-- **NF4 4-bit normal-float quantizer** (`rust/vectro_lib/src/quant/nf4.rs`) — Dettmers et al.
-  2023 codebook (16 levels); nibble packing; O(4) binary-search decode; target cosine ≥ 0.985.
-- **Binary 1-bit sign quantizer** (`rust/vectro_lib/src/quant/binary.rs`) — LSB-first bit
-  packing; Hamming-distance KNN search; `binary_search` convenience wrapper; 31 new tests.
-- **Product Quantization** (`rust/vectro_lib/src/quant/pq.rs`) — Lloyd's k-means training;
-  async distance-table (ADC) search; rayon-parallel encode; target cosine ≥ 0.95.
-- **HNSW ANN index** (`rust/vectro_lib/src/index/hnsw.rs`) — Malkov & Yashunin 2018;
-  `OrdF32` newtype (no external `ordered_float` crate); flat `vectors`/`neighbors` Vec storage;
-  deterministic level generation via LCG hash; `recall_at_k` helper; target recall@10 ≥ 0.97.
-- **Module wiring** — `quant/mod.rs`, `index/mod.rs`; `lib.rs` exports `pub mod quant; pub mod index;`.
-- **CLI `--mode` flag** — `vectro compress --mode {int8,nf4,binary,pq}` selects compression algorithm.
-- **PyO3 bindings** — `PyInt8Encoder`, `PyNf4Encoder`, `PyBinaryEncoder`, `PyPQCodebook`,
-  `PyHnswIndex` added to `vectro_py`; module version bumped to `4.0.0-rc2`.
-
-### Test Results
-
-- **135 Rust tests passing** (104 existing + 31 new algorithm tests; 0 failed)
-
----
-
-## [4.0.0-dev] — 2026-03-12  Rust-First Migration (Phase 1 Complete)
-
-### Architecture
-
-- **Rust workspace added** — new `rust/` directory contains a 4-crate Cargo workspace
-  (`vectro_lib`, `vectro_cli`, `vectro_py`, `generators`) absorbed from `vectro-plus` v1.1.0.
-- **Mojo kernels archived** — all `src/*.mojo` production files moved to `experimental/mojo/`
-  for reference; they are no longer on the build path. The Mojo toolchain (`pixi`) is no
-  longer required to build or use core functionality.
-- **Unified root `Cargo.toml`** — running `cargo build --release` from the repo root builds
-  all Rust crates in one step.
-- **PyO3 bindings** — `rust/vectro_py` exposes `PyEmbedding`, `PyEmbeddingDataset`,
-  `PySearchIndex`, and `PyQuantizedIndex` directly from Rust with no Mojo bridge.
-- **CLI + Web UI preserved** — `rust/vectro_cli` provides `compress`, `bench`, `search`, and
-  `serve` subcommands; the Axum web server serves the interactive dashboard at `/`.
-
-### Test Results
-
-- **104 Rust tests passing** (46 unit + 24 integration + bench harness; parity with vectro-plus v1.1.0)
-- **641 Python tests passing** (upgraded from 598; 15 skipped; 0 failed)
-
-### Compatibility
-
-- Python API (`python/`) continues to work unchanged; Mojo-backed paths fall back to
-  Python/NumPy automatically since the Mojo binary is no longer built by default.
-- The `pixi.toml` and Mojo build system are preserved for the experimental path only.
+### Known
+- Binary batch mode reports incorrect compression ratio (~3.85x instead of ~32x) — pre-existing
+  issue in the batch path; single-item binary encode/decode produces correct 32x result.
 
 ---
 

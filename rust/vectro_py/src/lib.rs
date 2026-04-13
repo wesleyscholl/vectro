@@ -387,6 +387,9 @@ use vectro_lib::quant::{int8, nf4, binary, pq, bf16};
 use vectro_lib::index::hnsw::HnswIndex;
 use vectro_lib::index::ivf::IvfIndex;
 use vectro_lib::index::ivf_pq::IvfPqIndex;
+use vectro_lib::index::quant_hnsw::{
+    Bf16HnswIndex, Int8HnswIndex, Nf4HnswIndex, Sq2HnswIndex, BinaryHnswIndex,
+};
 
 /// INT8 symmetric abs-max quantizer (Python binding).
 #[pyclass]
@@ -1015,6 +1018,131 @@ impl PyIvfPqIndex {
     }
 }
 
+// ─────────────────────── Quantized HNSW Python bindings ──────────────────────
+
+macro_rules! quant_hnsw_pyclass {
+    ($pyname:ident, $inner:ty, $label:expr) => {
+        #[doc = concat!($label, " quantized HNSW index (Python binding).")]
+        #[pyclass]
+        struct $pyname {
+            inner: $inner,
+        }
+
+        #[pymethods]
+        impl $pyname {
+            #[new]
+            fn new(m: usize, ef_construction: usize) -> Self {
+                Self { inner: <$inner>::new(m, ef_construction) }
+            }
+
+            fn add(&mut self, vector: Vec<f32>) {
+                self.inner.add(&vector);
+            }
+
+            fn add_batch(&mut self, vectors: Vec<Vec<f32>>) {
+                self.inner.add_batch(&vectors);
+            }
+
+            /// Zero-copy batch insert from a numpy array (shape [N, D]).
+            fn add_np(&mut self, array: PyReadonlyArray2<f32>) -> PyResult<()> {
+                let arr = array.as_array();
+                let (n, d) = (arr.nrows(), arr.ncols());
+                if let Some(flat) = arr.as_slice() {
+                    for i in 0..n {
+                        self.inner.add(&flat[i * d..(i + 1) * d]);
+                    }
+                } else {
+                    for row in arr.rows() {
+                        let v: Vec<f32> = row.iter().copied().collect();
+                        self.inner.add(&v);
+                    }
+                }
+                Ok(())
+            }
+
+            fn search(&self, query: Vec<f32>, k: usize, ef: usize) -> Vec<(usize, f32)> {
+                self.inner.search(&query, k, ef)
+            }
+
+            /// Zero-copy search from a 1-D numpy query vector.
+            fn search_np(
+                &self,
+                query: PyReadonlyArray1<f32>,
+                k: usize,
+                ef: usize,
+            ) -> Vec<(usize, f32)> {
+                let q = query.as_array();
+                match q.as_slice() {
+                    Some(s) => self.inner.search(s, k, ef),
+                    None => {
+                        let v: Vec<f32> = q.iter().copied().collect();
+                        self.inner.search(&v, k, ef)
+                    }
+                }
+            }
+
+            /// Search with an allow-list of node IDs.
+            fn search_filtered_np(
+                &self,
+                query: PyReadonlyArray1<f32>,
+                k: usize,
+                ef: usize,
+                allowed_ids: Vec<usize>,
+            ) -> Vec<(usize, f32)> {
+                use std::collections::HashSet;
+                let allowed: HashSet<usize> = allowed_ids.into_iter().collect();
+                let q = query.as_array();
+                match q.as_slice() {
+                    Some(s) => {
+                        self.inner.search_filtered(s, k, ef, |id| allowed.contains(&id))
+                    }
+                    None => {
+                        let v: Vec<f32> = q.iter().copied().collect();
+                        self.inner.search_filtered(&v, k, ef, |id| allowed.contains(&id))
+                    }
+                }
+            }
+
+            fn delete(&mut self, id: usize) {
+                self.inner.delete(id);
+            }
+
+            /// Compact the index by permanently removing soft-deleted nodes.
+            /// Returns the number of nodes removed.
+            fn vacuum(&mut self) -> usize {
+                self.inner.vacuum()
+            }
+
+            fn save(&self, path: &str) -> PyResult<()> {
+                self.inner
+                    .save(std::path::Path::new(path))
+                    .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
+            }
+
+            #[staticmethod]
+            fn load(path: &str) -> PyResult<Self> {
+                let inner = <$inner>::load(std::path::Path::new(path))
+                    .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))?;
+                Ok(Self { inner })
+            }
+
+            fn __len__(&self) -> usize {
+                self.inner.len()
+            }
+
+            fn __repr__(&self) -> String {
+                format!(concat!($label, "HnswIndex(n_vectors={})"), self.inner.len())
+            }
+        }
+    };
+}
+
+quant_hnsw_pyclass!(PyBf16HnswIndex,   Bf16HnswIndex,   "BF16");
+quant_hnsw_pyclass!(PyInt8HnswIndex,   Int8HnswIndex,   "INT8");
+quant_hnsw_pyclass!(PyNf4HnswIndex,    Nf4HnswIndex,    "NF4");
+quant_hnsw_pyclass!(PySq2HnswIndex,    Sq2HnswIndex,    "SQ2");
+quant_hnsw_pyclass!(PyBinaryHnswIndex, BinaryHnswIndex, "Binary");
+
 /// Main Python module
 #[pymodule]
 fn vectro_py(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
@@ -1030,14 +1158,20 @@ fn vectro_py(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<PyBf16Encoder>()?;
     m.add_class::<PyIvfIndex>()?;
     m.add_class::<PyIvfPqIndex>()?;
+    // Quantized HNSW variants (Phase 22)
+    m.add_class::<PyBf16HnswIndex>()?;
+    m.add_class::<PyInt8HnswIndex>()?;
+    m.add_class::<PyNf4HnswIndex>()?;
+    m.add_class::<PySq2HnswIndex>()?;
+    m.add_class::<PyBinaryHnswIndex>()?;
     m.add_function(wrap_pyfunction!(compress_embeddings, m)?)?;
     m.add_function(wrap_pyfunction!(analyze_compression_quality, m)?)?;
     m.add_function(wrap_pyfunction!(benchmark_search_performance, m)?)?;
-    
+
     // Add version info
-    m.add("__version__", "4.0.0")?;
+    m.add("__version__", "4.2.1")?;
     m.add("__author__", "Wesley Scholl")?;
     m.add("__description__", "Python bindings for Vectro high-performance vector compression and search")?;
-    
+
     Ok(())
 }

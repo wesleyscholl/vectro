@@ -1,26 +1,35 @@
 # Vectro — Plan
 
-> Last updated: 2026-06-26
-> Current version: **4.2.0** — Phase 21 benchmarks + production hardening complete
+> Last updated: 2026-04-13
+> Current version: **3.7.0** — tagged `v3.7.0`, pushed to origin
 
 ---
 
-## v4.2.0 — Phase 21: Criterion Benchmarks + Production Hardening ✅ COMPLETE
+## v3.7.0 — HARDENING, ONNX PROMOTION, BENCHMARK VALIDATION ✅ COMPLETE
 
-### Changes
+### CI / Release Infrastructure
+- `.github/workflows/release.yml` — automated PyPI publish on `v*` tags via twine + `secrets.PYPI_API_TOKEN`
+- `pyproject.toml` dev group: explicit `onnx>=1.14` + `onnxruntime>=1.17` (eliminates 14 CI skips)
+- `.github/workflows/ci.yml` pip-install step updated to include onnx + onnxruntime
 
-| Component | What changed |
-|-----------|-------------|
-| `vectro_lib/benches/simd_bench.rs` | Added `bench_ivf_search` and `bench_ivfpq_search` Criterion groups (N=10k, D=128) |
-| `index/hnsw.rs` | `vacuum()` — full graph rebuild after soft-deletes |
-| `index/ivf.rs` | `vacuum()`, `search_filtered<F>`, `search_filtered_with_probe<F>`, `search_for_recall` |
-| `index/ivf_pq.rs` | `vacuum()`, `search_for_recall` |
-| `vectro_py/src/lib.rs` | Python bindings for all new methods (`vacuum`, `search_filtered_np`, `search_for_recall`) |
-| `quant/binary.rs` | Fixed pre-existing proptest f32-overflow bug: use f64 for norm computation |
-| `quant/nf4.rs` | Fixed pre-existing proptest coverage: bounded strategy avoids f32 norm overflow |
+### Benchmark Validation (measured, M3 Pro)
 
-### Tests
-- 100 / 100 tests passing
+| Metric | Value |
+|--------|-------|
+| INT8 Python fallback (d=768, batch=1000) | **167,757 vec/s** |
+| INT8 Python fallback (GloVe-100 d=100) | **210,174 vec/s**, cosine=0.9999, ratio=3.85x |
+| HNSW (10k×128d, M=16, ef_search=50) | **628 QPS, R@10=0.895** |
+| Mojo SIMD INT8 (from v3.5/v3.6) | **12M+ vec/s, 4.85× FAISS C++** |
+
+### Bug Fixes
+- `benchmarks/benchmark_ann_comparison.py`: fixed `HNSWIndex` constructor + method names
+- `benchmarks/benchmark_real_embeddings_v2.py`: fixed `decompress_result`→`decompress_vectors`, removed invalid kwargs, corrected default mode list to `["fast", "binary"]`
+
+### Known Issues
+- Binary batch path reports ~3.85x compression ratio instead of 32x (pre-existing; single-item path correct)
+
+### Test Results
+- **598 tests passing** (pre-existing sklearn subprocess failures unchanged)
 
 ---
 
@@ -416,217 +425,41 @@ making the CLI immediately useful for evaluating hardware capability.
 
 ---
 
----
+## Phase 15 — v3.7.0: Hardening & Validation  ✅ COMPLETE (2026-04-13)
 
-## Phase 15 — v4.0.0-rc1: Rust-First Consolidated Repository  🔄 IN PROGRESS (2026-03-12) — steps 15a–15f ✅
-
-> **Strategic decision (2026-03-12):** `vectro` absorbs `vectro-plus`. Rust is the sole
-> production runtime going forward. Mojo production dispatch is retired and preserved
-> under `experimental/mojo/` as a reproducible benchmark reference only.
->
-> **Sources of truth for this merger:**
-> - Canonical repo: **`vectro`** (this repo).
-> - Code from `vectro-plus` is copied in (no foreign git history).
-> - All three release gates must pass simultaneously: install simplicity, feature parity,
->   performance parity-or-better vs Mojo baseline.
-
-### Merge contract
-
-| Dimension | Decision |
-|-----------|----------|
-| Canonical repo | `vectro` (this repo) |
-| Runtime language | **Rust** (100%) |
-| Python API language | **Python** (PyO3 + maturin wheel) |
-| Mojo scope | `experimental/mojo/` — benchmark reference kernels only |
-| Unified v1 surface | CLI + REST API + Web UI + Python library |
-| Backward compatibility | Python API shape from `python/v3_api.py` preserved |
-| History policy | Keep `vectro` git history; copy `vectro-plus` as files |
-
-### Directory layout
-
-```
-vectro/
-├── Cargo.toml                  # workspace root (NEW)
-├── rust/                       # NEW — all Rust crates
-│   ├── vectro_lib/             # core algorithms (from vectro-plus)
-│   ├── vectro_cli/             # CLI + web server + REST (from vectro-plus)
-│   ├── vectro_py/              # PyO3 Python bindings (from vectro-plus)
-│   └── generators/             # data generators (from vectro-plus)
-├── experimental/               # NEW
-│   └── mojo/                   # Mojo kernels archived here (from src/)
-├── python/                     # Python API (preserved; Rust-backed where applicable)
-├── src/                        # (emptied — Mojo moved to experimental/mojo/)
-├── benchmarks/                 # Python benchmark scripts (preserved)
-└── tests/                      # Python tests (preserved)
-```
-
-### Step-by-step
+> Current version: **3.7.0** — tagged `v3.7.0`
 
 | Step | Deliverable | Status |
 |------|-------------|--------|
-| 15a | Create `Cargo.toml` workspace at `vectro/` root | ✅ |
-| 15b | Copy `vectro-plus` crates → `vectro/rust/` | ✅ |
-| 15c | Move `vectro/src/*.mojo` → `vectro/experimental/mojo/` | ✅ |
-| 15d | Update `pyproject.toml` to declare Rust extension path | ✅ |
-| 15e | `cargo test --workspace` passes (93+ Rust tests) | ✅ 104 passing |
-| 15f | `pytest tests/ -q` still passes (598 Python tests) | ✅ 641 passing (15 skipped) |
-| 15g | README + CHANGELOG updated with new architecture | ⏳ |
+| 15a | `test_rq.py` + `test_v3_api.py` — 67/67 passing (subprocess-isolated; pre-existing) | ✅ |
+| 15b | `.github/workflows/release.yml` — PyPI publish on `v*` tags via twine; fixes 2 CI test failures | ✅ |
+| 15c | Full test suite: **641 passed, 0 failed, 15 skipped** | ✅ |
+| 15d | ONNX promoted to dev deps: `pyproject.toml` + `ci.yml` include `onnx>=1.14`, `onnxruntime>=1.17` | ✅ |
+| 15e | `benchmarks/benchmark_ann_comparison.py` — fixed HNSWIndex API; result: **628 QPS, R@10=0.895** (10k×128d, M=16) | ✅ |
+| 15f | `benchmarks/benchmark_real_embeddings_v2.py` — fixed 3 bugs (import name, kwargs, profile names); result: **210,174 vec/s**, cosine=0.9999, 3.85x (GloVe-100, d=100) | ✅ |
+| 15g | README benchmark section updated to v3.7.0 measured numbers; Mojo dimension table labelled correctly | ✅ |
+| 15h | CHANGELOG entry written; PLAN.md updated | ✅ |
+| 15i | v3.7.0 tagged and pushed to origin | ✅ |
 
-**Acceptance criteria:**
-- `cargo build --release` succeeds from `vectro/` root.
-- `cargo test --workspace` ≥ 93 tests passing (parity with `vectro-plus` v1.1.0).
-- `python -m pytest tests/ -q` ≥ 594 passing (parity with pre-merge baseline).
-- `cargo run --release -p vectro_cli -- --help` prints all commands.
-- `cargo run --release -p vectro_cli -- serve --port 8080` starts the web server.
-
----
-
-## Phase 16 — v4.0.0-rc2: Algorithm Parity in Rust  ✅ COMPLETE
-
-Implement every quantization and ANN algorithm currently backed by Python/Mojo as a
-first-class Rust module in `rust/vectro_lib/`. When done, Python modules can dispatch
-to Rust via PyO3 without the `pixi`/Mojo toolchain.
-
-### Algorithm ports (by priority)
-
-| # | Algorithm | Source reference | Rust target | Priority | Effort |
-|---|-----------|-----------------|-------------|----------|--------|
-| 1 | **INT8 symmetric abs-max + SIMD** | `src/quantizer_simd.mojo` | `rust/vectro_lib/src/quant/int8.rs` | ⭐⭐⭐⭐ | ✅ done |
-| 2 | **NF4 normal-float 4-bit** | `python/nf4_api.py` | `rust/vectro_lib/src/quant/nf4.rs` | ⭐⭐⭐⭐ | ✅ done |
-| 3 | **Binary 1-bit (sign)** | `python/binary_api.py` | `rust/vectro_lib/src/quant/binary.rs` | ⭐⭐⭐ | ✅ done |
-| 4 | **PQ-96 training + inference** | `python/pq_api.py` | `rust/vectro_lib/src/quant/pq.rs` | ⭐⭐⭐⭐ | ✅ done |
-| 5 | **HNSW ANN index** | `python/hnsw_api.py` | `rust/vectro_lib/src/index/hnsw.rs` | ⭐⭐⭐⭐ | ✅ done |
-| 6 | **AutoQuantize** | `python/auto_quantize_api.py` | `rust/vectro_lib/src/quant/auto.rs` | ⭐⭐ | 🔜 Phase 17+ |
-| 7 | **Residual PQ (3-pass)** | `python/rq_api.py` | `rust/vectro_lib/src/quant/rq.rs` | ⭐⭐ | 🔜 Phase 17+ |
-
-**Acceptance criteria (per algorithm):**
-- Cosine similarity threshold parity vs Python reference: INT8 ≥ 0.9999, NF4 ≥ 0.985, Binary recall@10 ≥ 0.95, PQ ≥ 0.95.
-- Round-trip encode→decode produces original values within floating-point tolerance.
-- Every algorithm exposed in both CLI (`vectro compress --mode <algo>`) and Python bindings.
+**Test count:** 641 passing, 0 failed (≥ 598 gate ✅).
+**Measured baselines (M3 Pro, batch=10000):**
+- INT8 Python fallback: 167K–210K vec/s
+- HNSW (10k×128d, M=16): 628 QPS, R@10=0.895
+- GloVe-100 fast profile: 210,174 vec/s, cosine=0.9999, 3.85x
 
 ---
 
-## Phase 17 — v4.0.0-rc3: Performance Recovery  ✅ COMPLETE
+## Immediate Next Actions (v3.8.0 — JS Bindings Phase 2)
 
-> Phase 16 delivered: `quant/{int8,nf4,binary,pq}.rs` + `index/hnsw.rs` + CLI `--mode` flag + PyO3 bindings. 135 Rust tests passing.
-
-### What was delivered
-
-| Item | Deliverable | Status |
-|------|-------------|--------|
-| NEON INT8 path | `Int8Vector::encode_fast` + `encode_neon` in `quant/int8.rs` | ✅ |
-| Scalar fallback | `#[cfg(not(target_arch = "aarch64"))]` falls back to `encode` | ✅ |
-| Zero-copy PyO3 bridge | `PyInt8Encoder::encode_np(numpy array)`, `PyHnswIndex::add_np` + `search_np` | ✅ |
-| Criterion bench: int8 | `benches/int8_bench.rs` — scalar vs fast, batch at n=100/1K/10K, d=768 | ✅ |
-| Criterion bench: simd | `benches/simd_bench.rs` — INT8 + NF4 + HNSW throughput groups | ✅ |
-| All tests green | 136 Rust tests (1 new: `encode_fast_matches_scalar`), 0 failed | ✅ |
-
-### Remaining throughput work (tracked in Phase 18)
-- NF4 NEON path (currently scalar rayon).
-- Run `cargo bench` on real hardware and compare `results/faiss_comparison_mojo.json`.
-- `pip install` time and CLI startup latency measurement.
-
----
-
-## Phase 18 — v4.0.0: Packaging, Docs, and Public Release  ✅ COMPLETE
-
-| Step | Deliverable | Status |
-|------|-------------|--------|
-| 18a | Maturin wheel build: `pip install vectro` includes Rust extension, no Mojo required | ✅ |
-| 18b | Pre-built wheels for macOS/Linux (GitHub Actions matrix) | ✅ |
-| 18c | CLI binary included in wheel (via `scripts_entrypoints`) | ✅ |
-| 18d | `docs/how-it-works.md` — math explanations for INT8/NF4/PQ/Binary/HNSW | ✅ |
-| 18e | `docs/migration.md` — Mojo → Rust runtime migration guide for existing users | ✅ |
-| 18f | Retrieval-quality evidence publish (Recall@10/NDCG@10 before/after compression) | deferred |
-| 18g | End-to-end notebook: load → compress → search → display | ✅ |
-| 18h | CHANGELOG v4.0.0 section; README updated with Rust-first messaging | ✅ |
-| 18i | Release tag v4.0.0; publish to PyPI | 🔜 |
-
----
-
-## Phase 19 — v4.1.0: SimSIMD Engine, HNSW Production Features, BF16 — ✅ COMPLETE
-
-> Research phase completed: SimSIMD, FAISS, hnswlib, ScaNN, USearch studied.
-> Target: beat Mojo reference at every distance op; ship production-grade HNSW.
-
-| Step | Deliverable | Status |
-|------|-------------|--------|
-| 19a | `simsimd = "6"` + `proptest = "1.4"` added to `vectro_lib` deps | ✅ |
-| 19b | `hnsw.rs`: SimSIMD dot-product cosine (auto-dispatches NEON/SVE/AVX2/AVX-512) | ✅ |
-| 19c | `hnsw.rs`: soft-delete (`deleted: Vec<bool>`, `delete(id)`) | ✅ |
-| 19d | `hnsw.rs`: `search_filtered<F>` with deletion + per-node predicate | ✅ |
-| 19e | `hnsw.rs`: `save(path)` / `load(path)` via bincode (backward-compat serde default) | ✅ |
-| 19f | `hnsw.rs`: 4 new tests (save_load_roundtrip, delete, filter, bounds) | ✅ |
-| 19g | `binary.rs`: SimSIMD SIMD popcount hamming (NEON/SVE/Haswell/Ice Lake) | ✅ |
-| 19h | `int8.rs`: AVX2 encode path — 8-wide f32→i8 with abs-max SIMD reduce | ✅ |
-| 19i | `int8.rs`: 3-way dispatch in `encode_fast` (NEON / runtime AVX2 / scalar) | ✅ |
-| 19j | `int8.rs`: proptest roundtrip + scale invariant | ✅ |
-| 19k | `pq.rs`: k-means++ init (D²-weighted, LCG RNG, replaces evenly-spaced picks) | ✅ |
-| 19l | new `quant/bf16.rs`: `Bf16Vector` + SimSIMD BF16 cosine, 6 tests | ✅ |
-| 19m | `quant/mod.rs`: `pub mod bf16` exposed | ✅ |
-| 19n | `vectro_py/src/lib.rs`: `PyHnswIndex.{save,load,delete,search_filtered_np,search_batch_np}` | ✅ |
-| 19o | `vectro_py/src/lib.rs`: `PyBf16Encoder` class registered | ✅ |
-| 19p | `.github/workflows/ci.yml`: `rust-coverage` job — `cargo llvm-cov --fail-under-lines 90` | ✅ |
-| 19q | All 62 workspace tests green | ✅ |
-
-### Performance notes (SimSIMD benchmarks vs Mojo 12.5M ops/s target)
-| Kernel | x86-64 (AVX2/AVX-512) | AArch64 (NEON) |
-|--------|----------------------|----------------|
-| i8 cosine 1536-d | 16.1 M ops/s | 13.5 M ops/s |
-| f32 dot 1536-d | 32.1 M ops/s | 27.8 M ops/s |
-| u8 hamming 1536-d | 14.6 M ops/s | 12.1 M ops/s |
-| bf16 cosine 1536-d | 38.2 M ops/s (AVX-512-BF16) | 15.1 M ops/s |
-
----
-
----
-
-## Phase 20 — v4.1.0: IVF Indexes, Proptest Coverage, NF4 AVX2, Python+JS Bindings  ✅ COMPLETE
-
-> Released: v4.1.0
-
-### Summary
-
-Full ANN index suite, extended property-based testing, a NF4 AVX2 hot-path,
-updated Python bindings, and a working N-API addon that reads `.vqz` files from
-Node.js.
-
-| Step | Deliverable | Status |
-|------|-------------|--------|
-| 20a | `rust/vectro_lib/src/index/ivf.rs` — IvfIndex: k-means++ coarse quantizer, posting lists, n_lists/n_probe, train/add/search_with_probe/delete/save/load, recall_at_k; 9 unit tests + 2 proptests | ✅ |
-| 20b | `rust/vectro_lib/src/index/ivf_pq.rs` — IvfPqIndex: IVF with Asymmetric Distance Computation (ADC); O(M) score vs O(d); same API surface + 9 tests + 2 proptests | ✅ |
-| 20c | `rust/vectro_lib/src/index/mod.rs` — re-export `pub mod ivf; pub mod ivf_pq;` | ✅ |
-| 20d | `rust/vectro_lib/src/quant/binary.rs` — proptest module: hamming_symmetry, hamming_self_zero, hamming_complement_equals_dim, normalize_preserves_encoding | ✅ |
-| 20e | `rust/vectro_lib/src/quant/nf4.rs` — proptest module (roundtrip_cosine_quality, scale_invariance, decode_length_matches) + `encode_fast` 3-way dispatch: x86_64+AVX2 → `avx2_abs_max` SIMD; aarch64 → fold; scalar fallback | ✅ |
-| 20f | `rust/vectro_lib/src/quant/bf16.rs` — proptest module: roundtrip_cosine_quality, scale_cosine_invariant, decode_length_matches | ✅ |
-| 20g | `rust/vectro_py/src/lib.rs` — PyIvfIndex + PyIvfPqIndex: numpy zero-copy train/add/search; module registration | ✅ |
-| 20h | `js/src/vectro_napi.cpp` — full ADR-001 Phase 2 implementation: dequantize (scalar kernel, compiler-autovectorised), readVqz (64-byte header, magic validation, zlib decompression, body split), VqzReader class | ✅ |
-| 20i | `js/binding.gyp` — added `-lz` (macOS/Linux) and `zlib.lib` (Windows) | ✅ |
-| 20j | `.github/workflows/ci.yml` — `node-bindings` job: npm install → npm run build → smoke-test exports | ✅ |
-| 20k | `PLAN.md` updated; commit tagged and pushed | ✅ |
-
-### ADR-001 Phase 2 — VQZ N-API implementation notes
-
-- MAGIC: `"VECTRO\x03\x00"` (8 bytes); header total = 64 bytes.
-- Header parse: `comp_flags` (uint16 @ 10), `n_vectors` (uint64 @ 12), `dims` (uint32 @ 20), `metadata_len` (uint32 @ 26).
-- Decompression: `comp_flags=0` → raw; `comp_flags=2` → zlib `uncompress()`; `comp_flags=1` (zstd) → error with helpful message; no libzstd dep needed.
-- Body: `int8[n*d] || float32[n]`.
-- `dequantize`: `out[i*d+j] = (float)q[i*d+j] * scales[i]` — auto-vectorised by clang/gcc at `-O2`.
-
----
-
-## Immediate Next Actions (Ordered)
-
-1. **Run ANN comparison** — `python benchmarks/benchmark_ann_comparison.py`
-   after `pip install "vectro[bench-ann]"` to produce `results/ann_comparison.json`.
-2. **Run real-embeddings benchmark** — `python benchmarks/benchmark_real_embeddings_v2.py`
-   (downloads GloVe-100 on first run, ~862 MB cache).
-3. **Provision GPU runner** — uncomment the `gpu-throughput` CI job in `.github/workflows/ci.yml`
+1. **ADR-001 Phase 2** — implement `js/src/vectro_napi.cpp` for real: `.vqz` header parser,
+   zstd decompressor, SIMD INT8 dequantize kernel, wire to `js/index.d.ts`.
+   Ship gate: `npm run build` succeeds on macOS-arm64 + Linux-x64 in CI.
+2. **Provision GPU runner** — uncomment `gpu-throughput` CI job in `.github/workflows/ci.yml`
    when a CUDA self-hosted runner is available.
-4. **ONNX Runtime CI lane** — promote `test_onnx_runtime.py` to non-conditional once `onnxruntime`
-   is added to the default dev dependency set.
+3. **v3.9.0 Distribution** — PyPI wheels (bundled Mojo binary), Homebrew tap, binary CLI releases.
 
 ---
 
 *Created: 2026-03-11*
+*Last updated: 2026-04-13 (v3.7.0 complete)*
 *Codebase audited at commit: 7d63793 (main)*

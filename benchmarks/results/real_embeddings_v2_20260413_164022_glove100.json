@@ -1,0 +1,24 @@
+{
+  "benchmark": "real_embeddings_v2",
+  "dataset": "glove-100",
+  "n_vectors": 10000,
+  "d": 100,
+  "modes": {
+    "fast": {
+      "throughput_vec_per_sec": 210174,
+      "mean_cosine_similarity": 0.999973,
+      "compression_ratio": 3.8461538461538463,
+      "best_time_sec": 0.0476
+    },
+    "ultra": {
+      "status": "error",
+      "message": "n_cols (100) must be divisible by group_size (64)"
+    },
+    "binary": {
+      "throughput_vec_per_sec": 214978,
+      "mean_cosine_similarity": 0.99997,
+      "compression_ratio": 3.8461538461538463,
+      "best_time_sec": 0.0465
+    }
+  }
+}
