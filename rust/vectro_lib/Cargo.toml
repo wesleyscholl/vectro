@@ -6,6 +6,9 @@ authors = ["Wesley Scholl <128409641+wesleyscholl@users.noreply.github.com>"]
 description = "Core Rust library for high-performance vector quantization and search"
 license = "MIT"
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+
 [dependencies]
 ndarray = { version = "0.15", features = ["rayon"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -20,6 +23,9 @@ tempfile = "3.6"
 criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.4"
 serde_json = "1.0"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
 
 [[bench]]
 name = "quant_bench"

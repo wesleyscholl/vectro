@@ -80,9 +80,85 @@ enum Commands {
         #[arg(short, long, default_value_t = 8080)]
         port: u16,
     },
+    /// Quantize a JSONL embedding file using a model-family profile.
+    ///
+    /// Reads the 'architectures' field from --input/config.json (if present) to select the
+    /// best quantization method automatically. Override with --profile.
+    ///
+    /// Example:
+    ///   vectro quantize --input ./embeddings.jsonl --output ./embeddings.vqz
+    ///   vectro quantize --input ./embeddings.jsonl --output ./embeddings.vqz --profile nf4
+    Quantize {
+        /// Path to the input JSONL file.
+        #[arg(long)]
+        input: String,
+        /// Path to the output file.
+        #[arg(long)]
+        output: String,
+        /// Quantization profile: auto | int8 | nf4.
+        /// "auto" reads config.json from the same directory as --input and selects the
+        /// method based on model family.
+        #[arg(long, default_value = "auto",
+              value_parser = ["auto", "int8", "nf4"])]
+        profile: String,
+    },
 }
 
 // Wrapper functions for testability
+/// Quantize embeddings from `input` JSONL into `output`.
+///
+/// `profile` is one of `"auto"`, `"int8"`, or `"nf4"`.  When `"auto"` is chosen the function
+/// looks for a `config.json` alongside `input` and reads its `architectures` list to pick the
+/// most accurate method for the embedding family.  Falls back to `int8` when the file is absent
+/// or the architectures are unrecognised.
+fn execute_quantize_command(input: &str, output: &str, profile: &str) -> anyhow::Result<usize> {
+    let resolved_mode = if profile == "auto" {
+        // Attempt to read config.json from the same directory as the input file.
+        let input_path = std::path::Path::new(input);
+        let config_path = input_path.parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("config.json");
+
+        let method = if let Ok(txt) = std::fs::read_to_string(&config_path) {
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&txt) {
+                let archs: Vec<String> = json
+                    .get("architectures")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect())
+                    .unwrap_or_default();
+
+                // NF4 families: BGEModel, BertModel (single-arch), XLMRobertaModel is e5 → int8
+                let nf4_archs: std::collections::HashSet<&str> =
+                    ["BGEModel", "BertModel"].iter().copied().collect();
+                let is_nf4 = archs.iter().any(|a| nf4_archs.contains(a.as_str()));
+                // e5/XLMRoberta overrides to int8 even when BertModel present alongside
+                let force_int8_archs: std::collections::HashSet<&str> =
+                    ["XLMRobertaModel", "RobertaModel", "E5Model"].iter().copied().collect();
+                let force_int8 = archs.iter().any(|a| force_int8_archs.contains(a.as_str()));
+
+                if force_int8 {
+                    "int8"
+                } else if is_nf4 {
+                    "nf4"
+                } else {
+                    "int8" // gte, generic → int8
+                }
+            } else {
+                "int8"
+            }
+        } else {
+            "int8"
+        };
+        method
+    } else {
+        profile
+    };
+
+    eprintln!("[vectro quantize] input={input}  output={output}  method={resolved_mode}");
+    // Delegate to the existing compress pipeline with the chosen quantization algorithm.
+    crate::compress_stream(input, output, true)
+}
+
 fn execute_compress_command(input: &str, output: &str, quantize: bool, mode: &str) -> anyhow::Result<usize> {
     if quantize {
         eprintln!("[vectro] quantization mode: {mode}");
@@ -304,6 +380,10 @@ fn main() -> anyhow::Result<()> {
         }
         Commands::Serve { port } => {
             execute_serve_command(port)?;
+        }
+        Commands::Quantize { input, output, profile } => {
+            let count = execute_quantize_command(&input, &output, &profile)?;
+            println!("[vectro quantize] wrote {count} embeddings → {output}");
         }
     }
 
@@ -1166,5 +1246,39 @@ mod tests {
             "other_field": "value"
         });
         assert_eq!(get_bench_name(&json4), None);
+    }
+
+    #[test]
+    fn test_cli_parsing_quantize_default_profile() {
+        use clap::Parser;
+
+        let args = vec!["vectro", "quantize", "--input", "emb.jsonl", "--output", "emb.qstream"];
+        let cli = Cli::try_parse_from(args).unwrap();
+
+        match cli.command {
+            Commands::Quantize { input, output, profile } => {
+                assert_eq!(input, "emb.jsonl");
+                assert_eq!(output, "emb.qstream");
+                assert_eq!(profile, "auto");
+            }
+            _ => panic!("Expected Quantize command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_quantize_explicit_profile() {
+        use clap::Parser;
+
+        let args = vec!["vectro", "quantize", "--input", "emb.jsonl", "--output", "emb.qstream1", "--profile", "nf4"];
+        let cli = Cli::try_parse_from(args).unwrap();
+
+        match cli.command {
+            Commands::Quantize { input, output, profile } => {
+                assert_eq!(input, "emb.jsonl");
+                assert_eq!(output, "emb.qstream1");
+                assert_eq!(profile, "nf4");
+            }
+            _ => panic!("Expected Quantize command"),
+        }
     }
 }

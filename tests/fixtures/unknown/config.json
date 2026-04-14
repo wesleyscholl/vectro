@@ -1,0 +1,5 @@
+{
+  "architectures": ["SomeUnknownTransformer"],
+  "model_type": "custom",
+  "hidden_size": 512
+}

@@ -1,6 +1,9 @@
 pub mod index;
 pub mod quant;
 
+#[cfg(target_arch = "wasm32")]
+mod wasm;
+
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{Read, Write, Seek, SeekFrom};

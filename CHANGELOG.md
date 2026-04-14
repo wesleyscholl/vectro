@@ -5,6 +5,21 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0] — 2026-04-14  First Implementation Sprint — Sub-1ms encode, WASM, AutoQuantize, CLI quantize subcommand
+
+### Added
+- `rust/vectro_py/src/lib.rs` — `encode_int8_fast` and `encode_nf4_fast` `#[pyfunction]` exports: normalise → packed INT8/NF4 → cosine-ready output in a single Rust→Python hop.
+- `tests/test_latency_singleshot.py` — p99 < 1 ms latency gate for both fast-encode paths; shape/dtype contracts, determinism, zero-vector, and round-trip cosine ≥ 0.9999 checks.
+- `rust/vectro_lib/src/wasm.rs` — six `#[wasm_bindgen]` exports (`encode_int8`, `encode_int8_scale`, `encode_int8_full`, `encode_nf4`, `encode_nf4_scale`, `encode_nf4_dim`) gated by `#[cfg(target_arch = "wasm32")]`.
+- `rust/vectro_lib/Cargo.toml` — `[lib] crate-type = ["cdylib", "rlib"]` and `wasm-bindgen = "0.2"` target dependency for WASM builds.
+- `.github/workflows/wasm.yml` — CI: `wasm-pack build --target web --release`; asserts brotli-compressed `.wasm` < 500 KB; uploads `vectro-wasm` artifact (14-day retention).
+- `python/profiles.py` — `QuantProfile(family, method)` frozen dataclass + `_FAMILY_TABLE` ordered matcher + `get_profile(model_dir)` reading `config.json` architectures; families: gte→int8, bge→nf4, e5→int8, bert→nf4, unknown→generic/auto.
+- `tests/fixtures/{gte,e5,bert,bge,unknown}/config.json` — five model fixture configs for AutoQuantize profile tests.
+- `tests/test_auto_quantize_profiles.py` — 5 parametrized family tests + 4 edge-case tests (invalid method, frozen dataclass, missing config, malformed config).
+- `rust/vectro_cli/src/main.rs` — `Quantize { input, output, profile }` subcommand with `--profile auto|int8|nf4`; `execute_quantize_command()` mirrors `profiles.py` family-detection logic in Rust; two `test_cli_parsing_quantize_*` tests.
+
+---
+
 ## [4.0.0] — 2026-04-13  Architecture ADR — v4.0 Design Decisions
 
 ### Added

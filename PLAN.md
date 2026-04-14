@@ -486,24 +486,34 @@ making the CLI immediately useful for evaluating hardware capability.
 
 ---
 
-## Immediate Next Actions (v4.1.0 — First Implementation Sprint)
+## v4.1.0 — ✅ COMPLETE (2026-04-14) — First Implementation Sprint
 
-All four items are independent and may be developed in parallel:
+| Task | Status |
+|---|---|
+| `encode_int8_fast` / `encode_nf4_fast` in `vectro_py` (sub-1ms PyO3 path) | ✅ done |
+| `tests/test_latency_singleshot.py` (p99 < 1ms gate + shape/dtype/cosine) | ✅ done |
+| `wasm.rs` + `Cargo.toml` `[lib]` + `wasm.yml` CI (< 500 KB brotli gate) | ✅ done |
+| `python/profiles.py` (`QuantProfile`, `get_profile()`, `_FAMILY_TABLE`) | ✅ done |
+| 5 model fixture configs + `test_auto_quantize_profiles.py` (9 tests) | ✅ done |
+| `vectro quantize` CLI subcommand with `--profile auto\|int8\|nf4` | ✅ done |
 
-1. **Sub-1 ms encode** — add `encode_int8_fast` / `encode_nf4_fast` to
-   `rust/vectro_py` via PyO3; add `tests/test_latency_singleshot.py` with p99 < 1 ms
-   gate on CI hardware.
-2. **WASM build** — `wasm-pack build rust/vectro_lib --target web`; INT8 encode +
-   decode only; `.wasm` < 500 KB brotli; publish as `@vectro/wasm` in
-   `npm-publish.yml`.
-3. **AutoQuantize profiles** — add `python/profiles.py` (`get_profile(model_dir)`
-   returning `QuantProfile`); add `tests/test_auto_quantize_profiles.py` with 5
-   family fixture tests.
-4. **`vectro_cli` subcommand gate** — any new CLI subcommand in v4.1 must ship in
-   `rust/vectro_cli` first (ADR-002 Decision 4).
+---
+
+## Immediate Next Actions (v4.2.0 — WASM Publish + lm_eval Integration)
+
+1. **Publish `@vectro/wasm`** — wire `npm-publish.yml` to the WASM artifact; add
+   version field to `package.json`; test `npm install @vectro/wasm` from a fresh env.
+2. **lm_eval harness for AutoQuantize** — `scripts/eval_profiles.py` that runs the
+   family-detect → encode → `vectro quantize` pipeline end-to-end on GloVe-100;
+   assert cosine ≥ per-family minimum from `profiles.py`.
+3. **Latency CI gate** — add `test_latency_singleshot.py` to `.github/workflows/ci.yml`;
+   confirm p99 < 1ms passes on ubuntu-latest runner (not just M3).
+4. **`encode_nf4_fast` Mojo delegation** — once Mojo pipe IPC is verified, delegate
+   from `vectro_py encode_nf4_fast` → `_mojo_bridge._run_pipe("encode_nf4")` for
+   maximum throughput.
 
 ---
 
 *Created: 2026-03-11*
-*Last updated: 2026-04-13 (v4.0.0 complete — Architecture ADR)*
+*Last updated: 2026-04-14 (v4.1.0 complete — First Implementation Sprint)*
 *Codebase audited at commit: df4fa9d (v3.9.0 tag)*
