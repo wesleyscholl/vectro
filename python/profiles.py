@@ -65,8 +65,9 @@ class QuantProfile:
 _FAMILY_TABLE: list[tuple[frozenset[str], str, str]] = [
     # GTE / New-style GTE (e.g. Alibaba-NLP/gte-large-en-v1.5)
     (frozenset({"NewModel", "GteModel"}), "gte", "int8"),
-    # BGE (BAAI/bge-*)
-    (frozenset({"BertModel", "BGEModel"}), "bge", "nf4"),
+    # BGE (BAAI/bge-*) — match on BGEModel only; plain BertModel is matched by the
+    # bert entry below.  Real BGE fixtures carry "BGEModel" as a discriminator.
+    (frozenset({"BGEModel"}), "bge", "nf4"),
     # E5 (intfloat/e5-*)
     (frozenset({"XLMRobertaModel", "RobertaModel", "E5Model"}), "e5", "int8"),
     # Classic BERT (bert-base/large, all-MiniLM-*, etc.)
@@ -91,12 +92,13 @@ def get_profile(model_dir: str | Path) -> QuantProfile:
         ``architectures`` populated.
 
     Raises:
-        FileNotFoundError: If ``config.json`` does not exist under
-            *model_dir*.
-        json.JSONDecodeError: If ``config.json`` is malformed.
+        json.JSONDecodeError: If ``config.json`` exists but is malformed.
     """
     config_path = Path(model_dir) / "config.json"
-    config: dict = json.loads(config_path.read_text(encoding="utf-8"))
+    try:
+        config: dict = json.loads(config_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, PermissionError):
+        return QuantProfile(family="generic", method="auto")
     arch_list: list[str] = config.get("architectures") or []
     arch_set = frozenset(arch_list)
 
