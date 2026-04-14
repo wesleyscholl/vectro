@@ -1,0 +1,29 @@
+{
+  "name": "@vectro/wasm",
+  "version": "4.1.0",
+  "description": "WebAssembly bindings for Vectro embedding compression — browser and Node.js compatible",
+  "main": "vectro_lib.js",
+  "types": "vectro_lib.d.ts",
+  "files": [
+    "vectro_lib_bg.wasm",
+    "vectro_lib.js",
+    "vectro_lib.d.ts",
+    "vectro_lib_bg.js"
+  ],
+  "keywords": [
+    "vectro",
+    "wasm",
+    "webassembly",
+    "quantization",
+    "embedding",
+    "compression"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wesleyscholl/vectro.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -5,6 +5,20 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.2.0] — 2026-04-15  Distribution & CI Hardening — WASM npm publish, eval harness, latency gate
+
+### Added
+- `.github/workflows/npm-publish.yml` — `build-wasm` job (inline `wasm-pack build --target web --release`, version-stamps from tag, uploads artifact) + `publish-wasm` job (downloads artifact, publishes `@vectro/wasm` to npm with `--access public`); pre-release tags (rc/alpha/beta) skip publish.
+- `js/wasm/package.json` — package manifest for `@vectro/wasm`: main entry `vectro_lib.js`, types `vectro_lib.d.ts`, `publishConfig.access = "public"`, files list for WASM binary + JS glue.
+- `scripts/eval_profiles.py` — end-to-end profile accuracy harness: loads each `tests/fixtures/<family>/config.json`, runs `get_profile()` → encode → decode roundtrip, asserts mean cosine ≥ per-method gate (int8 ≥ 0.9999, nf4 ≥ 0.9800, auto ≥ 0.9999); CLI flags `--dim`, `--n`, `--quiet`; exit 0/1/2.
+- `.github/workflows/ci.yml` — `latency-gate` job: builds `vectro_py` on `ubuntu-latest` and runs `tests/test_latency_singleshot.py`; verifies p99 < 1 ms holds outside M3.
+
+### Fixed
+- `.github/workflows/ci.yml` — added `--ignore=tests/test_latency_singleshot.py` to upload-coverage step; previously the coverage job would attempt to time WASM encode without the latency-gate runner profile, causing intermittent CI failures.
+- `python/profiles.py` — `bge` discriminator tightened to `BGEModel` only (was previously sharing `BertModel`, causing `bert` fixtures to mis-classify as `bge`); `get_profile()` now catches `(FileNotFoundError, PermissionError)` and returns `QuantProfile(family="generic", method="auto")` instead of raising.
+
+---
+
 ## [4.1.0] — 2026-04-14  First Implementation Sprint — Sub-1ms encode, WASM, AutoQuantize, CLI quantize subcommand
 
 ### Added

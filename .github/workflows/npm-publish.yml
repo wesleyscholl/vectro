@@ -49,3 +49,74 @@ jobs:
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ── @vectro/wasm — WASM bindings for browser / Node.js ───────────────────
+  build-wasm:
+    name: Build @vectro/wasm
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable (wasm32 target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo registry + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: rust-wasm-ubuntu-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM package (release)
+        working-directory: rust/vectro_lib
+        run: wasm-pack build --target web --release --out-dir ../../wasm-pkg
+
+      - name: Stamp version from tag into package.json
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          jq --arg v "$VERSION" '.version = $v' js/wasm/package.json > wasm-pkg/package.json
+
+      - name: Upload WASM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vectro-wasm-pkg
+          path: wasm-pkg/
+
+  publish-wasm:
+    name: Publish @vectro/wasm to npm
+    runs-on: ubuntu-latest
+    needs: build-wasm
+    # Skip pre-releases (rc / alpha / beta tags)
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') &&
+      !contains(github.ref_name, 'rc') &&
+      !contains(github.ref_name, 'alpha') &&
+      !contains(github.ref_name, 'beta')
+
+    steps:
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Download WASM artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: vectro-wasm-pkg
+          path: wasm-pkg
+
+      - name: Publish @vectro/wasm to npm
+        run: npm publish --access public
+        working-directory: wasm-pkg
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

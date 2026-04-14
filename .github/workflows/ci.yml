@@ -70,6 +70,7 @@ jobs:
             --ignore=tests/test_qdrant_connector.py \
             --ignore=tests/test_weaviate_connector.py \
             --ignore=tests/test_integrations_api.py \
+            --ignore=tests/test_latency_singleshot.py \
             -q --tb=short
 
       - name: Upload coverage
@@ -82,6 +83,7 @@ jobs:
             --ignore=tests/test_qdrant_connector.py \
             --ignore=tests/test_weaviate_connector.py \
             --ignore=tests/test_integrations_api.py \
+            --ignore=tests/test_latency_singleshot.py \
             --cov=python --cov-report=xml -q
 
       - name: Upload to Codecov
@@ -175,3 +177,38 @@ jobs:
 #     - uses: actions/checkout@v4
 #     - run: pip install ".[all]"
 #     - run: python -m pytest tests/test_gpu_equivalence.py -v
+
+  # ── Latency gate: vectro_py shape / dtype / cosine + p99 < 1 ms ───────────
+  latency-gate:
+    name: Latency gate (vectro_py)
+    runs-on: ubuntu-latest
+    needs: rust-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry + build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: rust-latency-ubuntu-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install maturin + test deps
+        run: pip install maturin numpy pytest
+
+      - name: Build vectro_py (release)
+        run: maturin develop --release -m rust/vectro_py/Cargo.toml
+
+      - name: Run latency tests
+        run: python -m pytest tests/test_latency_singleshot.py -v --tb=short

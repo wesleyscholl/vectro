@@ -499,21 +499,32 @@ making the CLI immediately useful for evaluating hardware capability.
 
 ---
 
-## Immediate Next Actions (v4.2.0 — WASM Publish + lm_eval Integration)
+## v4.2.0 Status — Distribution & CI Hardening
 
-1. **Publish `@vectro/wasm`** — wire `npm-publish.yml` to the WASM artifact; add
-   version field to `package.json`; test `npm install @vectro/wasm` from a fresh env.
-2. **lm_eval harness for AutoQuantize** — `scripts/eval_profiles.py` that runs the
-   family-detect → encode → `vectro quantize` pipeline end-to-end on GloVe-100;
-   assert cosine ≥ per-family minimum from `profiles.py`.
-3. **Latency CI gate** — add `test_latency_singleshot.py` to `.github/workflows/ci.yml`;
-   confirm p99 < 1ms passes on ubuntu-latest runner (not just M3).
-4. **`encode_nf4_fast` Mojo delegation** — once Mojo pipe IPC is verified, delegate
-   from `vectro_py encode_nf4_fast` → `_mojo_bridge._run_pipe("encode_nf4")` for
-   maximum throughput.
+1. ✅ **Publish `@vectro/wasm`** — `js/wasm/package.json` added; `npm-publish.yml`
+   extended with `build-wasm` (inline wasm-pack, version stamp) + `publish-wasm`
+   (downloads artifact, npm publish `@vectro/wasm --access public`). Pre-release
+   tags (rc/alpha/beta) skip publish automatically.
+2. ✅ **Profile accuracy harness** — `scripts/eval_profiles.py` implemented:
+   family-detect → encode → decode roundtrip on `tests/fixtures/`; cosine gates
+   int8 ≥ 0.9999, nf4 ≥ 0.9800, auto ≥ 0.9999; CLI `--dim/--n/--quiet`; exit 0/1/2.
+3. ✅ **Latency CI gate** — `latency-gate` job added to `ci.yml`; `ubuntu-latest`
+   builds `vectro_py` release, runs `test_latency_singleshot.py`; coverage step
+   gets matching `--ignore` flag.
+4. ⏳ **`encode_nf4_fast` Mojo delegation** — BLOCKED. Mojo pipe IPC not yet
+   verified on CI runner. Defer to v4.3.0 after IPC smoke-test job is green.
+
+## Immediate Next Actions (v4.3.0)
+
+1. **Mojo IPC smoke test** — add a CI job that verifies `_mojo_bridge._run_pipe`
+   round-trips on ubuntu-latest; required before NF4 Mojo delegation is safe.
+2. **`encode_nf4_fast` Mojo delegation** — once IPC smoke-test is green, delegate
+   from `vectro_py encode_nf4_fast` → `_mojo_bridge._run_pipe("encode_nf4")`.
+3. **GloVe-100 / SIFT1M real-dataset benchmarks** — `benchmarks/benchmark_real_embeddings_v2.py`
+   end-to-end; assert recall@10 gates from PLAN Phase 9.
 
 ---
 
 *Created: 2026-03-11*
-*Last updated: 2026-04-14 (v4.1.0 complete — First Implementation Sprint)*
+*Last updated: 2026-04-15 (v4.2.0 complete — Distribution & CI Hardening)*
 *Codebase audited at commit: df4fa9d (v3.9.0 tag)*
