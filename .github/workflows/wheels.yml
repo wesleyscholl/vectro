@@ -113,6 +113,58 @@ jobs:
           path: dist/
 
   # ────────────────────────────────────────────────────────────────────────────
+  # Build standalone CLI binary for Linux x86-64 + macOS ARM64/x86-64
+  # ────────────────────────────────────────────────────────────────────────────
+  cli-binary:
+    name: CLI binary ${{ matrix.artifact }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact: vectro-linux-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: vectro-macos-arm64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact: vectro-macos-x86_64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cli-${{ matrix.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cli-${{ matrix.os }}-
+
+      - name: Build CLI binary
+        run: cargo build --release --locked -p vectro_cli
+
+      - name: Stage binary
+        run: |
+          mkdir -p cli-dist
+          cp target/release/vectro cli-dist/${{ matrix.artifact }}
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.artifact }}
+          path: cli-dist/
+
+  # ────────────────────────────────────────────────────────────────────────────
   # Smoke-test: install the built wheel and run a quick sanity check
   # ────────────────────────────────────────────────────────────────────────────
   smoke-test:
@@ -176,7 +228,7 @@ jobs:
   # ────────────────────────────────────────────────────────────────────────────
   release:
     name: Publish release
-    needs: [build, sdist, smoke-test]
+    needs: [build, sdist, smoke-test, cli-binary]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
     environment:
@@ -198,6 +250,13 @@ jobs:
         with:
           name: sdist
           path: dist/
+
+      - name: Download CLI binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cli-*
+          path: dist/
+          merge-multiple: true
 
       - name: Generate SHA256 checksums
         run: |

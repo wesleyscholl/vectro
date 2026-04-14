@@ -5,6 +5,27 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.9.0] — 2026-07-14  Distribution — PyPI Wheels, CLI Binaries, Homebrew, npm
+
+### Added
+- `scripts/build_wheels.sh` — local helper to build all Python wheels via maturin
+  (`--out`, `--python` flags; iterates 3.10 / 3.11 / 3.12 by default).
+- `.github/workflows/wheels.yml` — new `cli-binary` job: builds `vectro` standalone
+  binary for Linux x86-64, macOS ARM64, and macOS x86-64 on every version tag;
+  binaries are attached to the GitHub Release alongside wheels and the sdist.
+- `.github/workflows/npm-publish.yml` — publishes `@vectro/core` to npm on `v*`
+  tags (requires `NPM_TOKEN` repository secret); pre-release tags are skipped.
+- `Formula/vectro.rb` — Homebrew formula template; copy to
+  `wesleyscholl/homebrew-tap/Formula/vectro.rb` to enable
+  `brew tap wesleyscholl/tap && brew install vectro`.
+
+### Changed
+- `pyproject.toml` version bumped `3.7.0` → `3.9.0`.
+- `wheels.yml` release job extended: CLI artifact download added before the
+  GitHub Release upload step so CLI binaries land in the release automatically.
+
+---
+
 ## [3.8.0] — 2026-06-02  JS Bindings Phase 2 — Full VQZ Parser + NEON Dequantize
 
 ### Added

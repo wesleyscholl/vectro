@@ -460,19 +460,34 @@ making the CLI immediately useful for evaluating hardware capability.
 - `js/test/basic.js` — 14-test integration harness
 - `.github/workflows/js-ci.yml` — ubuntu + macOS × Node 18 + 20
 
-## Immediate Next Actions (v3.9.0 — Distribution)
+## v3.9.0 — ✅ COMPLETE (2026-07-14) — Distribution
 
-1. **PyPI wheels** — Maturin build, manylinux wheels, `pip install vectro` via
-   `scripts/build_wheels.sh` and GitHub Actions release workflow.
-2. **Homebrew tap** — `brew install wesleyscholl/tap/vectro` via a Homebrew formula.
-3. **Binary CLI releases** — attach standalone `vectro` binary to GitHub Releases.
-4. **`npm publish @vectro/core`** — publish the JS addon to npm once CI confirms
-   both macOS-arm64 and Linux-x64 builds are green.
-5. **GPU runner** — uncomment `gpu-throughput` CI job in `.github/workflows/ci.yml`
-   when a CUDA self-hosted runner is available.
+| Task | Status |
+|---|---|
+| `scripts/build_wheels.sh` — local maturin wheel build helper | ✅ done |
+| `wheels.yml` cli-binary job — Linux x86-64 / macOS ARM64 / macOS x86-64 | ✅ done |
+| Release job extended to attach CLI binaries to GitHub Release | ✅ done |
+| `.github/workflows/npm-publish.yml` — publishes `@vectro/core` on `v*` tags | ✅ done |
+| `Formula/vectro.rb` — Homebrew formula template | ✅ done |
+| `pyproject.toml` version `3.9.0` | ✅ done |
+| GPU runner | ⏳ deferred — uncomment `gpu-throughput` job when CUDA runner available |
+
+---
+
+## Immediate Next Actions (v4.0.0 — Architecture ADR)
+
+From the v4.0 roadmap in AGENTS.md / CLAUDE.md:
+
+1. **Architecture ADR** — commit a decision record before any v4.0 implementation
+   line. Topics: LLM embedding pipeline (<1 ms), WASM target, model-type-aware
+   AutoQuantize profiles, Rust CLI fate decision.
+2. **WASM target** — `wasm32-unknown-unknown` build of `vectro_lib` (no I/O
+   dependencies only).
+3. **LLM embedding pipeline** — sub-1 ms encode for common embedding model outputs.
+4. **AutoQuantize profiles** — model-type-aware selection (GTE, BGE, E5 families).
 
 ---
 
 *Created: 2026-03-11*
-*Last updated: 2026-06-02 (v3.8.0 complete)*
-*Codebase audited at commit: 7d63793 (main)*
+*Last updated: 2026-07-14 (v3.9.0 complete)*
+*Codebase audited at commit: c3692d4 (v3.8.0 tag)*
