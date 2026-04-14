@@ -5,6 +5,14 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.0] — 2026-04-13  Architecture ADR — v4.0 Design Decisions
+
+### Added
+- `docs/adr-002-v4-architecture.md` — v4.0 Architecture ADR covering four decisions:
+  (1) sub-1 ms encode via PyO3 `vectro_py` path; (2) `wasm-pack` WASM target for
+  `vectro_lib` → `@vectro/wasm`; (3) model-type-aware AutoQuantize profiles
+  (`profiles.py`); (4) Rust CLI kept as sole primary CLI.
+
 ## [3.9.0] — 2026-07-14  Distribution — PyPI Wheels, CLI Binaries, Homebrew, npm
 
 ### Added

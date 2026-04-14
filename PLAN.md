@@ -474,20 +474,36 @@ making the CLI immediately useful for evaluating hardware capability.
 
 ---
 
-## Immediate Next Actions (v4.0.0 — Architecture ADR)
+## v4.0.0 — ✅ COMPLETE (2026-04-13) — Architecture ADR
 
-From the v4.0 roadmap in AGENTS.md / CLAUDE.md:
+| Task | Status |
+|---|---|
+| `docs/adr-002-v4-architecture.md` — Architecture ADR | ✅ done |
+| Decision 1: Sub-1 ms encode → PyO3 path (`vectro_py`) | ✅ decided |
+| Decision 2: WASM → `wasm-pack` on `vectro_lib` → `@vectro/wasm` | ✅ decided |
+| Decision 3: AutoQuantize profiles → `profiles.py` config registry | ✅ decided |
+| Decision 4: Rust CLI → keep as sole primary CLI | ✅ decided |
 
-1. **Architecture ADR** — commit a decision record before any v4.0 implementation
-   line. Topics: LLM embedding pipeline (<1 ms), WASM target, model-type-aware
-   AutoQuantize profiles, Rust CLI fate decision.
-2. **WASM target** — `wasm32-unknown-unknown` build of `vectro_lib` (no I/O
-   dependencies only).
-3. **LLM embedding pipeline** — sub-1 ms encode for common embedding model outputs.
-4. **AutoQuantize profiles** — model-type-aware selection (GTE, BGE, E5 families).
+---
+
+## Immediate Next Actions (v4.1.0 — First Implementation Sprint)
+
+All four items are independent and may be developed in parallel:
+
+1. **Sub-1 ms encode** — add `encode_int8_fast` / `encode_nf4_fast` to
+   `rust/vectro_py` via PyO3; add `tests/test_latency_singleshot.py` with p99 < 1 ms
+   gate on CI hardware.
+2. **WASM build** — `wasm-pack build rust/vectro_lib --target web`; INT8 encode +
+   decode only; `.wasm` < 500 KB brotli; publish as `@vectro/wasm` in
+   `npm-publish.yml`.
+3. **AutoQuantize profiles** — add `python/profiles.py` (`get_profile(model_dir)`
+   returning `QuantProfile`); add `tests/test_auto_quantize_profiles.py` with 5
+   family fixture tests.
+4. **`vectro_cli` subcommand gate** — any new CLI subcommand in v4.1 must ship in
+   `rust/vectro_cli` first (ADR-002 Decision 4).
 
 ---
 
 *Created: 2026-03-11*
-*Last updated: 2026-07-14 (v3.9.0 complete)*
-*Codebase audited at commit: c3692d4 (v3.8.0 tag)*
+*Last updated: 2026-04-13 (v4.0.0 complete — Architecture ADR)*
+*Codebase audited at commit: df4fa9d (v3.9.0 tag)*
