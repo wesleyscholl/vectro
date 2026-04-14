@@ -11,20 +11,33 @@
       ],
       "cflags!": ["-fno-exceptions"],
       "cflags_cc!": ["-fno-exceptions"],
+      "cflags_cc": ["-O3", "-std=c++17"],
       "defines": ["NAPI_DISABLE_CPP_EXCEPTIONS"],
+      "link_settings": {
+        "libraries": ["-lz", "-lzstd"]
+      },
       "conditions": [
         ["OS=='win'", {
           "msvs_settings": {
             "VCCLCompilerTool": {
-              "ExceptionHandling": "1"
+              "ExceptionHandling": "1",
+              "Optimization": "3"
             }
+          },
+          "link_settings": {
+            "libraries": ["zlib.lib", "zstd.lib"]
           }
         }],
         ["OS=='mac'", {
           "xcode_settings": {
             "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
             "CLANG_CXX_LIBRARY": "libc++",
-            "MACOSX_DEPLOYMENT_TARGET": "11.0"
+            "CLANG_CXX_LANGUAGE_STANDARD": "c++17",
+            "MACOSX_DEPLOYMENT_TARGET": "11.0",
+            "OTHER_CPLUSPLUSFLAGS": ["-O3"]
+          },
+          "link_settings": {
+            "libraries": ["-lz", "-lzstd"]
           }
         }]
       ]

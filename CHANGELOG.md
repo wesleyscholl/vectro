@@ -5,6 +5,36 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.8.0] — 2026-06-02  JS Bindings Phase 2 — Full VQZ Parser + NEON Dequantize
+
+### Added
+- `js/src/vectro_napi.cpp` (298 lines) — complete N-API Phase 2 implementation:
+  - `parseHeader(buffer)` — validates 64-byte magic and returns header fields.
+  - `parseBody(buffer, n, dims)` — splits raw body bytes into `Int8Array` + `Float32Array`;
+    applies 4-byte alignment padding so the `Float32Array` offset is always valid.
+  - `dequantize(quantized, scales, dims)` — ARM NEON 16-wide INT8→float32 kernel;
+    `-O3` auto-vectorized scalar fallback for x86-64 / non-NEON targets.
+  - `readVqz(path)` — reads an entire `.vqz` file, decompresses (NONE/ZSTD/ZLIB), and
+    returns a `VqzData` object.
+  - `VqzReader` class — constructor, `read()`, `close()` lifecycle handle.
+- `js/binding.gyp` — updated with `-O3`, `-std=c++17`, `libzstd`/`zlib` linkage, macOS
+  `xcode_settings`, and Windows `msvs_settings` conditions.
+- `js/index.js` — `node-gyp-build` entry point; handles prebuilt and source-built layouts.
+- `js/index.d.ts` — `VqzHeader` interface, `parseHeader`, `parseBody` signatures added;
+  all `@throws Not yet implemented` annotations removed.
+- `js/package.json` — `node-addon-api ^3.0.0` dev dependency; engines bumped to `>=18.0.0`.
+- `js/test/basic.js` — 14-test integration harness covering all five exported symbols,
+  including a COMP_NONE round-trip via a temp file, numeric dequantize correctness, and
+  class lifecycle checks.
+- `.github/workflows/js-ci.yml` — matrix CI: ubuntu-latest + macos-latest × Node 18 + 20;
+  installs `libzstd-dev` on Linux, `zstd` via Homebrew on macOS.
+
+### Ship Gate
+- `npm run build` succeeds on macOS-arm64 and Linux-x64 in CI.
+- `npm test` exits 0 (all 14 tests pass).
+
+---
+
 ## [3.7.0] — 2026-04-13  Hardening, ONNX Promotion, Benchmark Validation
 
 ### Added

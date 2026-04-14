@@ -449,17 +449,30 @@ making the CLI immediately useful for evaluating hardware capability.
 
 ---
 
-## Immediate Next Actions (v3.8.0 — JS Bindings Phase 2)
+## v3.8.0 — JS Bindings Phase 2 ✅ COMPLETE
 
-1. **ADR-001 Phase 2** — implement `js/src/vectro_napi.cpp` for real: `.vqz` header parser,
-   zstd decompressor, SIMD INT8 dequantize kernel, wire to `js/index.d.ts`.
-   Ship gate: `npm run build` succeeds on macOS-arm64 + Linux-x64 in CI.
-2. **Provision GPU runner** — uncomment `gpu-throughput` CI job in `.github/workflows/ci.yml`
+**Delivered (commit v3.8.0):**
+- `js/src/vectro_napi.cpp` — full VQZ parser, ZSTD/ZLIB decompressor, NEON dequantize kernel
+- `js/binding.gyp` — C++17, -O3, zstd+zlib linkage, macOS + Linux + Windows conditions
+- `js/index.js` — `node-gyp-build` entry point
+- `js/index.d.ts` — `VqzHeader` interface, `parseHeader`, `parseBody` typed
+- `js/package.json` — `node-addon-api ^3.0.0`, engines `>=18.0.0`
+- `js/test/basic.js` — 14-test integration harness
+- `.github/workflows/js-ci.yml` — ubuntu + macOS × Node 18 + 20
+
+## Immediate Next Actions (v3.9.0 — Distribution)
+
+1. **PyPI wheels** — Maturin build, manylinux wheels, `pip install vectro` via
+   `scripts/build_wheels.sh` and GitHub Actions release workflow.
+2. **Homebrew tap** — `brew install wesleyscholl/tap/vectro` via a Homebrew formula.
+3. **Binary CLI releases** — attach standalone `vectro` binary to GitHub Releases.
+4. **`npm publish @vectro/core`** — publish the JS addon to npm once CI confirms
+   both macOS-arm64 and Linux-x64 builds are green.
+5. **GPU runner** — uncomment `gpu-throughput` CI job in `.github/workflows/ci.yml`
    when a CUDA self-hosted runner is available.
-3. **v3.9.0 Distribution** — PyPI wheels (bundled Mojo binary), Homebrew tap, binary CLI releases.
 
 ---
 
 *Created: 2026-03-11*
-*Last updated: 2026-04-13 (v3.7.0 complete)*
+*Last updated: 2026-06-02 (v3.8.0 complete)*
 *Codebase audited at commit: 7d63793 (main)*
