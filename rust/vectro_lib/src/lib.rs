@@ -458,6 +458,94 @@ pub mod search {
             self.normalized_cache = Some(cache);
         }
     }
+
+    /// Hybrid BM25 + dense cosine search.
+    ///
+    /// Combines a dense vector search with an Okapi BM25 full-text search using
+    /// min-max normalisation followed by a weighted linear combination:
+    ///
+    /// ```text
+    /// combined = alpha * dense_norm + (1 - alpha) * bm25_norm
+    /// ```
+    ///
+    /// - `alpha = 1.0` → pure dense cosine search.
+    /// - `alpha = 0.0` → pure BM25.
+    /// - `alpha = 0.7` (default) → dense-dominant hybrid (good for semantic tasks).
+    ///
+    /// Both score vectors are independently normalised to `[0, 1]` across the full
+    /// corpus before combination, so neither modality dominates by scale.
+    ///
+    /// Returns the top-`k` document IDs sorted by descending combined score.
+    pub fn hybrid_search<'a>(
+        dataset: &'a [Embedding],
+        bm25: &crate::index::BM25Index,
+        query_vector: &[f32],
+        query_text: &str,
+        k: usize,
+        alpha: f32,
+    ) -> Vec<(&'a str, f32)> {
+        if k == 0 || dataset.is_empty() {
+            return Vec::new();
+        }
+        let alpha = alpha.clamp(0.0, 1.0);
+        let n = dataset.len();
+
+        // ── Dense cosine scores ────────────────────────────────────────────
+        let q_norm = norm(query_vector);
+        let dense_raw: Vec<f32> = if q_norm == 0.0 {
+            vec![0.0; n]
+        } else {
+            dataset
+                .iter()
+                .map(|e| {
+                    let denom = q_norm * norm(&e.vector);
+                    if denom == 0.0 {
+                        0.0_f32
+                    } else {
+                        dot(query_vector, &e.vector) / denom
+                    }
+                })
+                .collect()
+        };
+
+        // ── BM25 scores (sparse — build id→score map) ─────────────────────
+        let bm25_hits: std::collections::HashMap<&str, f32> =
+            bm25.top_k(query_text, n).into_iter().collect();
+        let bm25_raw: Vec<f32> = dataset
+            .iter()
+            .map(|e| *bm25_hits.get(e.id.as_str()).unwrap_or(&0.0))
+            .collect();
+
+        // ── Min-max normalise both score vectors to [0, 1] ────────────────
+        let normalise = |scores: &[f32]| -> Vec<f32> {
+            let max = scores.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let min = scores.iter().cloned().fold(f32::INFINITY, f32::min);
+            let range = max - min;
+            if range == 0.0 {
+                return vec![0.0; scores.len()];
+            }
+            scores.iter().map(|&s| (s - min) / range).collect()
+        };
+
+        let dense_norm = normalise(&dense_raw);
+        let bm25_norm = normalise(&bm25_raw);
+
+        // ── Combine and return top-k ───────────────────────────────────────
+        let mut combined: Vec<(&str, f32)> = dataset
+            .iter()
+            .enumerate()
+            .map(|(i, e)| {
+                let score = alpha * dense_norm[i] + (1.0 - alpha) * bm25_norm[i];
+                (e.id.as_str(), score)
+            })
+            .collect();
+
+        combined.sort_unstable_by(|a, b| {
+            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
+        });
+        combined.truncate(k);
+        combined
+    }
 }
 
 

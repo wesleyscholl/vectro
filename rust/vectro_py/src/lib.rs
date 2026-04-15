@@ -384,6 +384,7 @@ fn benchmark_search_performance(
 // ─────────────────────── Phase-16 algorithm bindings ──────────────────────
 
 use vectro_lib::quant::{int8, nf4, binary, pq, bf16};
+use vectro_lib::index::bm25::BM25Index;
 use vectro_lib::index::hnsw::HnswIndex;
 use vectro_lib::index::ivf::IvfIndex;
 use vectro_lib::index::ivf_pq::IvfPqIndex;
@@ -1165,6 +1166,106 @@ fn encode_nf4_fast(vec: Vec<f32>) -> PyResult<(Vec<u8>, f32, usize)> {
     Ok((q.packed, q.scale, q.dim))
 }
 
+// ─────────────────────── BM25 + Hybrid Search (v6.0.0) ─────────────────────
+
+/// Okapi BM25 full-text index (Python binding).
+#[pyclass(name = "BM25Index")]
+struct PyBM25Index {
+    inner: BM25Index,
+}
+
+#[pymethods]
+impl PyBM25Index {
+    /// Build a BM25 index from parallel lists of document IDs and texts.
+    #[staticmethod]
+    fn build(ids: Vec<String>, texts: Vec<String>) -> PyResult<Self> {
+        if ids.len() != texts.len() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "ids and texts must have the same length",
+            ));
+        }
+        let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let text_refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+        Ok(Self {
+            inner: BM25Index::build_from_texts(&id_refs, &text_refs),
+        })
+    }
+
+    /// Build with custom k1 / b BM25 parameters.
+    #[staticmethod]
+    fn build_with_params(
+        ids: Vec<String>,
+        texts: Vec<String>,
+        k1: f32,
+        b: f32,
+    ) -> PyResult<Self> {
+        if ids.len() != texts.len() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "ids and texts must have the same length",
+            ));
+        }
+        let id_refs: Vec<&str> = ids.iter().map(String::as_str).collect();
+        let text_refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+        Ok(Self {
+            inner: BM25Index::build_with_params(&id_refs, &text_refs, k1, b),
+        })
+    }
+
+    /// Return the top-k documents for a query as `[(doc_id, score)]`.
+    fn top_k(&self, query: &str, k: usize) -> Vec<(String, f32)> {
+        self.inner
+            .top_k(query, k)
+            .into_iter()
+            .map(|(id, s)| (id.to_owned(), s))
+            .collect()
+    }
+
+    /// Number of indexed documents.
+    fn __len__(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// IDF for a single term (0.0 if unknown).
+    fn idf(&self, term: &str) -> f32 {
+        self.inner.idf(term).unwrap_or(0.0)
+    }
+}
+
+/// Hybrid BM25 + dense cosine search.
+///
+/// Parameters
+/// ----------
+/// dataset : PyEmbeddingDataset
+/// bm25    : BM25Index
+/// query_vector : list[float]
+/// query_text   : str
+/// k            : int — number of results
+/// alpha        : float — 1.0 = pure dense, 0.0 = pure BM25, default 0.7
+///
+/// Returns `[(doc_id, score)]` sorted descending by combined score.
+#[pyfunction]
+fn hybrid_search_py(
+    dataset: &PyEmbeddingDataset,
+    bm25: &PyBM25Index,
+    query_vector: Vec<f32>,
+    query_text: &str,
+    k: usize,
+    alpha: f32,
+) -> Vec<(String, f32)> {
+    use vectro_lib::search::hybrid_search;
+    hybrid_search(
+        &dataset.inner.embeddings,
+        &bm25.inner,
+        &query_vector,
+        query_text,
+        k,
+        alpha,
+    )
+    .into_iter()
+    .map(|(id, s)| (id.to_owned(), s))
+    .collect()
+}
+
 /// Main Python module
 #[pymodule]
 fn vectro_py(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
@@ -1191,9 +1292,12 @@ fn vectro_py(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(benchmark_search_performance, m)?)?;
     m.add_function(wrap_pyfunction!(encode_int8_fast, m)?)?;
     m.add_function(wrap_pyfunction!(encode_nf4_fast, m)?)?;
+    // BM25 + hybrid search (v6.0.0)
+    m.add_class::<PyBM25Index>()?;
+    m.add_function(wrap_pyfunction!(hybrid_search_py, m)?)?;
 
     // Add version info
-    m.add("__version__", "4.3.0")?;
+    m.add("__version__", "6.0.0")?;
     m.add("__author__", "Wesley Scholl")?;
     m.add("__description__", "Python bindings for Vectro high-performance vector compression and search")?;
 

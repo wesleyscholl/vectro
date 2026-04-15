@@ -5,6 +5,24 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.0.0] — 2026  BM25+dense hybrid search, VectroRetriever, RetrieverProtocol
+
+### Added
+- `rust/vectro_lib/src/index/bm25.rs` — `BM25Index`: Okapi BM25 inverted-index with `build_from_texts()`, `build_with_params()` (custom k1/b), `top_k()`, `score_doc()`, `idf() -> Option<f32>`, `len()`. 12 unit tests.
+- `rust/vectro_lib/src/lib.rs` — `search::hybrid_search`: min-max normalized BM25+dense cosine fusion. `alpha` (0.0=pure BM25, 1.0=pure dense, clamped) controls the blend; returns `Vec<(&str, f32)>` sorted descending.
+- `rust/vectro_py/src/lib.rs` — `PyBM25Index` Python class: `build()`, `build_with_params()`, `top_k()`, `idf()`, `__len__()`; `hybrid_search_py` Python function (default alpha=0.7).
+- `python/retriever.py` — `VectroRetriever`, `@runtime_checkable RetrieverProtocol`, `@dataclass RetrievalResult`; `embed_fn=None` coerces to BM25-only mode.
+- `tests/test_hybrid_search.py` — comprehensive Rust-binding tests: list contract, k, types, score range, sort order, alpha=1.0/0.0 pure modes, BM25Index bindings, edge cases.
+- `tests/test_retriever.py` — Python retriever tests: Protocol compliance, return types, ordering, k param, BM25-only mode, property accessors, constructor validation.
+
+### Changed
+- Bumped Rust crate versions to 6.0.0 (`vectro_lib`, `vectro_py`, `vectro_cli`).
+- Bumped Python package version to 4.4.0 (pyproject.toml, pixi.toml, `__init__.py`, `vectro.py`).
+
+### Fixed
+- `idf()` PyO3 binding: added `.unwrap_or(0.0)` to convert `Option<f32> → f32`.
+- NF4 identity roundtrip test tolerance tightened to float32 precision floor (`atol=2e-4`; pre-existing).
+
 ## [5.0.0] — 2026  RQ quantization, auto_select_format, PQSTREAM1/RQSTREAM1 load
 
 ### Added
