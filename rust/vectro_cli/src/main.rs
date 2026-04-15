@@ -17,11 +17,12 @@
 //! ```
 
 use clap::{Parser, Subcommand};
-use vectro_cli::compress_stream;
+use vectro_cli::{compress_stream, compress_pq, compress_nf4, compress_rq, compress_auto};
 
 use serde_json::Value;
 
 pub mod server;
+pub mod pipeline;
 
 #[derive(Parser)]
 #[command(name = "vectro")]
@@ -102,21 +103,43 @@ enum Commands {
               value_parser = ["auto", "int8", "nf4"])]
         profile: String,
     },
-    /// Run a full encode → search pipeline: load a compressed dataset, encode a
-    /// query vector, and return the top-k results ranked by cosine similarity.
+    /// Run a full encode → index → search pipeline.
+    ///
+    /// Loads embeddings from a JSONL file, compresses them with the chosen format,
+    /// builds an HNSW approximate-nearest-neighbour index, then optionally evaluates
+    /// a batch of query vectors and prints the top-k results.
     ///
     /// Example:
-    ///   vectro pipeline --input ./embeddings.vqz --query "0.1,0.2,0.3" --top-k 5
+    ///   vectro pipeline --input ./embeddings.jsonl --out-dir ./out --format nf4 --query-file queries.jsonl
     Pipeline {
-        /// Path to compressed dataset (.vqz / .bin).
+        /// Input JSONL file of embeddings (id + vector fields).
         #[arg(long)]
         input: String,
-        /// Query vector as comma-separated floats.
+        /// Output directory for the compressed dataset and HNSW index files.
+        #[arg(long, default_value = "out")]
+        out_dir: String,
+        /// Compression format to apply: stream1 | nf4 | pq | rq | auto.
+        #[arg(long, default_value = "stream1",
+              value_parser = ["stream1", "nf4", "pq", "rq", "auto"])]
+        format: String,
+        /// HNSW M parameter — maximum bidirectional links per node.
+        #[arg(long, default_value_t = 16)]
+        m: usize,
+        /// HNSW ef_construction — controls index quality vs build speed.
+        #[arg(long, default_value_t = 200)]
+        ef_construction: usize,
+        /// HNSW ef_search — controls query accuracy vs speed.
+        #[arg(long, default_value_t = 50)]
+        ef_search: usize,
+        /// Optional JSONL file of query vectors to evaluate after indexing.
         #[arg(long)]
-        query: String,
-        /// Number of results to return (default: 10).
+        query_file: Option<String>,
+        /// Number of nearest neighbours to return per query.
         #[arg(short = 'k', long, default_value_t = 10)]
         top_k: usize,
+        /// Suppress progress bars and informational output.
+        #[arg(short, long)]
+        quiet: bool,
     },
 }
 
@@ -222,19 +245,6 @@ fn execute_search_command(query: &str, top_k: usize, dataset: Option<&str>) -> V
         .into_iter()
         .map(|(id, score)| (id.to_string(), score))
         .collect()
-}
-
-/// Load a compressed dataset from `input`, encode `query`, and return the top-`top_k`
-/// results ranked by cosine similarity.  Returns an error if the dataset cannot be loaded.
-fn execute_pipeline_command(input: &str, query: &str, top_k: usize) -> anyhow::Result<Vec<(String, f32)>> {
-    let ds = vectro_lib::EmbeddingDataset::load(input)?;
-    let q = parse_query_string(query);
-    let idx = vectro_lib::search::SearchIndex::from_dataset(&ds.embeddings);
-    let results = idx.top_k(&q, top_k)
-        .into_iter()
-        .map(|(id, score)| (id.to_string(), score))
-        .collect();
-    Ok(results)
 }
 
 fn main() -> anyhow::Result<()> {
@@ -414,11 +424,8 @@ fn main() -> anyhow::Result<()> {
             let count = execute_quantize_command(&input, &output, &profile)?;
             println!("[vectro quantize] wrote {count} embeddings → {output}");
         }
-        Commands::Pipeline { input, query, top_k } => {
-            let results = execute_pipeline_command(&input, &query, top_k)?;
-            for (i, (id, score)) in results.into_iter().enumerate() {
-                println!("{}. {} -> {:.6}", i + 1, id, score);
-            }
+        Commands::Pipeline { input, out_dir, format, m, ef_construction, ef_search, query_file, top_k, quiet } => {
+            pipeline::run_pipeline(&input, &out_dir, &format, m, ef_construction, ef_search, query_file.as_deref(), top_k, quiet)?;
         }
     }
 
@@ -1321,14 +1328,19 @@ mod tests {
     fn test_cli_parsing_pipeline_defaults() {
         use clap::Parser;
 
-        let args = vec!["vectro", "pipeline", "--input", "data.vqz", "--query", "1.0,2.0,3.0"];
-        let cli = Cli::try_parse_from(args).unwrap();
+        let cli = Cli::try_parse_from(["vectro", "pipeline", "--input", "data.jsonl"]).unwrap();
 
         match cli.command {
-            Commands::Pipeline { input, query, top_k } => {
-                assert_eq!(input, "data.vqz");
-                assert_eq!(query, "1.0,2.0,3.0");
+            Commands::Pipeline { input, out_dir, format, m, ef_construction, ef_search, query_file, top_k, quiet } => {
+                assert_eq!(input, "data.jsonl");
+                assert_eq!(out_dir, "out");
+                assert_eq!(format, "stream1");
+                assert_eq!(m, 16);
+                assert_eq!(ef_construction, 200);
+                assert_eq!(ef_search, 50);
+                assert!(query_file.is_none());
                 assert_eq!(top_k, 10);
+                assert!(!quiet);
             }
             _ => panic!("Expected Pipeline command"),
         }
@@ -1338,14 +1350,19 @@ mod tests {
     fn test_cli_parsing_pipeline_explicit_top_k() {
         use clap::Parser;
 
-        let args = vec!["vectro", "pipeline", "--input", "data.vqz", "--query", "0.5,0.5", "--top-k", "5"];
-        let cli = Cli::try_parse_from(args).unwrap();
+        let cli = Cli::try_parse_from([
+            "vectro", "pipeline",
+            "--input", "data.jsonl",
+            "--format", "nf4",
+            "--top-k", "5",
+            "--quiet",
+        ]).unwrap();
 
         match cli.command {
-            Commands::Pipeline { top_k, input, query } => {
+            Commands::Pipeline { format, top_k, quiet, .. } => {
+                assert_eq!(format, "nf4");
                 assert_eq!(top_k, 5);
-                assert_eq!(input, "data.vqz");
-                assert_eq!(query, "0.5,0.5");
+                assert!(quiet);
             }
             _ => panic!("Expected Pipeline command"),
         }

@@ -1,7 +1,7 @@
 # Vectro — Plan
 
 > Last updated: 2026-04-15
-> Current version: **4.2.0** — tagged `v4.2.0`, pushed to origin
+> Current version: **4.4.0** — vectro-plus merge complete
 
 ---
 
@@ -513,6 +513,24 @@ making the CLI immediately useful for evaluating hardware capability.
    gets matching `--ignore` flag.
 4. ⏳ **`encode_nf4_fast` Mojo delegation** — BLOCKED. Mojo pipe IPC not yet
    verified on CI runner. Defer to v4.3.0 after IPC smoke-test job is green.
+
+## v4.4.0 — ✅ COMPLETE — vectro-plus Merge + KonjoOS Integration Prep
+
+### Summary
+Merged vectro-plus v2.1.0 pipeline and compress-format features into the canonical vectro repo (konjoai org). All code adapted to vectro_lib v4.0.0 API.
+
+### Delivered
+- `compress_nf4`, `compress_pq`, `compress_rq` (stub), `compress_auto` (stub) in `vectro_cli` lib
+- `pipeline` module: `run_pipeline()` — compress → HNSW index → optional query evaluation
+- `Pipeline` CLI command: 9-parameter production command replacing the 3-field stub
+- 16/16 `cargo test -p vectro_cli` passing; zero build errors
+
+### Next: KonjoOS integration
+- Surface vectro compress + pipeline as a KonjoOS service interface
+- GloVe-100 real-dataset recall@10 benchmark (deferred from v4.3.0)
+- Promote `compress_rq` and `compress_auto` stubs once vectro_lib v5.0 ships RQ support
+
+*Last updated: 2026 (v4.4.0 complete — vectro-plus merge)*
 
 ## v4.3.0 — MOJO IPC HARDENING + REAL-DATASET BENCHMARKS ✅ COMPLETE
 

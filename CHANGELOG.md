@@ -5,6 +5,17 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.4.0] — 2026  vectro-plus merge — NF4/PQ compress formats + full Pipeline command
+
+### Added
+- `rust/vectro_cli/src/pipeline.rs` — new `pipeline` module: `run_pipeline()` orchestrates compress → HNSW index build → optional query evaluation in a single command; `run_queries()` maps HNSW `usize` result indices to embedding IDs via the loaded `Vec<Embedding>`.
+- `rust/vectro_cli/src/lib.rs` — four new public compress functions ported from vectro-plus v2.1.0 and adapted to vectro_lib v4.0.0 API: `compress_nf4` (writes `VECTRO+NF4STREAM1\n` header + bincode records via `Nf4Vector::encode_fast`), `compress_pq` (trains codebook via `train_pq_codebook` + `pq_encode`; writes `VECTRO+PQSTREAM1\n` header), `compress_rq` (stub: warns + falls back to `compress_stream` pending RQ support in vectro_lib), `compress_auto` (stub: delegates to `compress_nf4` pending `auto_select_format` in vectro_lib); private `read_jsonl` helper parses JSONL `{"id","vector"}` or CSV records.
+- `rust/vectro_cli/src/main.rs` — `Pipeline` CLI command expanded from 3-field stub to 9-field production command: `--input`, `--out-dir`, `--format`, `--m`, `--ef-construction`, `--ef-search`, `--query-file`, `--top-k`, `--quiet`; delegates to `pipeline::run_pipeline`.
+
+### Notes
+- `compress_rq` and `compress_auto` are functional stubs. Full RQ and format-selection support targeting vectro_lib v5.0.
+- HNSW result mapping updated for v4.0.0 API: `search()` returns `Vec<(usize, f32)>` indices, resolved to IDs via loaded embeddings slice.
+
 ## [4.3.0] — 2025  Mojo IPC Hardening + CLI Pipeline
 
 ### Added

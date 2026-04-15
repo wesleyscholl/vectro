@@ -211,6 +211,188 @@ pub fn compress_stream(input: &str, output: &str, quantize: bool) -> anyhow::Res
     Ok(parsed)
 }
 
+// ---------------------------------------------------------------------------
+// Helpers and compress functions ported from vectro-plus v2.1.0
+// Adapted to vectro_lib v4.0.0 API (Nf4Vector, train_pq_codebook, pq_encode).
+// ---------------------------------------------------------------------------
+
+/// Parse a JSONL or CSV file into `Embedding` objects.
+///
+/// Accepts two line formats:
+/// - JSONL: `{"id": "...", "vector": [f32, ...]}`
+/// - CSV:   `id,f32,f32,...`
+fn read_jsonl(input: &str) -> anyhow::Result<Vec<vectro_lib::Embedding>> {
+    use std::io::{BufRead, BufReader};
+    let infile = std::fs::File::open(input)
+        .map_err(|e| anyhow::anyhow!("cannot open {input}: {e}"))?;
+    let reader = BufReader::new(infile);
+    let mut embeddings = Vec::new();
+
+    for line in reader.lines().map_while(Result::ok) {
+        let line = line.trim().to_string();
+        if line.is_empty() {
+            continue;
+        }
+        let mut added = false;
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) {
+            if let (Some(id), Some(vec_arr)) = (val.get("id"), val.get("vector")) {
+                if let (Some(id_str), Some(arr)) = (id.as_str(), vec_arr.as_array()) {
+                    let v: Vec<f32> = arr
+                        .iter()
+                        .filter_map(|x| x.as_f64().map(|f| f as f32))
+                        .collect();
+                    embeddings.push(vectro_lib::Embedding::new(id_str, v));
+                    added = true;
+                }
+            }
+        }
+        if !added {
+            let parts: Vec<&str> = line.splitn(2, ',').collect();
+            if parts.len() == 2 {
+                let id = parts[0].to_string();
+                let v: Vec<f32> = parts[1]
+                    .split(',')
+                    .filter_map(|p| p.trim().parse().ok())
+                    .collect();
+                if !v.is_empty() {
+                    embeddings.push(vectro_lib::Embedding::new(id, v));
+                }
+            }
+        }
+    }
+    Ok(embeddings)
+}
+
+/// Compress embeddings from `input` JSONL into `output` using NF4 quantization.
+///
+/// Output format: `VECTRO+NF4STREAM1\n` header, followed by a 4-byte LE `dim`,
+/// a 4-byte LE `count`, then for each embedding a 4-byte LE record length and a
+/// `bincode`-serialised `(id: String, packed: Vec<u8>, scale: f32, dim: u32)`.
+pub fn compress_nf4(input: &str, output: &str) -> anyhow::Result<usize> {
+    use std::io::Write;
+    const HEADER: &[u8] = b"VECTRO+NF4STREAM1\n";
+
+    let embeddings = read_jsonl(input)?;
+    let count = embeddings.len();
+    if count == 0 {
+        return Ok(0);
+    }
+
+    let dim = embeddings[0].vector.len() as u32;
+
+    let pb = ProgressBar::new(count as u64);
+    pb.set_style(
+        ProgressStyle::with_template("{spinner} [{bar:40}] {pos}/{len} {msg}")
+            .unwrap()
+            .progress_chars("=> "),
+    );
+    pb.set_message("encoding NF4…");
+
+    let f = std::fs::File::create(output)
+        .map_err(|e| anyhow::anyhow!("cannot create {output}: {e}"))?;
+    let mut w = std::io::BufWriter::new(f);
+
+    w.write_all(HEADER)?;
+    w.write_all(&dim.to_le_bytes())?;
+    w.write_all(&(count as u32).to_le_bytes())?;
+
+    for emb in &embeddings {
+        let nv = vectro_lib::quant::nf4::Nf4Vector::encode_fast(&emb.vector);
+        let rec: (&str, &[u8], f32, u32) = (&emb.id, &nv.packed, nv.scale, nv.dim as u32);
+        let bytes = bincode::serialize(&rec)?;
+        w.write_all(&(bytes.len() as u32).to_le_bytes())?;
+        w.write_all(&bytes)?;
+        pb.inc(1);
+    }
+    w.flush()?;
+
+    pb.finish_with_message(format!("wrote {count} NF4-encoded entries to {output}"));
+    Ok(count)
+}
+
+/// Compress embeddings from `input` JSONL into `output` using Product Quantization.
+///
+/// `m` = number of subspaces, `k` = number of centroids per subspace.
+/// Output format: `VECTRO+PQSTREAM1\n` header, followed by a 4-byte LE codebook
+/// blob length, the `bincode`-serialised `PQCodebook`, then for each embedding a
+/// 4-byte LE record length and a `bincode`-serialised `(id: String, code: Vec<u8>)`.
+pub fn compress_pq(input: &str, output: &str, m: usize, k: usize) -> anyhow::Result<usize> {
+    use std::io::Write;
+    const HEADER: &[u8] = b"VECTRO+PQSTREAM1\n";
+
+    let embeddings = read_jsonl(input)?;
+    let count = embeddings.len();
+    if count == 0 {
+        return Ok(0);
+    }
+
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(ProgressStyle::with_template("{spinner} {msg}").unwrap());
+    pb.enable_steady_tick(std::time::Duration::from_millis(80));
+    pb.set_message(format!("training PQ codebook on {count} vectors (m={m}, k={k})…"));
+
+    let vecs: Vec<Vec<f32>> = embeddings.iter().map(|e| e.vector.clone()).collect();
+    let codebook = vectro_lib::quant::pq::train_pq_codebook(&vecs, m, k, 25, 42)
+        .map_err(|e| anyhow::anyhow!("PQ training failed: {e}"))?;
+
+    pb.set_message("encoding and writing…");
+
+    let codes = vectro_lib::quant::pq::pq_encode(&vecs, &codebook);
+    let cb_blob = bincode::serialize(&codebook)?;
+
+    let f = std::fs::File::create(output)
+        .map_err(|e| anyhow::anyhow!("cannot create {output}: {e}"))?;
+    let mut w = std::io::BufWriter::new(f);
+
+    w.write_all(HEADER)?;
+    w.write_all(&(cb_blob.len() as u32).to_le_bytes())?;
+    w.write_all(&cb_blob)?;
+
+    for (emb, code) in embeddings.iter().zip(codes.iter()) {
+        let rec = (&emb.id, code.as_slice());
+        let bytes = bincode::serialize(&rec)?;
+        w.write_all(&(bytes.len() as u32).to_le_bytes())?;
+        w.write_all(&bytes)?;
+    }
+    w.flush()?;
+
+    pb.finish_with_message(format!(
+        "wrote {count} PQ-encoded entries to {output} (m={m}, k={k})"
+    ));
+    Ok(count)
+}
+
+/// Placeholder: RQ quantization is not available in vectro_lib v4.
+///
+/// Falls back to `compress_stream` with a warning so pipelines using `--format rq`
+/// do not crash. Upgrade to a future vectro_lib release to get true RQ support.
+pub fn compress_rq(
+    input: &str,
+    output: &str,
+    _n_passes: usize,
+    _m: usize,
+    _k: usize,
+) -> anyhow::Result<usize> {
+    eprintln!(
+        "warn: RQ quantization is not available in this build — falling back to stream1 passthrough"
+    );
+    compress_stream(input, output, false)
+}
+
+/// Auto-select the best available quantization format for `input`.
+///
+/// `target_cosine` and `target_compression` are for API compatibility with vectro-plus;
+/// since `auto_select_format` is not available in vectro_lib v4, NF4 is used as the
+/// best available accuracy/compression trade-off.
+pub fn compress_auto(
+    input: &str,
+    output: &str,
+    _target_cosine: f32,
+    _target_compression: f32,
+) -> anyhow::Result<usize> {
+    compress_nf4(input, output)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
