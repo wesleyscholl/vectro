@@ -1,7 +1,7 @@
 # Vectro — Plan
 
-> Last updated: 2026-04-13
-> Current version: **3.7.0** — tagged `v3.7.0`, pushed to origin
+> Last updated: 2026-04-15
+> Current version: **4.2.0** — tagged `v4.2.0`, pushed to origin
 
 ---
 
@@ -18,7 +18,7 @@
 |--------|-------|
 | INT8 Python fallback (d=768, batch=1000) | **167,757 vec/s** |
 | INT8 Python fallback (GloVe-100 d=100) | **210,174 vec/s**, cosine=0.9999, ratio=3.85x |
-| HNSW (10k×128d, M=16, ef_search=50) | **628 QPS, R@10=0.895** |
+| HNSW (10k×128d, M=16, ef_search=50) | **628 QPS, R@10=0.895** (note: ef_search=100 gives 76 QPS, R@10=0.906 — see v4.3.0 benchmark) |
 | Mojo SIMD INT8 (from v3.5/v3.6) | **12M+ vec/s, 4.85× FAISS C++** |
 
 ### Bug Fixes
@@ -514,17 +514,47 @@ making the CLI immediately useful for evaluating hardware capability.
 4. ⏳ **`encode_nf4_fast` Mojo delegation** — BLOCKED. Mojo pipe IPC not yet
    verified on CI runner. Defer to v4.3.0 after IPC smoke-test job is green.
 
-## Immediate Next Actions (v4.3.0)
+## v4.3.0 — MOJO IPC HARDENING + REAL-DATASET BENCHMARKS 🚧 PLANNED
 
-1. **Mojo IPC smoke test** — add a CI job that verifies `_mojo_bridge._run_pipe`
-   round-trips on ubuntu-latest; required before NF4 Mojo delegation is safe.
-2. **`encode_nf4_fast` Mojo delegation** — once IPC smoke-test is green, delegate
-   from `vectro_py encode_nf4_fast` → `_mojo_bridge._run_pipe("encode_nf4")`.
-3. **GloVe-100 / SIFT1M real-dataset benchmarks** — `benchmarks/benchmark_real_embeddings_v2.py`
-   end-to-end; assert recall@10 gates from PLAN Phase 9.
+### Goal
+Close the last gap between code-complete and accuracy-validated across the v4.x pipeline:
+(1) prove Mojo IPC is CI-safe so `encode_nf4_fast` can delegate to the SIMD path,
+(2) run the real-embedding benchmarks that demonstrate production retrieval quality,
+(3) correct the stale HNSW performance number (ef_search=50→100).
+
+### Tasks
+
+| Task | Gate |
+|------|------|
+| Mojo IPC smoke-test CI job — verifies `_mojo_bridge._run_pipe` round-trips on `ubuntu-latest` | CI green, no flaky timeouts |
+| `encode_nf4_fast` Mojo delegation — delegate from `vectro_py::encode_nf4_fast` → `_mojo_bridge._run_pipe("encode_nf4")` | `test_latency_singleshot.py` p99 < 1ms still passes |
+| HNSW benchmark re-run at `n=10k, ef_search=100` — replace stale `ef_search=50, R@10=0.895` in PLAN.md with corrected number | R@10 ≥ 0.90 documented |
+| GloVe-100 real-dataset benchmark — `benchmarks/benchmark_real_embeddings_v2.py` end-to-end on GloVe-100d (84k vectors) | recall@10 ≥ 0.90 on int8/nf4 paths; result saved to `benchmarks/results/` |
+| `eval_profiles.py` full fixture sweep — run all 5 fixture families and document cosine table | int8 ≥ 0.9999, nf4 ≥ 0.9800, auto ≥ 0.9999 all pass |
+| `vectro pipeline` CLI subcommand — `compress → search` end-to-end pipeline (analogous to `jq` for vectors) | `vectro pipeline --input embeddings.jsonl --query 0.1,0.2,... --top-k 5` works; one new `src/pipeline.rs` file |
+
+### Ship Gate (v4.3.0 is complete when ALL of the following are true)
+1. Zero failing tests: `python3 -m pytest tests/ --timeout=120`
+2. Mojo IPC smoke-test job is green on `ubuntu-latest`
+3. `encode_nf4_fast` p99 < 1ms still passes after Mojo delegation
+4. HNSW R@10 ≥ 0.90 at `ef_search=100` documented in this PLAN
+5. GloVe-100 benchmark result in `benchmarks/results/` with full hardware metadata
+6. `eval_profiles.py` sweep table written below under — Benchmark Results
+7. `vectro pipeline` CLI `--help` text updated; `cargo test` clean
+8. `CHANGELOG.md` entry under `[4.3.0]`; `README.md` updated if public API changed
+
+### Benchmark Results (fill in as they complete)
+
+| Test | Value | Date | Hardware |
+|------|-------|------|----------|
+| HNSW (10k×128d, M=16, ef_search=100) | **76 QPS, R@10=0.906** | 2026-04-15 | M3 Pro |
+| GloVe-100 int8 recall@10 | TBD | — | M3 Pro |
+| GloVe-100 nf4 recall@10 | TBD | — | M3 Pro |
+| `eval_profiles.py` int8 cosine | TBD | — | — |
+| `eval_profiles.py` nf4 cosine | TBD | — | — |
 
 ---
 
 *Created: 2026-03-11*
 *Last updated: 2026-04-15 (v4.2.0 complete — Distribution & CI Hardening)*
-*Codebase audited at commit: df4fa9d (v3.9.0 tag)*
+*Codebase audited at commit: 7e26d6e (v4.2.0 tag)*
