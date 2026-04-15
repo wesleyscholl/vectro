@@ -102,6 +102,22 @@ enum Commands {
               value_parser = ["auto", "int8", "nf4"])]
         profile: String,
     },
+    /// Run a full encode → search pipeline: load a compressed dataset, encode a
+    /// query vector, and return the top-k results ranked by cosine similarity.
+    ///
+    /// Example:
+    ///   vectro pipeline --input ./embeddings.vqz --query "0.1,0.2,0.3" --top-k 5
+    Pipeline {
+        /// Path to compressed dataset (.vqz / .bin).
+        #[arg(long)]
+        input: String,
+        /// Query vector as comma-separated floats.
+        #[arg(long)]
+        query: String,
+        /// Number of results to return (default: 10).
+        #[arg(short = 'k', long, default_value_t = 10)]
+        top_k: usize,
+    },
 }
 
 // Wrapper functions for testability
@@ -206,6 +222,19 @@ fn execute_search_command(query: &str, top_k: usize, dataset: Option<&str>) -> V
         .into_iter()
         .map(|(id, score)| (id.to_string(), score))
         .collect()
+}
+
+/// Load a compressed dataset from `input`, encode `query`, and return the top-`top_k`
+/// results ranked by cosine similarity.  Returns an error if the dataset cannot be loaded.
+fn execute_pipeline_command(input: &str, query: &str, top_k: usize) -> anyhow::Result<Vec<(String, f32)>> {
+    let ds = vectro_lib::EmbeddingDataset::load(input)?;
+    let q = parse_query_string(query);
+    let idx = vectro_lib::search::SearchIndex::from_dataset(&ds.embeddings);
+    let results = idx.top_k(&q, top_k)
+        .into_iter()
+        .map(|(id, score)| (id.to_string(), score))
+        .collect();
+    Ok(results)
 }
 
 fn main() -> anyhow::Result<()> {
@@ -384,6 +413,12 @@ fn main() -> anyhow::Result<()> {
         Commands::Quantize { input, output, profile } => {
             let count = execute_quantize_command(&input, &output, &profile)?;
             println!("[vectro quantize] wrote {count} embeddings → {output}");
+        }
+        Commands::Pipeline { input, query, top_k } => {
+            let results = execute_pipeline_command(&input, &query, top_k)?;
+            for (i, (id, score)) in results.into_iter().enumerate() {
+                println!("{}. {} -> {:.6}", i + 1, id, score);
+            }
         }
     }
 
@@ -1279,6 +1314,40 @@ mod tests {
                 assert_eq!(profile, "nf4");
             }
             _ => panic!("Expected Quantize command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_pipeline_defaults() {
+        use clap::Parser;
+
+        let args = vec!["vectro", "pipeline", "--input", "data.vqz", "--query", "1.0,2.0,3.0"];
+        let cli = Cli::try_parse_from(args).unwrap();
+
+        match cli.command {
+            Commands::Pipeline { input, query, top_k } => {
+                assert_eq!(input, "data.vqz");
+                assert_eq!(query, "1.0,2.0,3.0");
+                assert_eq!(top_k, 10);
+            }
+            _ => panic!("Expected Pipeline command"),
+        }
+    }
+
+    #[test]
+    fn test_cli_parsing_pipeline_explicit_top_k() {
+        use clap::Parser;
+
+        let args = vec!["vectro", "pipeline", "--input", "data.vqz", "--query", "0.5,0.5", "--top-k", "5"];
+        let cli = Cli::try_parse_from(args).unwrap();
+
+        match cli.command {
+            Commands::Pipeline { top_k, input, query } => {
+                assert_eq!(top_k, 5);
+                assert_eq!(input, "data.vqz");
+                assert_eq!(query, "0.5,0.5");
+            }
+            _ => panic!("Expected Pipeline command"),
         }
     }
 }

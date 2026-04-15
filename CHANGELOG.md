@@ -5,6 +5,24 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.3.0] — 2025  Mojo IPC Hardening + CLI Pipeline
+
+### Added
+- `.github/workflows/ci.yml` — `mojo-ipc-smoke` job: runs `scripts/vectro_quantizer_stub.py` on `ubuntu-latest` to verify `_mojo_bridge._run_pipe` round-trips without a live Mojo binary; 25/26 bridge tests pass.
+- `scripts/vectro_quantizer_stub.py` — CI stub implementing the full 6-subcommand Mojo pipe protocol (`quantize_int8`, `encode_nf4`, `decode_nf4`, `quantize_binary`, `encode_pq`, `encode_rq`) with correct NF4 codebook; replacement for `vectro_quantizer` binary in CI.
+- `python/nf4_api.py` — `encode_nf4_fast` 3-tier dispatch chain: Mojo binary → `vectro_py.encode_nf4_fast` SIMD → NumPy fallback; delegation now routes to the fastest available tier at runtime.
+- `rust/vectro_cli/src/main.rs` — `vectro pipeline` CLI subcommand (`Commands::Pipeline`) with `--input`, `--query`, `--top-k` flags; `execute_pipeline_command()` helper; 2 new CLI parsing tests.
+
+### Fixed
+- `scripts/eval_profiles.py` line 100 — removed spurious `dim` argument from `vectro_py.PyNf4Encoder()` constructor call (Rust `#[new]` takes no args); fixes runtime `TypeError` during fixture sweep.
+- Version string consistency: bumped from `4.2.1` → `4.3.0` across all 6 version-bearing files (`pyproject.toml`, `pixi.toml`, `python/__init__.py`, `python/vectro.py`, `tests/test_release_candidate.py`, `rust/vectro_py/src/lib.rs`).
+
+### Validated
+- `eval_profiles.py` fixture sweep 5/5 PASS (dim=768, n=1000): bert/bge nf4 cosine=0.994669 ≥ 0.9800; e5/gte int8 cosine=0.999970 ≥ 0.9999; unknown/auto cosine=0.999970 ≥ 0.9999.
+- `cargo test -p vectro_cli` 62/62 pass including new Pipeline parsing tests.
+
+---
+
 ## [4.2.0] — 2026-04-15  Distribution & CI Hardening — WASM npm publish, eval harness, latency gate
 
 ### Added

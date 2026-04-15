@@ -1193,7 +1193,7 @@ fn vectro_py(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(encode_nf4_fast, m)?)?;
 
     // Add version info
-    m.add("__version__", "4.2.1")?;
+    m.add("__version__", "4.3.0")?;
     m.add("__author__", "Wesley Scholl")?;
     m.add("__description__", "Python bindings for Vectro high-performance vector compression and search")?;
 

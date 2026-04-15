@@ -25,6 +25,15 @@ except ImportError:
     _mojo_bridge = _ilu.module_from_spec(_spec)  # type: ignore[assignment]
     _spec.loader.exec_module(_mojo_bridge)  # type: ignore[union-attr]
 
+# Optional Rust SIMD fast-path (vectro_py).  Used as a middle tier when the
+# Mojo binary is absent but the PyO3 extension is installed.
+try:
+    import vectro_py as _vectro_py  # type: ignore[import]
+    _HAS_VECTRO_PY = True
+except ImportError:
+    _vectro_py = None  # type: ignore[assignment]
+    _HAS_VECTRO_PY = False
+
 
 # NF4 codebook — quantiles of N(0,1), Dettmers et al. 2023
 NF4_LEVELS: np.ndarray = np.array(
@@ -70,6 +79,23 @@ def quantize_nf4(
     """
     if _mojo_bridge.is_available():
         return _mojo_bridge.nf4_encode(vectors)
+
+    # Second-tier: Rust SIMD via vectro_py.encode_nf4_fast (per-vector loop).
+    # Faster than pure NumPy for small-to-medium batches; falls through to
+    # NumPy for environments without the extension.
+    if _HAS_VECTRO_PY:
+        if vectors.ndim == 1:
+            vectors = vectors[np.newaxis]
+        vectors = np.ascontiguousarray(vectors, dtype=np.float32)
+        n, d = vectors.shape
+        packed_rows = []
+        scales = np.empty(n, dtype=np.float32)
+        for i in range(n):
+            packed_list, scale, _dim = _vectro_py.encode_nf4_fast(vectors[i].tolist())
+            packed_rows.append(bytes(packed_list))
+            scales[i] = scale
+        packed = np.frombuffer(b"".join(packed_rows), dtype=np.uint8).reshape(n, -1)
+        return packed, scales
 
     if vectors.ndim == 1:
         vectors = vectors[np.newaxis]

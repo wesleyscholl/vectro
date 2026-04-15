@@ -212,3 +212,23 @@ jobs:
 
       - name: Run latency tests
         run: python -m pytest tests/test_latency_singleshot.py -v --tb=short
+
+  mojo-ipc-smoke:
+    name: Mojo IPC pipe smoke-test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test deps
+        run: pip install numpy pytest
+
+      - name: Install pipe stub as vectro_quantizer
+        run: cp scripts/vectro_quantizer_stub.py vectro_quantizer && chmod +x vectro_quantizer
+
+      - name: Run Mojo bridge tests via stub
+        run: python -m pytest tests/test_mojo_bridge.py -v --tb=short

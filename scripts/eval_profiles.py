@@ -97,7 +97,7 @@ def _encode_decode_int8(vecs: list[list[float]]) -> list[list[float]]:
 
 def _encode_decode_nf4(vecs: list[list[float]]) -> list[list[float]]:
     """NF4 encode + decode using the batch class API."""
-    encoder = vectro_py.PyNf4Encoder(len(vecs[0]))
+    encoder = vectro_py.PyNf4Encoder()
     encoder.encode(vecs)
     return encoder.decode()
 
