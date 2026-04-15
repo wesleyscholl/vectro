@@ -528,7 +528,24 @@ Merged vectro-plus v2.1.0 pipeline and compress-format features into the canonic
 ### Next: KonjoOS integration
 - Surface vectro compress + pipeline as a KonjoOS service interface
 - GloVe-100 real-dataset recall@10 benchmark (deferred from v4.3.0)
-- Promote `compress_rq` and `compress_auto` stubs once vectro_lib v5.0 ships RQ support
+- Promote `compress_rq` and `compress_auto` stubs — **DONE in v5.0.0**
+
+## v5.0.0 — RQ Quantization + auto_select_format ✅ COMPLETE
+
+### Summary
+Promoted `compress_rq` and `compress_auto` from stubs to full implementations; added `quant/rq.rs` in vectro_lib with RQ algorithm; extended `EmbeddingDataset::load()` to read PQSTREAM1 and RQSTREAM1 formats; added `auto_select_format()`.
+
+### Completed Items
+| # | Item | Status |
+|---|------|--------|
+| 1 | `rust/vectro_lib/src/quant/rq.rs` — `RQCodebook`, `train_rq_codebook`, `rq_encode_flat`, `rq_decode_flat` (rayon parallel) | ✅ |
+| 2 | `rust/vectro_lib/src/quant/mod.rs` — `pub mod rq;` added | ✅ |
+| 3 | `rust/vectro_lib/src/lib.rs` — PQSTREAM1 + RQSTREAM1 load branches in `EmbeddingDataset::load()` | ✅ |
+| 4 | `rust/vectro_lib/src/lib.rs` — `pub fn auto_select_format(target_cosine, target_compression)` | ✅ |
+| 5 | `rust/vectro_cli/src/lib.rs` — `compress_rq` promoted from stub to full implementation | ✅ |
+| 6 | `rust/vectro_cli/src/lib.rs` — `compress_auto` promoted; delegates to `auto_select_format` | ✅ |
+| 7 | `cargo test` clean — 7 new rq tests + all prior pass | ✅ |
+| 8 | `CHANGELOG.md` entry under `[5.0.0]`; version bumped in all 4 `Cargo.toml` files | ✅ |
 
 *Last updated: 2026 (v4.4.0 complete — vectro-plus merge)*
 
@@ -586,5 +603,5 @@ Close the last gap between code-complete and accuracy-validated across the v4.x 
 ---
 
 *Created: 2026-03-11*
-*Last updated: 2025 (v4.3.0 complete — Mojo IPC Hardening + CLI Pipeline)*
-*Codebase audited at commit: v4.3.0 tag*
+*Last updated: 2026 (v5.0.0 complete — RQ quantization, auto_select_format, PQSTREAM1/RQSTREAM1 load)*
+*Codebase audited at commit: v5.0.0 tag*

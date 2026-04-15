@@ -5,6 +5,17 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] — 2026  RQ quantization, auto_select_format, PQSTREAM1/RQSTREAM1 load
+
+### Added
+- `rust/vectro_lib/src/quant/rq.rs` — Residual Quantization: `RQCodebook` (Serialize/Deserialize), `train_rq_codebook` (chains `n_passes` PQ codebooks, each trained on the residual from the previous pass), `rq_encode` / `rq_encode_flat` (flat layout = `n_passes × n_subspaces` bytes/vector), `rq_decode` / `rq_decode_flat` (parallel via rayon). 7 tests: shape, quality (avg cosine ≥ 0.90 on 300 vecs d=64), nested/flat decode parity, error paths.
+- `rust/vectro_lib/src/lib.rs` — `EmbeddingDataset::load()` now detects and reads `VECTRO+PQSTREAM1\n` and `VECTRO+RQSTREAM1\n` binary formats. `pub fn auto_select_format(target_cosine, target_compression) -> &'static str` selects "int8" / "nf4" / "pq" / "rq" based on accuracy and compression targets.
+- `rust/vectro_cli/src/lib.rs` — `compress_rq` promoted from stub to full implementation: reads JSONL, trains on up to 10 000 vectors, encodes all, writes `VECTRO+RQSTREAM1\n` header + 4-byte LE codebook blob length + bincode codebook + length-prefixed bincode records. `compress_auto` promoted: delegates to `vectro_lib::auto_select_format` and dispatches to `compress_stream` / `compress_nf4` / `compress_pq` / `compress_rq`.
+
+### Notes
+- RQ quality target: avg cosine ≥ 0.90 with 2 passes, M=8, K=16 on random d=64 data. Higher-dimensional production data typically reaches ≥ 0.97 with 2–4 passes.
+- `auto_select_format` thresholds: cosine ≥ 0.9999 → int8; cosine ≥ 0.98 ∧ compression ≤ 8× → nf4; compression ≤ 16× → pq; else → rq.
+
 ## [4.4.0] — 2026  vectro-plus merge — NF4/PQ compress formats + full Pipeline command
 
 ### Added

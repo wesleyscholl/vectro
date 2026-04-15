@@ -61,9 +61,14 @@ impl EmbeddingDataset {
     pub fn load(path: &str) -> anyhow::Result<Self> {
         let mut f = File::open(path)?;
         // detect if file is our streaming format by checking header
-        let header = b"VECTRO+STREAM1\n";
-        let qheader = b"VECTRO+QSTREAM1\n";
-        let max_len = std::cmp::max(header.len(), qheader.len());
+        let header   = b"VECTRO+STREAM1\n";
+        let qheader  = b"VECTRO+QSTREAM1\n";
+        let pqheader = b"VECTRO+PQSTREAM1\n";
+        let rqheader = b"VECTRO+RQSTREAM1\n";
+        let max_len = [header.len(), qheader.len(), pqheader.len(), rqheader.len()]
+            .into_iter()
+            .max()
+            .unwrap_or(16);
         let mut sig = vec![0u8; max_len];
         let n = f.read(&mut sig)?;
         // reset cursor so each branch can read from the start as needed
@@ -138,12 +143,88 @@ impl EmbeddingDataset {
                 return Ok(EmbeddingDataset { embeddings });
             }
 
+        // PQSTREAM1: codebook blob + per-vector bincode((id: String, code: Vec<u8>))
+        if n >= pqheader.len() && sig[..pqheader.len()] == *pqheader {
+            let mut f2 = File::open(path)?;
+            let mut _hdr = vec![0u8; pqheader.len()];
+            f2.read_exact(&mut _hdr)?;
+            let mut buf4 = [0u8; 4];
+            f2.read_exact(&mut buf4)?;
+            let cb_len = u32::from_le_bytes(buf4) as usize;
+            let mut cb_buf = vec![0u8; cb_len];
+            f2.read_exact(&mut cb_buf)?;
+            let codebook: crate::quant::pq::PQCodebook = bincode::deserialize(&cb_buf)?;
+            let mut embeddings: Vec<Embedding> = Vec::new();
+            loop {
+                let mut lenbuf = [0u8; 4];
+                match f2.read_exact(&mut lenbuf) {
+                    Ok(_) => {
+                        let len = u32::from_le_bytes(lenbuf) as usize;
+                        let mut buf = vec![0u8; len];
+                        f2.read_exact(&mut buf)?;
+                        let (id, code): (String, Vec<u8>) = bincode::deserialize(&buf)?;
+                        let decoded = crate::quant::pq::pq_decode(&[code], &codebook);
+                        if let Some(v) = decoded.into_iter().next() {
+                            embeddings.push(Embedding::new(id, v));
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            return Ok(EmbeddingDataset { embeddings });
+        }
+
+        // RQSTREAM1: codebook blob + per-vector bincode((id: String, flat_code: Vec<u8>))
+        if n >= rqheader.len() && sig[..rqheader.len()] == *rqheader {
+            let mut f2 = File::open(path)?;
+            let mut _hdr = vec![0u8; rqheader.len()];
+            f2.read_exact(&mut _hdr)?;
+            let mut buf4 = [0u8; 4];
+            f2.read_exact(&mut buf4)?;
+            let cb_len = u32::from_le_bytes(buf4) as usize;
+            let mut cb_buf = vec![0u8; cb_len];
+            f2.read_exact(&mut cb_buf)?;
+            let codebook: crate::quant::rq::RQCodebook = bincode::deserialize(&cb_buf)?;
+            let mut embeddings: Vec<Embedding> = Vec::new();
+            loop {
+                let mut lenbuf = [0u8; 4];
+                match f2.read_exact(&mut lenbuf) {
+                    Ok(_) => {
+                        let len = u32::from_le_bytes(lenbuf) as usize;
+                        let mut buf = vec![0u8; len];
+                        f2.read_exact(&mut buf)?;
+                        let (id, flat_code): (String, Vec<u8>) = bincode::deserialize(&buf)?;
+                        let decoded = crate::quant::rq::rq_decode_flat(&codebook, &[flat_code]);
+                        if let Some(v) = decoded.into_iter().next() {
+                            embeddings.push(Embedding::new(id, v));
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            return Ok(EmbeddingDataset { embeddings });
+        }
+
         // fallback: rewind and read whole-file bincode
         f.seek(SeekFrom::Start(0))?;
         let mut buf = Vec::new();
         f.read_to_end(&mut buf)?;
         let ds: EmbeddingDataset = bincode::deserialize(&buf)?;
         Ok(ds)
+    }
+}
+
+/// Choose the binary format that best satisfies `target_cosine` and
+/// `target_compression`, returning one of `"int8"`, `"nf4"`, `"pq"`, or `"rq"`.
+pub fn auto_select_format(target_cosine: f32, target_compression: f32) -> &'static str {
+    if target_cosine >= 0.9999 {
+        "int8"
+    } else if target_cosine >= 0.98 && target_compression <= 8.0 {
+        "nf4"
+    } else if target_compression <= 16.0 {
+        "pq"
+    } else {
+        "rq"
     }
 }
 

@@ -8,6 +8,7 @@ pub mod binary;
 pub mod int8;
 pub mod nf4;
 pub mod pq;
+pub mod rq;
 pub mod sq2;
 pub mod sq3;
 

@@ -362,35 +362,94 @@ pub fn compress_pq(input: &str, output: &str, m: usize, k: usize) -> anyhow::Res
     Ok(count)
 }
 
-/// Placeholder: RQ quantization is not available in vectro_lib v4.
+/// Compress `input` (JSONL) using Residual Quantization and write `VECTRO+RQSTREAM1`
+/// to `output`.
 ///
-/// Falls back to `compress_stream` with a warning so pipelines using `--format rq`
-/// do not crash. Upgrade to a future vectro_lib release to get true RQ support.
+/// * `n_passes` — residual passes (L ≥ 1; 2–4 recommended)
+/// * `m` — PQ sub-spaces per pass (must divide embedding dimension)
+/// * `k` — centroids per sub-space (≤ 256)
 pub fn compress_rq(
     input: &str,
     output: &str,
-    _n_passes: usize,
-    _m: usize,
-    _k: usize,
+    n_passes: usize,
+    m: usize,
+    k: usize,
 ) -> anyhow::Result<usize> {
-    eprintln!(
-        "warn: RQ quantization is not available in this build — falling back to stream1 passthrough"
+    const HEADER: &[u8] = b"VECTRO+RQSTREAM1\n";
+
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::with_template("{spinner:.green} {msg}")
+            .unwrap()
+            .tick_strings(&["\u{2014}", "\\", "|", "/"]),
     );
-    compress_stream(input, output, false)
+    pb.set_message("loading embeddings for RQ training…");
+    pb.enable_steady_tick(std::time::Duration::from_millis(80));
+
+    // Read all embeddings
+    let infile = std::fs::File::open(input)?;
+    let reader = std::io::BufReader::new(infile);
+    let mut embeddings: Vec<vectro_lib::Embedding> = Vec::new();
+    for line in reader.lines() {
+        let line = line?;
+        if line.trim().is_empty() { continue; }
+        let e: vectro_lib::Embedding = serde_json::from_str(&line)?;
+        embeddings.push(e);
+    }
+
+    pb.set_message(format!(
+        "training RQ codebook ({} vecs, n_passes={n_passes}, m={m}, k={k})…",
+        embeddings.len()
+    ));
+
+    let vecs: Vec<Vec<f32>> = embeddings.iter().map(|e| e.vector.clone()).collect();
+    // Train on at most 10 000 vectors for speed
+    let train_vecs: Vec<Vec<f32>> = vecs.iter().take(10_000).cloned().collect();
+    let codebook = vectro_lib::quant::rq::train_rq_codebook(
+        &train_vecs, n_passes, m, k, 25, 42
+    ).map_err(|e| anyhow::anyhow!(e))?;
+
+    pb.set_message("encoding…");
+    let flat_codes = vectro_lib::quant::rq::rq_encode_flat(&codebook, &vecs);
+    let cb_blob = bincode::serialize(&codebook)?;
+
+    let mut outfile = std::io::BufWriter::new(std::fs::File::create(output)?);
+    outfile.write_all(HEADER)?;
+    outfile.write_all(&(cb_blob.len() as u32).to_le_bytes())?;
+    outfile.write_all(&cb_blob)?;
+
+    let mut count = 0usize;
+    for (emb, flat) in embeddings.iter().zip(flat_codes.iter()) {
+        let rec = (&emb.id, flat.as_slice());
+        let bytes = bincode::serialize(&rec)?;
+        outfile.write_all(&(bytes.len() as u32).to_le_bytes())?;
+        outfile.write_all(&bytes)?;
+        count += 1;
+    }
+
+    pb.finish_with_message(format!(
+        "wrote {count} RQ-encoded entries to {output} (n_passes={n_passes}, m={m}, k={k})"
+    ));
+    Ok(count)
 }
 
-/// Auto-select the best available quantization format for `input`.
+/// Auto-select the best quantization format based on accuracy and compression goals
+/// and compress `input` to `output`.
 ///
-/// `target_cosine` and `target_compression` are for API compatibility with vectro-plus;
-/// since `auto_select_format` is not available in vectro_lib v4, NF4 is used as the
-/// best available accuracy/compression trade-off.
+/// Delegates to [`vectro_lib::auto_select_format`] to pick the format, then
+/// calls the corresponding `compress_*` function.
 pub fn compress_auto(
     input: &str,
     output: &str,
-    _target_cosine: f32,
-    _target_compression: f32,
+    target_cosine: f32,
+    target_compression: f32,
 ) -> anyhow::Result<usize> {
-    compress_nf4(input, output)
+    match vectro_lib::auto_select_format(target_cosine, target_compression) {
+        "int8" => compress_stream(input, output, true),
+        "nf4"  => compress_nf4(input, output),
+        "pq"   => compress_pq(input, output, 16, 64),
+        _      => compress_rq(input, output, 2, 16, 64),
+    }
 }
 
 #[cfg(test)]
