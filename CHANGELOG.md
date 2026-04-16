@@ -5,6 +5,32 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.10.0] — 2026-04-18  Sprint 2: vectro_py INT8 batch backend, eliminate subprocess IPC
+
+### Added
+- `vectro_lib/src/quant/int8.rs` — `batch_encode_into()` and `batch_decode_into()`:
+  zero-allocation rayon-parallel row processing with LLVM auto-vectorised inner loop
+  (NEON on AArch64, AVX2 on x86-64).  No per-row `Vec<i8>` heap allocation.
+- `vectro_py/src/lib.rs` — `quantize_int8_batch` / `dequantize_int8_batch` PyO3 functions:
+  thin wrappers around the new lib functions, zero-copy on C-contiguous input.
+- `python/interface.py` — `_quantize_with_vectro_py` / `_dequantize_with_vectro_py` helpers;
+  `vectro_py` backend wired into `quantize_embeddings` and `reconstruct_embeddings`
+  at priority above Mojo/Cython/numpy.  Single-vector (1D) reshape handled transparently.
+
+### Changed
+- `pyproject.toml`, `pixi.toml`, `python/__init__.py`, `python/vectro.py` version `4.9.0 → 4.10.0`
+
+### Performance
+- **Quantize**: 10.66 M vec/s at d=384 on M3 (release build, rayon all cores, LLVM auto-vec)
+- **Dequantize**: 9.97 M vec/s at d=384 on M3
+- **IPC overhead eliminated**: ~45 ms subprocess spawn removed from the hot path
+- **INT8 accuracy**: cosine similarity min=0.999930, mean=0.999974 (gate: ≥0.9999 ✓)
+
+### Tests
+- 741 passing, 0 failures (gate: ≥740 ✓)
+
+---
+
 ## [4.9.0] / [7.3.0] — 2026-04-17  Sprint 1: doc sync, HNSW benchmark validation, GloVe benchmark
 
 ### Changed

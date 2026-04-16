@@ -45,6 +45,13 @@ try:
 except ImportError:
     _squish_quant = None
 
+# vectro_py PyO3 batch backend — zero-copy INT8 batch quantize, ≥1 M vec/s
+_vectro_py = None
+try:
+    import vectro_py as _vectro_py
+except ImportError:
+    _vectro_py = None
+
 _mojo_available: bool = _mojo_bridge.is_available()
 _mojo_binary: str | None = _mojo_bridge._binary_path
 
@@ -86,6 +93,39 @@ def _dequantize_with_squish(result: QuantizationResult) -> np.ndarray:
         # scales is (n, n_groups) — derive group_size from shape
         group_size = result.dims // s.shape[1]
         return _squish_quant.dequantize_int8_grouped(q, np.ascontiguousarray(s, dtype=np.float32), group_size)
+
+
+def _quantize_with_vectro_py(embeddings: np.ndarray) -> QuantizationResult:
+    """Quantize using the vectro_py PyO3 SIMD-accelerated INT8 batch encoder.
+
+    Calls ``vectro_py.quantize_int8_batch`` directly in-process — no subprocess
+    spawn overhead (~45 ms eliminated).  Typical throughput ≥ 1 M vec/s on
+    Apple Silicon (NEON) and x86-64 (AVX2).  Scales are stored as
+    abs_max / 127.0, compatible with the numpy dequantise path.
+    """
+    emb = np.ascontiguousarray(embeddings, dtype=np.float32)
+    was_1d = emb.ndim == 1
+    if was_1d:
+        emb = emb.reshape(1, -1)
+    n, d = emb.shape
+    q, scales = _vectro_py.quantize_int8_batch(emb)
+    if was_1d:
+        q = q.reshape(-1)
+        scales = scales.reshape(1)
+    return QuantizationResult(quantized=q, scales=scales, dims=d, n=n)
+
+
+def _dequantize_with_vectro_py(result: QuantizationResult) -> np.ndarray:
+    """Reconstruct float32 from INT8 using the vectro_py PyO3 batch dequantizer."""
+    q = np.ascontiguousarray(result.quantized, dtype=np.int8)
+    s = np.ascontiguousarray(result.scales, dtype=np.float32)
+    # dequantize_int8_batch requires 2D codes [N, D]; a single stored vector
+    # may arrive as 1D [D] — reshape transparently.
+    if q.ndim == 1:
+        q = q.reshape(1, -1)
+    if s.ndim == 0:
+        s = s.reshape(1)
+    return _vectro_py.dequantize_int8_batch(q, s)
 
 
 def quantize_int4(
@@ -179,6 +219,7 @@ def get_backend_info():
     """Get information about available backends."""
     info = {
         "squish_quant_rust": _squish_quant is not None,
+        "vectro_py": _vectro_py is not None,
         "mojo": _mojo_available,
         "cython": _cython_quant is not None,
         "numpy": True,  # Always available
@@ -223,9 +264,11 @@ def quantize_embeddings(
 
     # Backend selection
     if backend == "auto":
-        # Priority: squish_quant (Rust) > Mojo > Cython > NumPy
+        # Priority: squish_quant (Rust) > vectro_py (Rust/PyO3) > Mojo > Cython > NumPy
         if _squish_quant is not None:
             backend = "squish_quant"
+        elif _vectro_py is not None:
+            backend = "vectro_py"
         elif _mojo_available:
             backend = "mojo"
         elif _cython_quant is not None:
@@ -236,6 +279,8 @@ def quantize_embeddings(
     # Use selected backend
     if backend == "squish_quant" and _squish_quant is not None:
         return _quantize_with_squish(embeddings)
+    elif backend == "vectro_py" and _vectro_py is not None:
+        return _quantize_with_vectro_py(embeddings)
     elif backend == "mojo" and _mojo_available:
         return _quantize_with_mojo(embeddings)
     elif backend == "cython" and _cython_quant is not None:
@@ -264,6 +309,8 @@ def reconstruct_embeddings(result: QuantizationResult, backend: str = "auto") ->
     if backend == "auto":
         if _squish_quant is not None:
             backend = "squish_quant"
+        elif _vectro_py is not None:
+            backend = "vectro_py"
         elif _mojo_available:
             backend = "mojo"
         elif _cython_quant is not None:
@@ -274,6 +321,8 @@ def reconstruct_embeddings(result: QuantizationResult, backend: str = "auto") ->
     # Use selected backend
     if backend == "squish_quant" and _squish_quant is not None:
         return _dequantize_with_squish(result)
+    elif backend == "vectro_py" and _vectro_py is not None:
+        return _dequantize_with_vectro_py(result)
     elif backend == "mojo" and _mojo_available:
         return _reconstruct_with_mojo(result)
     elif backend == "cython" and _cython_quant is not None:

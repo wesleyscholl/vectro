@@ -1200,6 +1200,73 @@ fn encode_nf4_fast(vec: Vec<f32>) -> PyResult<(Vec<u8>, f32, usize)> {
     Ok((q.packed, q.scale, q.dim))
 }
 
+/// Batch encode a 2-D float32 numpy array [N, D] to INT8 using rayon-parallel
+/// abs-max quantisation with zero per-row heap allocation.
+///
+/// Returns `(codes, scales)` where `codes` is shape [N, D] dtype `int8` and
+/// `scales` is shape [N] dtype `float32` (`abs_max / 127.0` per row).
+///
+/// Zero-copy on C-contiguous input; auto-vectorised inner loop (NEON/AVX2).
+#[pyfunction]
+fn quantize_int8_batch<'py>(
+    py: Python<'py>,
+    vectors: PyReadonlyArray2<f32>,
+) -> PyResult<(&'py PyArray2<i8>, &'py PyArray1<f32>)> {
+    let arr = vectors.as_array();
+    let (n, d) = (arr.nrows(), arr.ncols());
+    let mut codes_flat = vec![0i8; n * d];
+    let mut scales = vec![0.0f32; n];
+    match arr.as_slice() {
+        Some(flat) => {
+            vectro_lib::quant::int8::batch_encode_into(flat, n, d, &mut codes_flat, &mut scales);
+        }
+        None => {
+            let flat: Vec<f32> = arr.iter().copied().collect();
+            vectro_lib::quant::int8::batch_encode_into(&flat, n, d, &mut codes_flat, &mut scales);
+        }
+    }
+    let codes_arr = Array2::from_shape_vec((n, d), codes_flat)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    Ok((codes_arr.into_pyarray(py), Array1::from(scales).into_pyarray(py)))
+}
+
+/// Batch dequantize INT8 codes back to float32.
+///
+/// `codes` shape [N, D] dtype `int8`, `scales` shape [N] dtype `float32`
+/// (`abs_max / 127.0` convention from `quantize_int8_batch`).
+/// Returns float32 array of shape [N, D].
+#[pyfunction]
+fn dequantize_int8_batch<'py>(
+    py: Python<'py>,
+    codes: PyReadonlyArray2<i8>,
+    scales: PyReadonlyArray1<f32>,
+) -> PyResult<&'py PyArray2<f32>> {
+    let c = codes.as_array();
+    let s = scales.as_array();
+    let (n, d) = (c.nrows(), c.ncols());
+    if s.len() != n {
+        return Err(pyo3::exceptions::PyValueError::new_err(format!(
+            "scales length {} != n_vectors {}",
+            s.len(),
+            n
+        )));
+    }
+    let mut out_flat = vec![0.0f32; n * d];
+    match (c.as_slice(), s.as_slice()) {
+        (Some(codes_flat), Some(scales_flat)) => {
+            vectro_lib::quant::int8::batch_decode_into(codes_flat, scales_flat, d, &mut out_flat);
+        }
+        _ => {
+            let codes_flat: Vec<i8> = c.iter().copied().collect();
+            let scales_flat: Vec<f32> = s.iter().copied().collect();
+            vectro_lib::quant::int8::batch_decode_into(&codes_flat, &scales_flat, d, &mut out_flat);
+        }
+    }
+    let out_arr = Array2::from_shape_vec((n, d), out_flat)
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))?;
+    Ok(out_arr.into_pyarray(py))
+}
+
 // ─────────────────────── BM25 + Hybrid Search (v6.0.0) ─────────────────────
 
 /// Okapi BM25 full-text index (Python binding).
@@ -1326,12 +1393,14 @@ fn vectro_py(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(benchmark_search_performance, m)?)?;
     m.add_function(wrap_pyfunction!(encode_int8_fast, m)?)?;
     m.add_function(wrap_pyfunction!(encode_nf4_fast, m)?)?;
+    m.add_function(wrap_pyfunction!(quantize_int8_batch, m)?)?;
+    m.add_function(wrap_pyfunction!(dequantize_int8_batch, m)?)?;
     // BM25 + hybrid search (v6.0.0)
     m.add_class::<PyBM25Index>()?;
     m.add_function(wrap_pyfunction!(hybrid_search_py, m)?)?;
 
     // Add version info
-    m.add("__version__", "4.5.0")?;
+    m.add("__version__", "4.10.0")?;
     m.add("__author__", "Wesley Scholl")?;
     m.add("__description__", "Python bindings for Vectro high-performance vector compression and search")?;
 

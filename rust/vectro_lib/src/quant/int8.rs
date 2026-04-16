@@ -250,6 +250,59 @@ pub fn cosine_int8(query: &[f32], encoded: &Int8Vector) -> f32 {
     if denom == 0.0 { -1.0 } else { dot / denom }
 }
 
+/// Batch encode an N×D f32 matrix (flat row-major) to INT8 without any per-row
+/// heap allocation.
+///
+/// # Arguments
+/// * `input`      — flat f32 slice, length = `n * d`
+/// * `n`, `d`     — number of vectors and dimension
+/// * `codes_out`  — caller-allocated i8 slice, length = `n * d` (written in-place)
+/// * `scales_out` — caller-allocated f32 slice, length = `n`  
+///                  stores `abs_max / 127.0` per row (direct dequant factor)
+///
+/// Uses rayon for row-parallel execution; inner quantisation loop is
+/// auto-vectorised by LLVM (NEON on AArch64, AVX2 on x86-64).
+pub fn batch_encode_into(
+    input: &[f32],
+    _n: usize,
+    d: usize,
+    codes_out: &mut [i8],
+    scales_out: &mut [f32],
+) {
+    input
+        .par_chunks(d)
+        .zip(codes_out.par_chunks_mut(d))
+        .zip(scales_out.par_iter_mut())
+        .for_each(|((row, out_codes), out_scale)| {
+            let abs_max = row.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+            let scale = if abs_max == 0.0 { 1.0 } else { abs_max };
+            let inv = 127.0 / scale;
+            for (c, &v) in out_codes.iter_mut().zip(row.iter()) {
+                *c = (v * inv).round().clamp(-127.0, 127.0) as i8;
+            }
+            *out_scale = scale / 127.0;
+        });
+}
+
+/// Batch decode INT8 codes back to f32 without any per-row heap allocation.
+///
+/// # Arguments
+/// * `codes`  — flat i8 slice, length = `n * d`
+/// * `scales` — per-row scale factors (`abs_max / 127.0`), length = `n`
+/// * `d`      — vector dimension
+/// * `out`    — caller-allocated f32 slice, length = `n * d` (written in-place)
+pub fn batch_decode_into(codes: &[i8], scales: &[f32], d: usize, out: &mut [f32]) {
+    codes
+        .par_chunks(d)
+        .zip(scales.par_iter())
+        .zip(out.par_chunks_mut(d))
+        .for_each(|((row_codes, &scale), out_row)| {
+            for (o, &c) in out_row.iter_mut().zip(row_codes.iter()) {
+                *o = c as f32 * scale;
+            }
+        });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
