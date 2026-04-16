@@ -1,7 +1,7 @@
 # Vectro — Plan
 
-> Last updated: 2026-04-15
-> Current version: **4.6.0** (Python) / **7.1.0** (Rust) — ONNX runtime fixes, 691 tests passing
+> Last updated: 2026-04-16
+> Current version: **4.7.0** (Python) / **7.2.0** (Rust) — JS Bindings Phase 2 complete, 15 JS tests passing, 691 Python tests passing
 
 ---
 
@@ -663,4 +663,57 @@ Critical Rust bug discovered and fixed: `PyEmbeddingDataset` lacked `name = "Emb
 
 ---
 
-*Last updated: 2026 (v7.0.0 complete — IVF/BF16 surface, EmbeddingDataset PyO3 fix, from_file retriever)*
+## v7.1.0 — ONNX Runtime Fixes ✅ COMPLETE (2026-04-15)
+
+> Python 4.6.0 / Rust 7.1.0 — 691 tests passing, 0 failed, 61 skipped
+
+| # | Task | Status |
+|---|------|--------|
+| 1 | `python/onnx_export.py` — fix `_HAVE_ONNX` flag detection and descriptor bug | ✅ |
+| 2 | `tests/test_onnx_export.py` — fix skipped tests, 14 new tests added | ✅ |
+| 3 | Version bumps: Python `4.5.0 → 4.6.0`, Rust `7.0.0 → 7.1.0` | ✅ |
+
+---
+
+## v7.2.0 / v4.7.0 — JS Bindings Phase 2 ✅ COMPLETE (2026-04-16)
+
+> Python 4.7.0 / Rust 7.2.0 / npm 7.2.0 — 691 Python tests passing, 15 JS tests passing
+
+### Deliverables
+
+| # | Task | Status |
+|---|------|--------|
+| 1 | `js/src/vectro_napi.cpp` — 507-line C++ N-API addon: VQZ header parser (64-byte magic + 6 fields), zstd + zlib decompressor, ARM NEON INT8 dequantize, `readVqz()`, `VqzReader` class | ✅ |
+| 2 | `js/binding.gyp` — macOS: explicit zstd include + library paths via `brew --prefix zstd`; Linux: `libzstd-dev` | ✅ |
+| 3 | `js/index.d.ts` — full TypeScript declarations: `VqzHeader`, `VqzData`, `parseHeader`, `parseBody`, `dequantize`, `readVqz`, `VqzReader` | ✅ |
+| 4 | `js/index.js` — `node-gyp-build` entry point | ✅ |
+| 5 | `js/test/basic.js` — 15-test suite: header parse, body split, numeric correctness, file roundtrip, VqzReader lifecycle | ✅ |
+| 6 | `.github/workflows/js-ci.yml` — Node 18+20 matrix on ubuntu-latest + macos-latest; `--ignore-scripts` install + explicit `npm run build` | ✅ |
+| 7 | `js/package.json` version `6.0.0 → 7.2.0` | ✅ |
+| 8 | All version bumps: Python `4.6.0 → 4.7.0`, Rust `7.1.0 → 7.2.0` | ✅ |
+
+### JS Test Results (macOS M3, Node 20.19.4)
+
+```
+parseHeader  ✓  parses valid 64-byte header
+             ✓  throws on buffer too small
+             ✓  throws on bad magic
+             ✓  throws if not a Buffer
+parseBody    ✓  splits body into Int8Array + Float32Array
+             ✓  throws when buffer too small
+dequantize   ✓  numeric correctness against known values
+             ✓  returns Float32Array
+             ✓  throws on mismatched lengths
+             ✓  handles single vector, large dims
+readVqz      ✓  writes then reads a temporary .vqz file
+             ✓  reconstructed values match dequantize output
+             ✓  throws on non-existent file
+VqzReader    ✓  constructor + read + close lifecycle
+             ✓  close then read throws
+────────────────────────────────────────
+All 15 tests passed.
+```
+
+---
+
+*Last updated: 2026-04-16 (v7.2.0 complete — JS Bindings Phase 2, 15 JS tests, Node 18+20 CI)*

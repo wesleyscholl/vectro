@@ -5,7 +5,27 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [7.0.0] — 2026  EmbeddingDataset PyO3 fix, IVF/BF16 Python surface, Retriever from_file
+## [7.2.0] — 2026-04-16  JS Bindings Phase 2: VQZ N-API addon, 15 JS tests, Node 18+20 CI
+
+### Added
+- `js/src/vectro_napi.cpp` — 507-line C++ N-API addon implementing the full v4.7.0 JS surface:
+  - `parseHeader(buffer)` — validates 64-byte VQZ magic + extracts version, compFlag, nVectors, dims, nSubspaces, metadataLen.
+  - `parseBody(buffer, n, dims)` — splits decompressed body into `Int8Array` (quantized codes) + `Float32Array` (per-vector scales) sharing one `ArrayBuffer`.
+  - `dequantize(quantized, scales, dims)` — INT8 → float32; ARM NEON SIMD on arm64, scalar auto-vectorized on x86-64.
+  - `readVqz(path)` — full pipeline: open file, parse header, decompress (zstd/zlib/none), split body.
+  - `VqzReader` class — object-style handle: `constructor(path)`, `read()`, `close()`.
+- `js/index.d.ts` — TypeScript declarations for `VqzHeader`, `VqzData`, `parseHeader`, `parseBody`, `dequantize`, `readVqz`, `VqzReader`.
+- `js/test/basic.js` — 15-test suite: header parse, body split, numeric correctness, file roundtrip, VqzReader lifecycle. All 15 pass.
+- `.github/workflows/js-ci.yml` — Node 18+20 CI matrix on `ubuntu-latest` + `macos-latest`; `libzstd-dev` on Linux, `brew install zstd` on macOS; `--ignore-scripts` install + explicit `npm run build` + `npm test`.
+
+### Changed
+- `js/binding.gyp` — macOS condition: explicit zstd include path (`<!(brew --prefix zstd)/include`) and dylib link (`<!(brew --prefix zstd)/lib/libzstd.dylib`); Linux condition with system `libzstd-dev`.
+- `js/package.json` version `6.0.0 → 7.2.0`.
+- Python package version `4.6.0 → 4.7.0`.
+- `rust/vectro_py` version `7.1.0 → 7.2.0`.
+- Test suite: **691 Python tests passing, 0 failed, 61 skipped** (baseline maintained); **15/15 JS tests passing**.
+
+
 
 ### Added
 - `python/ivf_api.py` — `IVFIndex` and `IVFPQIndex`: Python wrappers for `PyIvfIndex` / `PyIvfPqIndex`; full method surface: `train`, `train_np`, `add`, `add_np`, `delete`, `vacuum`, `search`, `search_np`, `search_with_probe`, `search_filtered_np` (IVFIndex only), `search_for_recall`, `save`, `load`. `_BINDINGS_AVAILABLE` guard pattern; `np.ascontiguousarray` dtype enforcement on all `_np` paths.
