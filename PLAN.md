@@ -1,7 +1,7 @@
 # Vectro — Plan
 
 > Last updated: 2026-04-15
-> Current version: **4.5.0** (Python) / **7.0.0** (Rust) — IVF/BF16 surface, hybrid retriever from_file, EmbeddingDataset PyO3 fix
+> Current version: **4.6.0** (Python) / **7.1.0** (Rust) — ONNX runtime fixes, 691 tests passing
 
 ---
 

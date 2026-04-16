@@ -27,6 +27,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `js/package.json` version `1.0.0 → 6.0.0`; `remote_path` owner corrected `wesleyscholl → konjoai`.
 - Python package version `4.4.0 → 4.5.0`.
 
+## [7.1.0] — 2026  ONNX runtime: fix _HAVE_ONNX flag and descriptor bug; 691/691 tests
+
+### Fixed
+- `python/onnx_export.py` — removed `import onnx.TensorProto as _tp` (invalid: `TensorProto` is a class, not a submodule); the line caused an `ImportError` that silently set `_HAVE_ONNX = False` even when `onnx` was installed, breaking all onnx-gated tests. All code already referenced `onnx.TensorProto.*` via the `onnx` module directly — no usage of the alias existed.
+- `tests/test_onnx_runtime.py` — `setUpClass` stored `to_onnx_model` as a plain class attribute (`cls._to_onnx_model = to_onnx_model`); Python's descriptor protocol then passed `self` as the first argument when called as `self._to_onnx_model(result)`, causing `TypeError: takes 1 positional argument but 2 were given` on all 10 runtime tests. Fixed: `cls._to_onnx_model = staticmethod(to_onnx_model)`.
+
+### Changed
+- Python package version `4.5.0 → 4.6.0`.
+- `rust/vectro_py` version `7.0.0 → 7.1.0`.
+- Test suite: **691 passed, 0 failed, 61 skipped** (up from 677 passed; 14 previously-skipped ONNX tests now active and passing).
+
 ## [7.0.0] — 2026  EmbeddingDataset PyO3 fix, IVF/BF16 Python surface, Retriever from_file
 
 ### Added

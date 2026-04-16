@@ -69,7 +69,7 @@ class TestOnnxRuntimeIntegration(unittest.TestCase):
         from python.onnx_export import to_onnx_model
 
         cls._ort = ort
-        cls._to_onnx_model = to_onnx_model
+        cls._to_onnx_model = staticmethod(to_onnx_model)
 
     def _session(self, result: _QResult):
         model = self._to_onnx_model(result)

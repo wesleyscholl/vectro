@@ -42,7 +42,6 @@ import numpy as np
 try:
     import onnx  # type: ignore[import]
     import onnx.helper as _oh  # type: ignore[import]
-    import onnx.TensorProto as _tp  # type: ignore[import]
 
     _HAVE_ONNX = True
 except ImportError:
