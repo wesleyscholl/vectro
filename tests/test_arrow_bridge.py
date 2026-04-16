@@ -213,7 +213,15 @@ class TestResultToTable(unittest.TestCase):
     """result_to_table builds the correct column structure."""
 
     def setUp(self):
-        sys.modules.setdefault("pyarrow", _pyarrow_mock)
+        self._pyarrow_was_present = "pyarrow" in sys.modules
+        self._pyarrow_orig = sys.modules.get("pyarrow")
+        sys.modules["pyarrow"] = _pyarrow_mock
+
+    def tearDown(self):
+        if self._pyarrow_was_present:
+            sys.modules["pyarrow"] = self._pyarrow_orig
+        else:
+            sys.modules.pop("pyarrow", None)
 
     def test_batch_result_column_count(self):
         from python.integrations.arrow_bridge import result_to_table
@@ -282,7 +290,15 @@ class TestTableToResult(unittest.TestCase):
     """table_to_result reconstructs a BatchQuantizationResult."""
 
     def setUp(self):
-        sys.modules.setdefault("pyarrow", _pyarrow_mock)
+        self._pyarrow_was_present = "pyarrow" in sys.modules
+        self._pyarrow_orig = sys.modules.get("pyarrow")
+        sys.modules["pyarrow"] = _pyarrow_mock
+
+    def tearDown(self):
+        if self._pyarrow_was_present:
+            sys.modules["pyarrow"] = self._pyarrow_orig
+        else:
+            sys.modules.pop("pyarrow", None)
 
     def _roundtrip(self, n: int = 4, dim: int = 8) -> BatchQuantizationResult:
         from python.integrations.arrow_bridge import result_to_table, table_to_result
@@ -336,7 +352,15 @@ class TestArrowBytes(unittest.TestCase):
     """to_arrow_bytes / from_arrow_bytes IPC wire round-trip."""
 
     def setUp(self):
-        sys.modules.setdefault("pyarrow", _pyarrow_mock)
+        self._pyarrow_was_present = "pyarrow" in sys.modules
+        self._pyarrow_orig = sys.modules.get("pyarrow")
+        sys.modules["pyarrow"] = _pyarrow_mock
+
+    def tearDown(self):
+        if self._pyarrow_was_present:
+            sys.modules["pyarrow"] = self._pyarrow_orig
+        else:
+            sys.modules.pop("pyarrow", None)
 
     def test_bytes_nonempty(self):
         from python.integrations.arrow_bridge import to_arrow_bytes

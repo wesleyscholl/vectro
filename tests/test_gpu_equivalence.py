@@ -41,9 +41,14 @@ class TestGPUEquivalence(unittest.TestCase):
     """Numerical equivalence between gpu_api and interface reference paths."""
 
     def test_quantize_int8_batch_scales_match_interface(self):
-        """gpu_api scales ≈ interface scales (atol=1e-5)."""
+        """gpu_api scales ≈ interface numpy-path scales (atol=1e-5).
+
+        gpu_api uses scale = abs_max / 127.  The Rust squish_quant backend
+        uses scale = abs_max (raw abs-max, divide by 127 at decode time).
+        Force backend='numpy' so both sides share the abs_max/127 convention.
+        """
         q_gpu, s_gpu = quantize_int8_batch(_VECS)
-        result_ref = quantize_embeddings(_VECS)
+        result_ref = quantize_embeddings(_VECS, backend="numpy")
 
         np.testing.assert_allclose(
             s_gpu,

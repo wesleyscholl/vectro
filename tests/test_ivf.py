@@ -54,6 +54,7 @@ class TestIVFIndexUnit:
             MockClass.return_value = mock_instance
             idx = IVFIndex.__new__(IVFIndex)
             idx._inner = mock_instance
+            idx._count = 0
             return idx, mock_instance
 
     def test_train_delegates(self):

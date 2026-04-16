@@ -79,6 +79,7 @@ class IVFIndex:
     def __init__(self, n_lists: int, n_probe: int) -> None:
         _require_bindings()
         self._inner = _PyIvfIndex(n_lists, n_probe)
+        self._count: int = 0
 
     # ------------------------------------------------------------------
     # Training
@@ -109,12 +110,15 @@ class IVFIndex:
 
     def add(self, vector: List[float]) -> int:
         """Add a single vector; returns its global integer id."""
-        return self._inner.add(vector)
+        result = self._inner.add(vector)
+        self._count += 1
+        return result
 
     def add_np(self, array: np.ndarray) -> None:
         """Zero-copy batch insert from a 2-D float32 numpy array ``(N, D)``."""
         arr = np.ascontiguousarray(array, dtype=np.float32)
         self._inner.add_np(arr)
+        self._count += arr.shape[0]
 
     # ------------------------------------------------------------------
     # Search
@@ -172,7 +176,9 @@ class IVFIndex:
 
     def vacuum(self) -> int:
         """Permanently remove soft-deleted vectors.  Returns count removed."""
-        return self._inner.vacuum()
+        removed = self._inner.vacuum()
+        self._count -= removed
+        return removed
 
     # ------------------------------------------------------------------
     # Persistence
@@ -188,13 +194,14 @@ class IVFIndex:
         _require_bindings()
         obj = cls.__new__(cls)
         obj._inner = _PyIvfIndex.load(path)
+        obj._count = len(obj._inner) if hasattr(obj._inner, "__len__") else 0
         return obj
 
     def __repr__(self) -> str:
         return repr(self._inner)
 
     def __len__(self) -> int:
-        return len(self._inner) if hasattr(self._inner, "__len__") else 0
+        return self._count
 
 
 class IVFPQIndex:
