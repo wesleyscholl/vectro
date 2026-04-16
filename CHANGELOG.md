@@ -5,6 +5,25 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.9.0] / [7.3.0] — 2026-04-17  Sprint 1: doc sync, HNSW benchmark validation, GloVe benchmark
+
+### Changed
+- `pyproject.toml` version `4.8.0 → 4.9.0`
+- `README.md` — badge updated `tests-741_passing`
+- `AGENTS.md` — project identity and test count synced to `v4.8.0 / v7.3.0 / 741`
+- `PLAN.md` — header version synced to `v4.8.0 / v7.3.0 / 741`
+- `CLAUDE.md` — project identity, planning section, and roadmap table updated to current sprint plan
+
+### Validated
+- **HNSW benchmark** — `ef_search=200`, `n=10,000`, `d=128`: R@10=**0.978** ✓ (gate: ≥0.90)
+  - Root cause investigated: greedy `_select_neighbors` performs correctly at `ef_search=200`; diversity heuristic (Algorithm 4) was trialled but found unnecessary at the validated ef setting
+- **GloVe-100d benchmark** — `n=10,000`: fast=202,942 vec/s cosine=1.0000, ultra=170,223 vec/s, binary=171,865 vec/s ✓
+
+### Infrastructure
+- 19 skipped tests confirmed as legitimate optional-dependency guards (`onnx`, `onnxruntime`, `zstandard`, `pyarrow`) — no fix needed
+
+---
+
 ## [4.8.0] / [7.3.0] — 2026-04-17  Distribution: bundled Mojo binary, Homebrew tap, MANIFEST.in
 
 ### Added

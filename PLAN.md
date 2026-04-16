@@ -1,7 +1,7 @@
 # Vectro — Plan
 
 > Last updated: 2026-04-16
-> Current version: **4.7.0** (Python) / **7.2.0** (Rust) — JS Bindings Phase 2 complete, 15 JS tests passing, 691 Python tests passing
+> Current version: **4.8.0** (Python) / **7.3.0** (Rust) — Distribution complete, bundled Mojo binary, 741 Python tests passing
 
 ---
 

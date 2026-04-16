@@ -196,7 +196,7 @@ class HNSWIndex:
         candidates: List[Tuple[float, int]],
         M: int,
     ) -> List[int]:
-        """Return IDs of the M nearest candidates (simple greedy selection)."""
+        """Return IDs of the M nearest candidates (greedy nearest-first)."""
         return [nid for _, nid in candidates[:M]]
 
     # ------------------------------------------------------------------
@@ -248,7 +248,7 @@ class HNSWIndex:
                     cands = [(self._distance(nb_vec, self._vectors[c]), c)
                              for c in nb_nbrs + [node_id]]
                     cands.sort()
-                    self._neighbors[nb][lc] = [c for _, c in cands[:M_cap]]
+                    self._neighbors[nb][lc] = self._select_neighbors(cands, M_cap)
 
             # Use current W as entry points for the next (lower) layer
             ep = [nid for _, nid in W]

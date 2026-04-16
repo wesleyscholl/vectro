@@ -186,7 +186,7 @@ Do not proceed if:
 ### 📍 Project Identity
 
 **Vectro** is a **Mojo-first, production-grade embedding compression library.**  
-Current version: **v4.6.0 (Python API) / v7.1.0 (Rust crates)** — 691/691 tests passing.  
+Current version: **v4.8.0 (Python API) / v7.3.0 (Rust crates)** — 741/741 tests passing.  
 Performance target: **≥ 10M vec/s INT8 on Apple Silicon** (baseline: 12.5M+ vec/s, 4.85× FAISS C++).
 
 ---
@@ -316,7 +316,7 @@ cd js && npm install && npm run build
 | IVF/BF16/Retriever surface | v4.5.0 / v7.0.0 | ✅ COMPLETE — `IVFIndex`, `IVFPQIndex`, `Bf16Encoder`, `from_file`/`from_jsonl`, type stubs, npm bump | 677/677 passing |
 | ONNX runtime fixes | v4.6.0 / v7.1.0 | ✅ COMPLETE — `_HAVE_ONNX` flag bug, descriptor protocol bug, 14 new passes | 691/691 passing |
 | JS Bindings P2 | v4.7.0 / v7.2.0 | ✅ COMPLETE — `js/src/vectro_napi.cpp` (507 lines), `.vqz` parser + zstd + SIMD INT8 dequantize, `VqzReader` class, 15/15 JS tests, Node 18+20 CI | 691 Python + 15 JS tests passing |
-| Distribution | v4.8.0 / v7.3.0 | ✅ COMPLETE — Mojo binary bundled in macOS ARM64 + Linux x86_64 wheels; `_mojo_bridge.py` wheel-local search path; `MANIFEST.in`; `homebrew-tap.yml` auto-update workflow | 691 Python + 15 JS tests passing |
+| Distribution | v4.8.0 / v7.3.0 | ✅ COMPLETE — Mojo binary bundled in macOS ARM64 + Linux x86_64 wheels; `_mojo_bridge.py` wheel-local search path; `MANIFEST.in`; `homebrew-tap.yml` auto-update workflow | 741 Python + 15 JS tests passing |
 | v5.0 / v8.0 Design | v5.0.0 / v8.0.0 | Architecture ADR: LLM embedding pipeline (<1 ms), WASM target, model-type-aware AutoQuantize profiles, Rust CLI fate decision | ADR committed before first implementation line |
 
 **Bundled binary note:** `python/_mojo_bridge.py` `_find_binary()` must always have `pathlib.Path(__file__).parent / _BINARY_NAME` as the **first** candidate. This is what makes the installed wheel self-contained. Never reorder the candidates list without verifying wheel smoke-test passes.

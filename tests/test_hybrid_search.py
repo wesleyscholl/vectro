@@ -6,6 +6,7 @@ All tests use small synthetic datasets so they run without any model or GPU.
 from __future__ import annotations
 
 import math
+import numpy as np
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -36,17 +37,18 @@ pytestmark = pytest.mark.skipif(
 def _make_dataset(ids: list[str], vectors: list[list[float]]) -> "EmbeddingDataset":
     ds = EmbeddingDataset()
     for doc_id, vec in zip(ids, vectors):
-        emb = PyEmbedding(doc_id, vec)
-        ds.add(emb)
+        emb = PyEmbedding(doc_id, np.array(vec, dtype=np.float32))
+        ds.add_embedding(emb)
     return ds
 
 
-def _unit(v: list[float]) -> list[float]:
-    """Return L2-normalised copy of *v*."""
-    norm = math.sqrt(sum(x * x for x in v))
+def _unit(v: list[float]) -> np.ndarray:
+    """Return L2-normalised copy of *v* as a float32 numpy array."""
+    arr = np.array(v, dtype=np.float32)
+    norm = float(np.linalg.norm(arr))
     if norm == 0.0:
-        return v
-    return [x / norm for x in v]
+        return arr
+    return (arr / norm).astype(np.float32)
 
 
 # Corpus: 4 docs, 3-dimensional embeddings
@@ -142,7 +144,7 @@ def test_alpha_0_bm25_dominant(corpus):
     """'machine learning' query → doc_b or doc_c should appear in top-2."""
     dataset, bm25 = corpus
     results = hybrid_search_py(
-        dataset, bm25, [0, 0, 0], "machine learning", k=2, alpha=0.0
+        dataset, bm25, np.array([0, 0, 0], dtype=np.float32), "machine learning", k=2, alpha=0.0
     )
     top_ids = {r[0] for r in results}
     assert len(top_ids & {"doc_b", "doc_c"}) > 0, (
@@ -173,7 +175,7 @@ def test_oov_query_text(corpus):
 def test_empty_query_vector_bm25_only(corpus):
     """Empty query vector with alpha=0.0 must work (BM25-only path)."""
     dataset, bm25 = corpus
-    results = hybrid_search_py(dataset, bm25, [], "machine learning", k=4, alpha=0.0)
+    results = hybrid_search_py(dataset, bm25, np.array([], dtype=np.float32), "machine learning", k=4, alpha=0.0)
     assert len(results) > 0
 
 

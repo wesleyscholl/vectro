@@ -7,6 +7,7 @@ offline with a `maturin develop`-built `vectro_py` wheel.
 from __future__ import annotations
 
 import math
+import numpy as np
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -43,7 +44,7 @@ def _unit(v: list[float]) -> list[float]:
 def _make_dataset(ids: list[str], vecs: list[list[float]]) -> "EmbeddingDataset":
     ds = EmbeddingDataset()
     for doc_id, vec in zip(ids, vecs):
-        ds.add(PyEmbedding(doc_id, vec))
+        ds.add_embedding(PyEmbedding(doc_id, np.array(vec, dtype=np.float32)))
     return ds
 
 
@@ -63,7 +64,7 @@ VECS = [
 ]
 
 # Simple mock embed function that returns fixed vector regardless of query
-_MOCK_EMBED_FN = lambda q: _unit([1.0, 0.1, 0.0])  # noqa: E731
+_MOCK_EMBED_FN = lambda q: np.array(_unit([1.0, 0.1, 0.0]), dtype=np.float32)  # noqa: E731
 
 
 # ---------------------------------------------------------------------------

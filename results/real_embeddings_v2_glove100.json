@@ -1,0 +1,26 @@
+{
+  "benchmark": "real_embeddings_v2",
+  "dataset": "glove-100",
+  "n_vectors": 10000,
+  "d": 100,
+  "modes": {
+    "fast": {
+      "throughput_vec_per_sec": 202942,
+      "mean_cosine_similarity": 0.999973,
+      "compression_ratio": 3.8461538461538463,
+      "best_time_sec": 0.0493
+    },
+    "ultra": {
+      "throughput_vec_per_sec": 170223,
+      "mean_cosine_similarity": 0.99997,
+      "compression_ratio": 3.8461538461538463,
+      "best_time_sec": 0.0587
+    },
+    "binary": {
+      "throughput_vec_per_sec": 171865,
+      "mean_cosine_similarity": 0.99997,
+      "compression_ratio": 3.8461538461538463,
+      "best_time_sec": 0.0582
+    }
+  }
+}

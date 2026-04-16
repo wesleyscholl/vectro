@@ -18,7 +18,7 @@ This file defines standing instructions for all AI and human contributors workin
 
 ## 🗂️ Planning First
 
-- **Always read `PLAN.md` at the repo root before starting any task.** There is no `docs/planning/PLAN.md`; the authoritative roadmap is `/PLAN.md`. Current active version: **v3.6.0** (all 16 phases complete).
+- **Always read `PLAN.md` at the repo root before starting any task.** There is no `docs/planning/PLAN.md`; the authoritative roadmap is `/PLAN.md`. Current active version: **v4.8.0 (Python API) / v7.3.0 (Rust crates)** — 741 tests passing.
 - Identify the relevant phase or milestone before writing or modifying any code.
 - After completing work, update `PLAN.md`, `CHANGELOG.md`, and `README.md` to reflect what changed, what is done, and what is next.
 - If a task deviates from the current plan, call it out explicitly before continuing.
@@ -186,7 +186,7 @@ Do not proceed if:
 ### 📍 Project Identity
 
 **Vectro** is a **Mojo-first, production-grade embedding compression library.**  
-Current version: **v3.6.0** — all 16 phases complete, 598/598 tests passing.  
+Current version: **v4.8.0 (Python API) / v7.3.0 (Rust crates)** — 741/741 tests passing.  
 Performance target: **≥ 10M vec/s INT8 on Apple Silicon** (baseline: 12.5M+ vec/s, 4.85× FAISS C++).
 
 ---
@@ -307,14 +307,15 @@ cd js && npm install && npm run build
 
 ---
 
-### 🗺️ Roadmap (Active — as of v3.6.0)
+### 🗺️ Roadmap (Active — as of v4.8.0 / v7.3.0)
 
 | Phase | Target Version | Focus | Ship Gate |
 |-------|---------------|-------|-----------|
-| Hardening | v3.7.0 | Fix sklearn CI failures; run `benchmark_ann_comparison.py` + `benchmark_real_embeddings_v2.py`; verify PyPI publish pipeline; promote ONNX Runtime tests | 598/598 clean, ANN + real-embedding results in `benchmarks/results/` |
-| JS Bindings P2 | v3.8.0 | Implement `js/src/vectro_napi.cpp` — `.vqz` parser, zstd, SIMD INT8 dequantize, wire to `js/index.d.ts` | `npm publish @vectro/core`; Node 18+/20+ CI green on macOS-arm64 + Linux-x64 |
-| Distribution | v3.9.0 | PyPI wheels (bundled Mojo binary or two-tier docs), Homebrew tap, binary CLI releases on GitHub Releases | `pip install vectro` works; `brew install vectro` works |
-| v4.0 Design | v4.0.0 | Architecture ADR: LLM embedding pipeline (<1 ms), WASM target, model-type-aware AutoQuantize profiles, Rust CLI fate decision | ADR committed before first implementation line |
+| IVF/BF16/Retriever surface | v4.5.0 / v7.0.0 | ✅ COMPLETE — `IVFIndex`, `IVFPQIndex`, `Bf16Encoder`, `from_file`/`from_jsonl`, type stubs, npm bump | 677/677 passing |
+| ONNX runtime fixes | v4.6.0 / v7.1.0 | ✅ COMPLETE — `_HAVE_ONNX` flag bug, descriptor protocol bug, 14 new passes | 691/691 passing |
+| JS Bindings P2 | v4.7.0 / v7.2.0 | ✅ COMPLETE — `js/src/vectro_napi.cpp` (507 lines), `.vqz` parser + zstd + SIMD INT8 dequantize, `VqzReader` class, 15/15 JS tests, Node 18+20 CI | 691 Python + 15 JS tests passing |
+| Distribution | v4.8.0 / v7.3.0 | ✅ COMPLETE — Mojo binary bundled in macOS ARM64 + Linux x86_64 wheels; `_mojo_bridge.py` wheel-local search path; `MANIFEST.in`; `homebrew-tap.yml` auto-update workflow | 741 Python + 15 JS tests passing |
+| v5.0 / v8.0 Design | v5.0.0 / v8.0.0 | Architecture ADR: LLM embedding pipeline (<1 ms), WASM target, model-type-aware AutoQuantize profiles, Rust CLI fate decision | ADR committed before first implementation line |
 
 ---
 
