@@ -186,7 +186,7 @@ Do not proceed if:
 ### 📍 Project Identity
 
 **Vectro** is a **Mojo-first, production-grade embedding compression library.**  
-Current version: **v3.6.0** — all 16 phases complete, 598/598 tests passing.  
+Current version: **v4.5.0 (Python API) / v7.0.0 (Rust crates)** — 677/677 tests passing.  
 Performance target: **≥ 10M vec/s INT8 on Apple Silicon** (baseline: 12.5M+ vec/s, 4.85× FAISS C++).
 
 ---
@@ -197,6 +197,8 @@ Performance target: **≥ 10M vec/s INT8 on Apple Silicon** (baseline: 12.5M+ ve
 |-------|----------|----------|------|
 | SIMD hot paths | **Mojo** | `src/vectro_mojo/` | All quantization + dequantization inner loops live here |
 | API bridge | **Python** | `python/` | Thin wrappers; no algorithm logic; delegates to Mojo via pipe IPC |
+| IVF/BF16 wrappers | **Python** | `python/ivf_api.py`, `python/bf16_api.py` | `IVFIndex`, `IVFPQIndex`, `Bf16Encoder` — thin Python wrappers + type stubs |
+| Retriever | **Python** | `python/retriever.py` | `VectroRetriever` with `from_file()` / `from_jsonl()` classmethods |
 | Vector DB connectors | **Python** | `python/integrations/` | One file per DB; mirror the `QdrantConnector` interface exactly |
 | Legacy scaffold | **Rust** | `rust/` | Do NOT add features; do NOT add crates; archive or delete only |
 | JS bindings | **C++ N-API** | `js/src/vectro_napi.cpp` | Phase 2 target: `.vqz` parser + zstd + SIMD INT8 dequantize |
@@ -307,14 +309,15 @@ cd js && npm install && npm run build
 
 ---
 
-### 🗺️ Roadmap (Active — as of v3.6.0)
+### 🗺️ Roadmap (Active — as of v4.5.0 / v7.0.0)
 
 | Phase | Target Version | Focus | Ship Gate |
 |-------|---------------|-------|-----------|
-| Hardening | v3.7.0 | Fix sklearn CI failures; run `benchmark_ann_comparison.py` + `benchmark_real_embeddings_v2.py`; verify PyPI publish pipeline; promote ONNX Runtime tests | 598/598 clean, ANN + real-embedding results in `benchmarks/results/` |
-| JS Bindings P2 | v3.8.0 | Implement `js/src/vectro_napi.cpp` — `.vqz` parser, zstd, SIMD INT8 dequantize, wire to `js/index.d.ts` | `npm publish @vectro/core`; Node 18+/20+ CI green on macOS-arm64 + Linux-x64 |
-| Distribution | v3.9.0 | PyPI wheels (bundled Mojo binary or two-tier docs), Homebrew tap, binary CLI releases on GitHub Releases | `pip install vectro` works; `brew install vectro` works |
-| v4.0 Design | v4.0.0 | Architecture ADR: LLM embedding pipeline (<1 ms), WASM target, model-type-aware AutoQuantize profiles, Rust CLI fate decision | ADR committed before first implementation line |
+| IVF/BF16/Retriever surface | v4.5.0 / v7.0.0 | ✅ COMPLETE — `IVFIndex`, `IVFPQIndex`, `Bf16Encoder`, `from_file`/`from_jsonl`, type stubs, npm bump | 677/677 passing |
+| Hardening | v4.6.0 / v7.1.0 | Fix sklearn CI failures; run `benchmark_ann_comparison.py` + `benchmark_real_embeddings_v2.py`; verify PyPI publish pipeline; promote ONNX Runtime tests | 677/677 clean, ANN + real-embedding results in `benchmarks/results/` |
+| JS Bindings P2 | v4.7.0 / v7.2.0 | Implement `js/src/vectro_napi.cpp` — `.vqz` parser, zstd, SIMD INT8 dequantize, wire to `js/index.d.ts` | `npm publish @vectro/core`; Node 18+/20+ CI green on macOS-arm64 + Linux-x64 |
+| Distribution | v4.8.0 / v7.3.0 | PyPI wheels (bundled Mojo binary or two-tier docs), Homebrew tap, binary CLI releases on GitHub Releases | `pip install vectro` works; `brew install vectro` works |
+| v5.0 / v8.0 Design | v5.0.0 / v8.0.0 | Architecture ADR: LLM embedding pipeline (<1 ms), WASM target, model-type-aware AutoQuantize profiles, Rust CLI fate decision | ADR committed before first implementation line |
 
 ---
 

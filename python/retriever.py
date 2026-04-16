@@ -187,6 +187,212 @@ class VectroRetriever:
         ]
 
     # ------------------------------------------------------------------
+    # Classmethods
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_file(
+        cls,
+        path: str,
+        texts: list[str],
+        ids: list[str],
+        embed_fn=None,
+        alpha: float = 0.7,
+    ) -> "VectroRetriever":
+        """Construct a :class:`VectroRetriever` from a Vectro dataset file.
+
+        Convenience factory that calls :meth:`EmbeddingDataset.load` for you,
+        removing the need to manage the dataset object manually.
+
+        Parameters
+        ----------
+        path : str
+            Path to a ``.stream1`` or ``.qstream1`` file on disk.
+        texts : list[str]
+            Corpus texts in the same order as *ids*.
+        ids : list[str]
+            Document identifiers in the same order as *texts*.
+        embed_fn : callable, optional
+            ``(query: str) -> list[float]`` producing query embeddings.
+        alpha : float
+            Score fusion weight (1.0 = pure dense, 0.0 = pure BM25).
+
+        Returns
+        -------
+        VectroRetriever
+        """
+        if not _BINDINGS_AVAILABLE:
+            raise ImportError(
+                "vectro_py is required.  Build with `maturin develop` first."
+            )
+        dataset = EmbeddingDataset.load(path)
+        return cls(dataset, texts=texts, ids=ids, embed_fn=embed_fn, alpha=alpha)
+
+    @classmethod
+    def from_jsonl(
+        cls,
+        path: str,
+        text_field: str = "text",
+        id_field: str = "id",
+        embed_fn=None,
+        alpha: float = 0.7,
+    ) -> "VectroRetriever":
+        """Construct a :class:`VectroRetriever` from a JSONL corpus file.
+
+        Each line must be a JSON object with at least *id_field* and
+        *text_field* keys.  Embeddings must already be present in the JSONL
+        (any ``"vector"`` field is ignored; use :meth:`from_file` for
+        pre-embedded datasets).
+
+        This factory is intended for text-only BM25 retrieval scenarios where
+        you supply your own *embed_fn* or want BM25-only mode.
+
+        Parameters
+        ----------
+        path : str
+            Path to a ``.jsonl`` file.
+        text_field : str
+            Key used for document text (default ``"text"``).
+        id_field : str
+            Key used for document identifier (default ``"id"``).
+        embed_fn : callable, optional
+            ``(query: str) -> list[float]`` producing query embeddings.
+        alpha : float
+            Score fusion weight.
+
+        Returns
+        -------
+        VectroRetriever
+        """
+        import json
+
+        texts: list[str] = []
+        ids: list[str] = []
+        vectors: list[list[float]] = []
+
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                obj = json.loads(line)
+                texts.append(str(obj[text_field]))
+                ids.append(str(obj[id_field]))
+                if "vector" in obj:
+                    vectors.append(list(obj["vector"]))
+
+        if not _BINDINGS_AVAILABLE:
+            raise ImportError(
+                "vectro_py is required.  Build with `maturin develop` first."
+            )
+
+        dataset = EmbeddingDataset.from_embeddings(ids, vectors) if vectors else EmbeddingDataset.empty()
+        return cls(dataset, texts=texts, ids=ids, embed_fn=embed_fn, alpha=alpha)
+
+    # ------------------------------------------------------------------
+    # Classmethods
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def from_file(
+        cls,
+        path: str,
+        texts: list[str],
+        ids: list[str],
+        embed_fn=None,
+        alpha: float = 0.7,
+    ) -> "VectroRetriever":
+        """Construct a :class:`VectroRetriever` from a Vectro dataset file.
+
+        Convenience factory that calls :meth:`EmbeddingDataset.load` for you,
+        removing the need to manage the dataset object manually.
+
+        Parameters
+        ----------
+        path : str
+            Path to a ``.stream1`` or ``.qstream1`` file on disk.
+        texts : list[str]
+            Corpus texts in the same order as *ids*.
+        ids : list[str]
+            Document identifiers in the same order as *texts*.
+        embed_fn : callable, optional
+            ``(query: str) -> list[float]`` producing query embeddings.
+        alpha : float
+            Score fusion weight (1.0 = pure dense, 0.0 = pure BM25).
+
+        Returns
+        -------
+        VectroRetriever
+        """
+        if not _BINDINGS_AVAILABLE:
+            raise ImportError(
+                "vectro_py is required.  Build with `maturin develop` first."
+            )
+        dataset = EmbeddingDataset.load(path)
+        return cls(dataset, texts=texts, ids=ids, embed_fn=embed_fn, alpha=alpha)
+
+    @classmethod
+    def from_jsonl(
+        cls,
+        path: str,
+        text_field: str = "text",
+        id_field: str = "id",
+        embed_fn=None,
+        alpha: float = 0.7,
+    ) -> "VectroRetriever":
+        """Construct a :class:`VectroRetriever` from a JSONL corpus file.
+
+        Each line must be a JSON object with at least *id_field* and
+        *text_field* keys.  Embeddings must already be present in the JSONL
+        (any ``"vector"`` field is ignored; use :meth:`from_file` for
+        pre-embedded datasets).
+
+        This factory is intended for text-only BM25 retrieval scenarios where
+        you supply your own *embed_fn* or want BM25-only mode.
+
+        Parameters
+        ----------
+        path : str
+            Path to a ``.jsonl`` file.
+        text_field : str
+            Key used for document text (default ``"text"``).
+        id_field : str
+            Key used for document identifier (default ``"id"``).
+        embed_fn : callable, optional
+            ``(query: str) -> list[float]`` producing query embeddings.
+        alpha : float
+            Score fusion weight.
+
+        Returns
+        -------
+        VectroRetriever
+        """
+        import json
+
+        texts: list[str] = []
+        ids: list[str] = []
+        vectors: list[list[float]] = []
+
+        with open(path, encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                obj = json.loads(line)
+                texts.append(str(obj[text_field]))
+                ids.append(str(obj[id_field]))
+                if "vector" in obj:
+                    vectors.append(list(obj["vector"]))
+
+        if not _BINDINGS_AVAILABLE:
+            raise ImportError(
+                "vectro_py is required.  Build with `maturin develop` first."
+            )
+
+        dataset = EmbeddingDataset.from_embeddings(ids, vectors) if vectors else EmbeddingDataset.empty()
+        return cls(dataset, texts=texts, ids=ids, embed_fn=embed_fn, alpha=alpha)
+
+    # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
 

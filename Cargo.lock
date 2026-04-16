@@ -614,7 +614,7 @@ dependencies = [
 
 [[package]]
 name = "generators"
-version = "5.0.0"
+version = "6.0.0"
 dependencies = [
  "clap",
  "rand 0.8.5",
@@ -2423,7 +2423,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vectro_cli"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2446,7 +2446,7 @@ dependencies = [
 
 [[package]]
 name = "vectro_lib"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "anyhow",
  "bincode",
@@ -2464,7 +2464,7 @@ dependencies = [
 
 [[package]]
 name = "vectro_py"
-version = "6.0.0"
+version = "7.0.0"
 dependencies = [
  "ndarray",
  "numpy",

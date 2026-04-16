@@ -1,6 +1,6 @@
 [package]
 name = "vectro_cli"
-version = "6.0.0"
+version = "7.0.0"
 authors = ["Wesley Scholl <128409641+wesleyscholl@users.noreply.github.com>"]
 edition = "2021"
 description = "CLI, web server, and REST API for Vectro vector compression and search"

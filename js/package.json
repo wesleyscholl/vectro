@@ -1,6 +1,6 @@
 {
   "name": "@vectro/core",
-  "version": "1.0.0",
+  "version": "6.0.0",
   "description": "Node.js N-API native addon for reading and dequantizing Vectro .vqz compressed artifacts — Phase 1 per ADR-001.",
   "main": "index.js",
   "types": "index.d.ts",
@@ -24,7 +24,7 @@
   "binary": {
     "module_name": "vectro_napi",
     "module_path": "./build/Release",
-    "remote_path": "https://github.com/wesleyscholl/vectro/releases/download/v{version}/",
+    "remote_path": "https://github.com/konjoai/vectro/releases/download/v{version}/",
     "package_name": "{node_abi}-{platform}-{arch}.tar.gz"
   },
   "keywords": ["vectro", "quantization", "embedding", "compression", "napi"],

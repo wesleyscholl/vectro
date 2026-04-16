@@ -39,7 +39,7 @@ impl PyEmbedding {
 }
 
 /// Python wrapper for EmbeddingDataset
-#[pyclass]
+#[pyclass(name = "EmbeddingDataset")]
 struct PyEmbeddingDataset {
     inner: EmbeddingDataset,
 }
@@ -102,6 +102,40 @@ impl PyEmbeddingDataset {
 
     fn __repr__(&self) -> String {
         format!("PyEmbeddingDataset(size={})", self.inner.len())
+    }
+
+    /// Construct an empty EmbeddingDataset (alias for `new()`).
+    #[staticmethod]
+    fn empty() -> Self {
+        Self { inner: EmbeddingDataset::new() }
+    }
+
+    /// Build an EmbeddingDataset from parallel ids and vector lists.
+    #[staticmethod]
+    fn from_embeddings(
+        ids: Vec<String>,
+        vectors: Vec<Vec<f32>>,
+    ) -> PyResult<Self> {
+        if ids.len() != vectors.len() {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "ids length ({}) != vectors length ({})",
+                ids.len(),
+                vectors.len()
+            )));
+        }
+        let mut ds = EmbeddingDataset::new();
+        for (id, vec) in ids.into_iter().zip(vectors.into_iter()) {
+            ds.add(Embedding::new(id, vec));
+        }
+        Ok(Self { inner: ds })
+    }
+
+    /// Load an EmbeddingDataset from a .stream1 file on disk.
+    #[staticmethod]
+    fn load(path: &str) -> PyResult<Self> {
+        EmbeddingDataset::load(path)
+            .map(|inner| Self { inner })
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e.to_string()))
     }
 }
 
@@ -1297,7 +1331,7 @@ fn vectro_py(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(hybrid_search_py, m)?)?;
 
     // Add version info
-    m.add("__version__", "6.0.0")?;
+    m.add("__version__", "4.5.0")?;
     m.add("__author__", "Wesley Scholl")?;
     m.add("__description__", "Python bindings for Vectro high-performance vector compression and search")?;
 

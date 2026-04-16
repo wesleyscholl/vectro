@@ -5,6 +5,50 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [7.0.0] — 2026  EmbeddingDataset PyO3 fix, IVF/BF16 Python surface, Retriever from_file
+
+### Added
+- `python/ivf_api.py` — `IVFIndex` and `IVFPQIndex`: Python wrappers for `PyIvfIndex` / `PyIvfPqIndex`; full method surface: `train`, `train_np`, `add`, `add_np`, `delete`, `vacuum`, `search`, `search_np`, `search_with_probe`, `search_filtered_np` (IVFIndex only), `search_for_recall`, `save`, `load`. `_BINDINGS_AVAILABLE` guard pattern; `np.ascontiguousarray` dtype enforcement on all `_np` paths.
+- `python/bf16_api.py` — `Bf16Encoder`: Python wrapper for `PyBf16Encoder`; methods: `encode`, `encode_np`, `decode`, `cosine_dist`, `__len__`, `__repr__`.
+- `python/ivf_api.pyi` + `python/bf16_api.pyi` — complete PEP 561 type stubs for both new modules.
+- `python/__init__.py` — added `IVFIndex`, `IVFPQIndex`, `Bf16Encoder` to imports and `__all__`; version bumped `4.4.0 → 4.5.0`.
+- `python/retriever.py` — `VectroRetriever.from_file(path, embed_fn, alpha)` classmethod: loads a saved `EmbeddingDataset` from disk and builds a retriever; `VectroRetriever.from_jsonl(jsonl_path, texts, ids, embed_fn, alpha)` classmethod: builds a retriever from a JSONL embedding file.
+- `python/examples/konjos_integration.py` — end-to-end integration demo for three surface areas: `VectroRetriever.from_jsonl`, `IVFIndex` (train/add/search), `Bf16Encoder` (encode/decode). `_BINDINGS` guard; graceful skip when native bindings absent.
+- `tests/test_ivf.py` — `TestIVFIndexUnit`, `TestIVFPQIndexUnit`, `TestBindingsGuard`, `TestIVFIndexIntegration`, `TestIVFPQIndexIntegration`.
+- `tests/test_bf16.py` — `TestBf16EncoderUnit`, `TestBf16EncoderGuard`, `TestBf16EncoderIntegration`.
+
+### Fixed
+- `rust/vectro_py/src/lib.rs` — `PyEmbeddingDataset` lacked `name = "EmbeddingDataset"` PyO3 alias; all Python code importing `EmbeddingDataset` from `vectro_py` would fail with `AttributeError`. Fixed: `#[pyclass(name = "EmbeddingDataset")]`.
+- `rust/vectro_py/src/lib.rs` — `PyEmbeddingDataset` was missing three staticmethods required by `python/retriever.py`: `empty()`, `from_embeddings(ids, vectors)`, `load(path)`. All three now implemented and exposed.
+
+### Changed
+- Rust crates `vectro_lib`, `vectro_cli`, `vectro_py` bumped `6.0.0 → 7.0.0`.
+- `rust/generators/Cargo.toml` bumped `5.0.0 → 6.0.0` (maintains lag-by-1 cadence).
+- `js/package.json` version `1.0.0 → 6.0.0`; `remote_path` owner corrected `wesleyscholl → konjoai`.
+- Python package version `4.4.0 → 4.5.0`.
+
+## [7.0.0] — 2026  EmbeddingDataset PyO3 fix, IVF/BF16 Python surface, Retriever from_file
+
+### Added
+- `python/ivf_api.py` — `IVFIndex` and `IVFPQIndex`: Python wrappers for `PyIvfIndex` / `PyIvfPqIndex`; full method surface: `train`, `train_np`, `add`, `add_np`, `delete`, `vacuum`, `search`, `search_np`, `search_with_probe`, `search_filtered_np` (IVFIndex only), `search_for_recall`, `save`, `load`. `_BINDINGS_AVAILABLE` guard pattern; `np.ascontiguousarray` dtype enforcement on all `_np` paths.
+- `python/bf16_api.py` — `Bf16Encoder`: Python wrapper for `PyBf16Encoder`; methods: `encode`, `encode_np`, `decode`, `cosine_dist`, `__len__`, `__repr__`.
+- `python/ivf_api.pyi` + `python/bf16_api.pyi` — complete PEP 561 type stubs for both new modules.
+- `python/__init__.py` — added `IVFIndex`, `IVFPQIndex`, `Bf16Encoder` to imports and `__all__`; version bumped `4.4.0 → 4.5.0`.
+- `python/retriever.py` — `VectroRetriever.from_file(path, embed_fn, alpha)` classmethod: loads a saved `EmbeddingDataset` from disk and builds a retriever; `VectroRetriever.from_jsonl(jsonl_path, texts, ids, embed_fn, alpha)` classmethod: builds a retriever from a JSONL embedding file.
+- `python/examples/konjos_integration.py` — end-to-end integration demo for three surface areas: `VectroRetriever.from_jsonl`, `IVFIndex` (train/add/search), `Bf16Encoder` (encode/decode). `_BINDINGS` guard; graceful skip when native bindings absent.
+- `tests/test_ivf.py` — `TestIVFIndexUnit`, `TestIVFPQIndexUnit`, `TestBindingsGuard`, `TestIVFIndexIntegration`, `TestIVFPQIndexIntegration`.
+- `tests/test_bf16.py` — `TestBf16EncoderUnit`, `TestBf16EncoderGuard`, `TestBf16EncoderIntegration`.
+
+### Fixed
+- `rust/vectro_py/src/lib.rs` — `PyEmbeddingDataset` lacked `name = "EmbeddingDataset"` PyO3 alias; all Python code importing `EmbeddingDataset` from `vectro_py` would fail with `AttributeError`. Fixed: `#[pyclass(name = "EmbeddingDataset")]`.
+- `rust/vectro_py/src/lib.rs` — `PyEmbeddingDataset` was missing three staticmethods required by `python/retriever.py`: `empty()`, `from_embeddings(ids, vectors)`, `load(path)`. All three now implemented and exposed.
+
+### Changed
+- Rust crates `vectro_lib`, `vectro_cli`, `vectro_py` bumped `6.0.0 → 7.0.0`.
+- `rust/generators/Cargo.toml` bumped `5.0.0 → 6.0.0` (maintains lag-by-1 cadence).
+- `js/package.json` version `1.0.0 → 6.0.0`; `remote_path` owner corrected `wesleyscholl → konjoai`.
+- Python package version `4.4.0 → 4.5.0`.
+
 ## [6.0.0] — 2026  BM25+dense hybrid search, VectroRetriever, RetrieverProtocol
 
 ### Added

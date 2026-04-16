@@ -1,7 +1,7 @@
 # Vectro — Plan
 
 > Last updated: 2026-04-15
-> Current version: **4.4.0** — vectro-plus merge complete
+> Current version: **4.5.0** (Python) / **7.0.0** (Rust) — IVF/BF16 surface, hybrid retriever from_file, EmbeddingDataset PyO3 fix
 
 ---
 
@@ -605,3 +605,62 @@ Close the last gap between code-complete and accuracy-validated across the v4.x 
 *Created: 2026-03-11*
 *Last updated: 2026 (v5.0.0 complete — RQ quantization, auto_select_format, PQSTREAM1/RQSTREAM1 load)*
 *Codebase audited at commit: v5.0.0 tag*
+
+---
+
+## v6.0.0 — BM25+Dense Hybrid Search, VectroRetriever ✅ COMPLETE
+
+### Summary
+Added Okapi BM25 inverted index in vectro_lib, PyO3 `PyBM25Index` binding, `hybrid_search` fusion function (alpha-blended BM25+cosine), and the Python `VectroRetriever` / `RetrieverProtocol` / `RetrievalResult` layer. 650 pytest + 155 cargo tests passing.
+
+### Completed Items
+| # | Item | Status |
+|---|------|--------|
+| 1 | `rust/vectro_lib/src/index/bm25.rs` — `BM25Index` with `build_from_texts`, `top_k`, `score_doc`, `idf` | ✅ |
+| 2 | `rust/vectro_lib/src/lib.rs` — `search::hybrid_search` (min-max normalised fusion) | ✅ |
+| 3 | `rust/vectro_py/src/lib.rs` — `PyBM25Index`, `hybrid_search_py` | ✅ |
+| 4 | `python/retriever.py` — `VectroRetriever`, `RetrieverProtocol`, `RetrievalResult` | ✅ |
+| 5 | `tests/test_hybrid_search.py` + `tests/test_retriever.py` | ✅ |
+| 6 | Rust crates bumped to `6.0.0`; Python to `4.4.0` | ✅ |
+
+---
+
+## v7.0.0 — EmbeddingDataset PyO3 Fix, IVF/BF16 Surface, Retriever from_file ✅ COMPLETE
+
+### Summary
+Five parallel tracks: (A) `VectroRetriever.from_file` / `from_jsonl` classmethods; (B) Python wrappers for `PyIvfIndex`, `PyIvfPqIndex`, `PyBf16Encoder`; (C) `@vectro/core` npm version + remote_path fix; (D) vectro-plus archival (manual GitHub UI); (E) Rust version bumps, docs, CHANGELOG.
+
+Critical Rust bug discovered and fixed: `PyEmbeddingDataset` lacked `name = "EmbeddingDataset"` alias and three required staticmethods (`load`, `from_embeddings`, `empty`), causing all Track A classmethods to fail at runtime.
+
+### Completed Items
+| # | Item | Status |
+|---|------|--------|
+| 1 | `rust/vectro_py/src/lib.rs` — `#[pyclass(name = "EmbeddingDataset")]` alias on `PyEmbeddingDataset` | ✅ |
+| 2 | `rust/vectro_py/src/lib.rs` — `#[staticmethod] empty()`, `from_embeddings(ids, vectors)`, `load(path)` | ✅ |
+| 3 | `python/retriever.py` — `VectroRetriever.from_file()` + `from_jsonl()` classmethods (Track A) | ✅ |
+| 4 | `python/ivf_api.py` — `IVFIndex` + `IVFPQIndex` wrappers (~310 lines) (Track B) | ✅ |
+| 5 | `python/bf16_api.py` — `Bf16Encoder` wrapper (~110 lines) (Track B) | ✅ |
+| 6 | `python/__init__.py` — 3 new imports, 7 `__all__` entries, version `4.4.0→4.5.0` (Track B) | ✅ |
+| 7 | `tests/test_ivf.py` — unit + integration suite (Track B) | ✅ |
+| 8 | `tests/test_bf16.py` — unit + integration suite (Track B) | ✅ |
+| 9 | `js/package.json` — version `1.0.0→6.0.0`, remote_path `wesleyscholl→konjoai` (Track C) | ✅ |
+| 10 | `rust/vectro_lib/Cargo.toml`, `vectro_cli/Cargo.toml`, `vectro_py/Cargo.toml` — `6.0.0→7.0.0` (Track E) | ✅ |
+| 11 | `rust/generators/Cargo.toml` — `5.0.0→6.0.0` (Track E) | ✅ |
+| 12 | `python/examples/konjos_integration.py` — end-to-end integration demo (Track A) | ✅ |
+| 13 | `python/ivf_api.pyi` + `python/bf16_api.pyi` — type stubs (Track B) | ✅ |
+| 14 | PLAN.md + CHANGELOG.md updated (Track E) | ✅ |
+| 15 | Track D — vectro-plus GitHub archival | ⚠️ Manual (GitHub UI — user action) |
+
+### New Module Registry (post v7.0.0)
+| Module | Purpose |
+|--------|---------|
+| `python/retriever.py` | `VectroRetriever`, `RetrieverProtocol`, `RetrievalResult` + `from_file`/`from_jsonl` |
+| `python/ivf_api.py` | `IVFIndex`, `IVFPQIndex` — Python wrappers for Rust IVF bindings |
+| `python/bf16_api.py` | `Bf16Encoder` — Python wrapper for Rust BF16 bindings |
+| `python/ivf_api.pyi` | Type stubs for ivf_api |
+| `python/bf16_api.pyi` | Type stubs for bf16_api |
+| `python/examples/konjos_integration.py` | End-to-end demo: Retriever + IVF + BF16 |
+
+---
+
+*Last updated: 2026 (v7.0.0 complete — IVF/BF16 surface, EmbeddingDataset PyO3 fix, from_file retriever)*

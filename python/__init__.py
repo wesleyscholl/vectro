@@ -93,8 +93,11 @@ from .codebook_api import Codebook
 from .auto_quantize_api import auto_quantize
 from .storage_v3 import save_vqz, load_vqz, save_compressed, load_compressed, VQZResult
 from .onnx_export import to_onnx_model, export_onnx
+from .retriever import VectroRetriever, RetrieverProtocol, RetrievalResult
+from .ivf_api import IVFIndex, IVFPQIndex
+from .bf16_api import Bf16Encoder
 
-__version__ = "4.4.0"
+__version__ = "4.5.0"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"
@@ -194,6 +197,16 @@ __all__ = [
     # ONNX export
     "to_onnx_model",
     "export_onnx",
+
+    # Hybrid retrieval
+    "VectroRetriever",
+    "RetrieverProtocol",
+    "RetrievalResult",
+    # IVF approximate nearest-neighbour indices
+    "IVFIndex",
+    "IVFPQIndex",
+    # BFloat16 vector store
+    "Bf16Encoder",
 
     # Utilities
     "get_version_info"
