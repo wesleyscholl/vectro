@@ -214,6 +214,175 @@ unsafe fn encode_neon(v: &[f32]) -> Int8Vector {
     Int8Vector { codes, scale }
 }
 
+/// NEON-vectorised in-place INT8 encode: writes quantised codes directly into
+/// `out` and returns `abs_max`.  Eliminates per-row heap allocation in batch
+/// workloads.  Algorithm is identical to `encode_neon`; only the output
+/// destination changes.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+unsafe fn encode_neon_into(v: &[f32], out: &mut [i8]) -> f32 {
+    use std::arch::aarch64::*;
+
+    let n = v.len();
+    if n == 0 {
+        return 1.0;
+    }
+    let ptr = v.as_ptr();
+    let out_ptr = out.as_mut_ptr();
+
+    // ── Pass 1: NEON abs-max ────────────────────────────────────────────────
+    let mut vmax = vdupq_n_f32(0.0_f32);
+    let chunks4 = n / 4;
+    for i in 0..chunks4 {
+        let a = vld1q_f32(ptr.add(i * 4));
+        vmax = vmaxq_f32(vmax, vabsq_f32(a));
+    }
+    let mut abs_max = vmaxvq_f32(vmax);
+    for &x in &v[chunks4 * 4..] {
+        let ax = x.abs();
+        if ax > abs_max {
+            abs_max = ax;
+        }
+    }
+
+    let scale = if abs_max == 0.0 { 1.0_f32 } else { abs_max };
+    let inv = 127.0_f32 / scale;
+    let vinv = vdupq_n_f32(inv);
+
+    // ── Pass 2: quantise f32 → i8, writing directly to `out` ───────────────
+    let chunks16 = n / 16;
+    for i in 0..chunks16 {
+        let base = i * 16;
+        let r0 = vrndnq_f32(vmulq_f32(vld1q_f32(ptr.add(base     )), vinv));
+        let r1 = vrndnq_f32(vmulq_f32(vld1q_f32(ptr.add(base +  4)), vinv));
+        let r2 = vrndnq_f32(vmulq_f32(vld1q_f32(ptr.add(base +  8)), vinv));
+        let r3 = vrndnq_f32(vmulq_f32(vld1q_f32(ptr.add(base + 12)), vinv));
+        let i0 = vcvtq_s32_f32(r0);
+        let i1 = vcvtq_s32_f32(r1);
+        let i2 = vcvtq_s32_f32(r2);
+        let i3 = vcvtq_s32_f32(r3);
+        let s01 = vcombine_s16(vmovn_s32(i0), vmovn_s32(i1));
+        let s23 = vcombine_s16(vmovn_s32(i2), vmovn_s32(i3));
+        let b0  = vqmovn_s16(s01);
+        let b1  = vqmovn_s16(s23);
+        vst1q_s8(out_ptr.add(base), vcombine_s8(b0, b1));
+    }
+    // scalar tail
+    for i in chunks16 * 16..n {
+        *out_ptr.add(i) = (v[i] * inv).round().clamp(-127.0, 127.0) as i8;
+    }
+
+    scale
+}
+
+/// AVX2-vectorised in-place INT8 encode: writes quantised codes directly into
+/// `out` and returns `abs_max`.  Algorithm is identical to `encode_avx2`.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn encode_avx2_into(v: &[f32], out: &mut [i8]) -> f32 {
+    use std::arch::x86_64::*;
+
+    let n = v.len();
+    if n == 0 {
+        return 1.0;
+    }
+    let ptr = v.as_ptr();
+    let out_ptr = out.as_mut_ptr();
+
+    // ── Pass 1: abs-max reduction ────────────────────────────────────────────
+    let sign_mask = _mm256_set1_ps(-0.0_f32);
+    let mut vmax256 = _mm256_setzero_ps();
+    let chunks8 = n / 8;
+    for i in 0..chunks8 {
+        let a = _mm256_loadu_ps(ptr.add(i * 8));
+        let abs_a = _mm256_andnot_ps(sign_mask, a);
+        vmax256 = _mm256_max_ps(vmax256, abs_a);
+    }
+    let hi128   = _mm256_extractf128_ps(vmax256, 1);
+    let lo128   = _mm256_castps256_ps128(vmax256);
+    let max128  = _mm_max_ps(hi128, lo128);
+    let m2      = _mm_movehl_ps(max128, max128);
+    let m3      = _mm_max_ps(max128, m2);
+    let m4      = _mm_shuffle_ps(m3, m3, 0x55);
+    let m5      = _mm_max_ps(m3, m4);
+    let mut abs_max = _mm_cvtss_f32(m5);
+    for &x in &v[chunks8 * 8..] {
+        let ax = x.abs();
+        if ax > abs_max {
+            abs_max = ax;
+        }
+    }
+
+    let scale = if abs_max == 0.0 { 1.0_f32 } else { abs_max };
+    let inv   = 127.0_f32 / scale;
+    let vinv  = _mm256_set1_ps(inv);
+
+    // ── Pass 2: quantise f32 → i8, writing directly to `out` ────────────────
+    for i in 0..chunks8 {
+        let base = i * 8;
+        let x    = _mm256_loadu_ps(ptr.add(base));
+        let i32s = _mm256_cvtps_epi32(_mm256_mul_ps(x, vinv));
+        let lo   = _mm256_castsi256_si128(i32s);
+        let hi   = _mm256_extracti128_si256(i32s, 1);
+        let i16s = _mm_packs_epi32(lo, hi);
+        let i8s  = _mm_packs_epi16(i16s, i16s);
+        _mm_storel_epi64(out_ptr.add(base) as *mut __m128i, i8s);
+    }
+    // scalar tail
+    for i in chunks8 * 8..n {
+        *out_ptr.add(i) = (v[i] * inv).round().clamp(-127.0, 127.0) as i8;
+    }
+
+    scale
+}
+
+/// Dispatch to NEON / AVX2 / scalar in-place INT8 encode.
+///
+/// Writes quantised codes into `out` without any heap allocation and returns
+/// `abs_max` (i.e. the scale **before** dividing by 127).  Used by
+/// `batch_encode_into` to activate the SIMD fast-path within every rayon
+/// worker thread.
+#[inline]
+pub(crate) fn encode_fast_into(v: &[f32], out: &mut [i8]) -> f32 {
+    debug_assert_eq!(v.len(), out.len());
+
+    #[cfg(target_arch = "aarch64")]
+    // SAFETY: AArch64-v8 mandates NEON; no runtime feature detection needed.
+    return unsafe { encode_neon_into(v, out) };
+
+    #[cfg(target_arch = "x86_64")]
+    if is_x86_feature_detected!("avx2") {
+        // SAFETY: guarded by runtime AVX2 feature detection.
+        return unsafe { encode_avx2_into(v, out) };
+    }
+
+    // Scalar fallback (non-aarch64 without AVX2).
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let abs_max = v.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
+        let scale = if abs_max == 0.0 { 1.0 } else { abs_max };
+        let inv = 127.0 / scale;
+        for (c, &val) in out.iter_mut().zip(v.iter()) {
+            *c = (val * inv).round().clamp(-127.0, 127.0) as i8;
+        }
+        scale
+    }
+}
+
+/// In-place INT8 decode: multiplies each code by `scale` and writes f32 to `out`.
+///
+/// The cast-and-multiply kernel (`i8 → f32 × scale`) is simple enough that
+/// LLVM auto-vectorises it optimally on every target (NEON, AVX2, SSE4) without
+/// manual intrinsics.  Explicit NEON added ≈3× slower due to EXT overhead; the
+/// scalar form is the fastest portable approach here.
+#[inline]
+pub(crate) fn decode_fast_into(codes: &[i8], scale: f32, out: &mut [f32]) {
+    debug_assert_eq!(codes.len(), out.len());
+    for (o, &c) in out.iter_mut().zip(codes.iter()) {
+        *o = c as f32 * scale;
+    }
+}
+
 /// Encode a batch of f32 vectors to INT8 in parallel, using SIMD where available.
 pub fn encode_batch(vectors: &[Vec<f32>]) -> Vec<Int8Vector> {
     vectors.par_iter().map(|v| Int8Vector::encode_fast(v)).collect()
@@ -260,8 +429,9 @@ pub fn cosine_int8(query: &[f32], encoded: &Int8Vector) -> f32 {
 /// * `scales_out` — caller-allocated f32 slice, length = `n`  
 ///                  stores `abs_max / 127.0` per row (direct dequant factor)
 ///
-/// Uses rayon for row-parallel execution; inner quantisation loop is
-/// auto-vectorised by LLVM (NEON on AArch64, AVX2 on x86-64).
+/// Uses rayon for row-parallel execution; each worker thread calls
+/// `encode_fast_into` which dispatches to the NEON (AArch64) or AVX2 (x86-64)
+/// in-place SIMD path — no per-row heap allocation.
 pub fn batch_encode_into(
     input: &[f32],
     _n: usize,
@@ -274,12 +444,7 @@ pub fn batch_encode_into(
         .zip(codes_out.par_chunks_mut(d))
         .zip(scales_out.par_iter_mut())
         .for_each(|((row, out_codes), out_scale)| {
-            let abs_max = row.iter().map(|x| x.abs()).fold(0.0f32, f32::max);
-            let scale = if abs_max == 0.0 { 1.0 } else { abs_max };
-            let inv = 127.0 / scale;
-            for (c, &v) in out_codes.iter_mut().zip(row.iter()) {
-                *c = (v * inv).round().clamp(-127.0, 127.0) as i8;
-            }
+            let scale = encode_fast_into(row, out_codes);
             *out_scale = scale / 127.0;
         });
 }
@@ -297,9 +462,7 @@ pub fn batch_decode_into(codes: &[i8], scales: &[f32], d: usize, out: &mut [f32]
         .zip(scales.par_iter())
         .zip(out.par_chunks_mut(d))
         .for_each(|((row_codes, &scale), out_row)| {
-            for (o, &c) in out_row.iter_mut().zip(row_codes.iter()) {
-                *o = c as f32 * scale;
-            }
+            decode_fast_into(row_codes, scale, out_row);
         });
 }
 
@@ -398,6 +561,87 @@ mod tests {
             let avx2   = unsafe { encode_avx2(&v) };
             assert_eq!(scalar.scale, avx2.scale, "scale mismatch at len={len}");
             assert_eq!(scalar.codes, avx2.codes, "codes mismatch at len={len}");
+        }
+    }
+
+    /// Verify `encode_fast_into` produces bit-identical results to `encode_fast`
+    /// across a variety of vector lengths, including non-multiples of 16.
+    #[test]
+    fn encode_fast_into_matches_encode_fast() {
+        for &len in &[0usize, 1, 3, 7, 15, 16, 17, 64, 128, 256, 768] {
+            let v: Vec<f32> = (0..len).map(|i| ((i as f32 * 0.17) - 3.0).sin()).collect();
+            let reference = Int8Vector::encode_fast(&v);
+            let mut codes_out = vec![0i8; len];
+            let scale = encode_fast_into(&v, &mut codes_out);
+            assert_eq!(reference.scale, scale, "scale mismatch at len={len}");
+            assert_eq!(reference.codes, codes_out, "codes mismatch at len={len}");
+        }
+    }
+
+    /// Verify `decode_fast_into` produces bit-identical results to the scalar decode
+    /// across a variety of vector lengths.
+    #[test]
+    fn decode_fast_into_matches_scalar() {
+        for &len in &[0usize, 1, 3, 7, 15, 16, 17, 64, 128, 256, 768] {
+            let v: Vec<f32> = (0..len).map(|i| ((i as f32 * 0.11) - 2.0).cos()).collect();
+            let enc = Int8Vector::encode_fast(&v);
+            let scale = enc.scale / 127.0;
+            // Reference: scalar decode
+            let reference: Vec<f32> = enc.codes.iter().map(|&c| c as f32 * scale).collect();
+            // Fast path
+            let mut out = vec![0.0f32; len];
+            decode_fast_into(&enc.codes, scale, &mut out);
+            assert_eq!(reference, out, "decode mismatch at len={len}");
+        }
+    }
+
+    /// Verify that `batch_encode_into` now activates the SIMD path: results must
+    /// match `encode_fast` per-vector for a large batch.
+    #[test]
+    fn batch_encode_into_matches_encode_fast() {
+        let n = 200usize;
+        let d = 128usize;
+        let input: Vec<f32> = (0..n * d)
+            .map(|i| ((i as f32 * 0.07) - 8.0).sin())
+            .collect();
+        let mut codes_out = vec![0i8; n * d];
+        let mut scales_out = vec![0.0f32; n];
+        batch_encode_into(&input, n, d, &mut codes_out, &mut scales_out);
+
+        for row in 0..n {
+            let row_slice = &input[row * d..(row + 1) * d];
+            let ref_enc = Int8Vector::encode_fast(row_slice);
+            let got_codes = &codes_out[row * d..(row + 1) * d];
+            let got_scale = scales_out[row];
+            assert_eq!(ref_enc.scale / 127.0, got_scale, "scale mismatch at row={row}");
+            assert_eq!(ref_enc.codes.as_slice(), got_codes, "codes mismatch at row={row}");
+        }
+    }
+
+    /// Verify that `batch_decode_into` roundtrips correctly with the SIMD decode path.
+    #[test]
+    fn batch_decode_into_roundtrip() {
+        let n = 50usize;
+        let d = 64usize;
+        let input: Vec<f32> = (0..n * d)
+            .map(|i| ((i as f32 * 0.09) - 3.0).cos())
+            .collect();
+        let mut codes = vec![0i8; n * d];
+        let mut scales = vec![0.0f32; n];
+        batch_encode_into(&input, n, d, &mut codes, &mut scales);
+
+        let mut decoded = vec![0.0f32; n * d];
+        batch_decode_into(&codes, &scales, d, &mut decoded);
+
+        for row in 0..n {
+            let orig = &input[row * d..(row + 1) * d];
+            let dec  = &decoded[row * d..(row + 1) * d];
+            let dot: f32  = orig.iter().zip(dec.iter()).map(|(a, b)| a * b).sum();
+            let n1: f32   = orig.iter().map(|x| x * x).sum::<f32>().sqrt();
+            let n2: f32   = dec.iter().map(|x| x * x).sum::<f32>().sqrt();
+            if n1 > 0.0 && n2 > 0.0 {
+                assert!(dot / (n1 * n2) >= 0.9999, "cosine < 0.9999 at row={row}");
+            }
         }
     }
 }

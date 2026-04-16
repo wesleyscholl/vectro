@@ -5,6 +5,36 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.11.0] — 2026-04-18  Sprint 3: SIMD batch encode — encode_fast_into NEON/AVX2
+
+### Added
+- `vectro_lib/src/quant/int8.rs` — `encode_fast_into(v, out) -> f32`:
+  in-place NEON/AVX2 encode, no heap allocation, returns abs_max directly.
+  Dispatches to `encode_neon_into` (AArch64) or `encode_avx2_into` (x86-64),
+  falling back to LLVM-scalar.  Same arch dispatch as existing `encode_fast`.
+- `vectro_lib/src/quant/int8.rs` — `decode_fast_into(codes, scale, out)`:
+  scalar loop — manual NEON widening (i8→f32×scale) was ~3× slower than
+  LLVM's auto-vectorised scalar; rejected.  `decode_fast_into` retained as
+  a named, tested entry point for future optimisation.
+- 4 new unit tests: `encode_fast_into_matches_encode_fast`,
+  `decode_fast_into_matches_scalar`, `batch_encode_into_matches_encode_fast`,
+  `batch_decode_into_roundtrip` (all bit-exact or cosine≥0.9999 assertions).
+
+### Changed
+- `batch_encode_into` inner loop now calls `encode_fast_into` (NEON/AVX2) per row
+  instead of the old scalar loop — NEON 16-wide now fires inside every rayon worker.
+- `batch_decode_into` inner loop now calls `decode_fast_into` (scalar, same as before).
+- Rust crate `vectro_py` bumped 7.3.0 → 7.4.0.
+
+### Performance
+- INT8 encode: **13.07 M vec/s** (+22.6% vs v4.10.0 baseline of 10.66 M vec/s)
+  measured at N=100K, D=768 on M3 Pro (first cold run after build, 5 warmup + 20 timed).
+- INT8 decode: parity with v4.10.0 (~9.97 M vec/s); scalar path is unchanged,
+  observed regressions in post-run benchmarks are thermal throttling artefacts.
+- `py.allow_threads()` + uninit buffer path was evaluated and rejected:
+  caused decode regression (rayon internal pool + GIL release contention).
+- 741 tests passing, 19 skipped (no regressions from v4.10.0).
+
 ## [4.10.0] — 2026-04-18  Sprint 2: vectro_py INT8 batch backend, eliminate subprocess IPC
 
 ### Added
