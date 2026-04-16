@@ -1,6 +1,6 @@
 {
   "name": "@vectro/core",
-  "version": "7.2.0",
+  "version": "7.3.0",
   "description": "Node.js N-API native addon for reading and dequantizing Vectro .vqz compressed artifacts — Phase 1 per ADR-001.",
   "main": "index.js",
   "types": "index.d.ts",

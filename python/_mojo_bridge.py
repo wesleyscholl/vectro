@@ -31,7 +31,8 @@ _BINARY_NAME = "vectro_quantizer"
 def _find_binary() -> str | None:
     """Return the absolute path to the compiled Mojo binary, or None."""
     candidates = [
-        pathlib.Path(__file__).parent.parent / _BINARY_NAME,
+        pathlib.Path(__file__).parent / _BINARY_NAME,          # installed wheel (bundled binary)
+        pathlib.Path(__file__).parent.parent / _BINARY_NAME,   # repo root (dev)
         pathlib.Path(_BINARY_NAME),
         pathlib.Path.cwd() / _BINARY_NAME,
     ]

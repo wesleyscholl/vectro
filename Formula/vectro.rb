@@ -19,7 +19,7 @@ class Vectro < Formula
   homepage "https://github.com/wesleyscholl/vectro"
   # NOTE: Update url + sha256 after each release by fetching the source tarball.
   # The sha256 below is a placeholder — replace before publishing the tap.
-  url "https://github.com/wesleyscholl/vectro/archive/refs/tags/v3.9.0.tar.gz"
+  url "https://github.com/wesleyscholl/vectro/archive/refs/tags/v4.8.0.tar.gz"
   sha256 "PLACEHOLDER_UPDATE_AFTER_RELEASE"
   license "MIT"
   head "https://github.com/wesleyscholl/vectro.git", branch: "main"

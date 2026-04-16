@@ -201,7 +201,7 @@ Performance target: **≥ 10M vec/s INT8 on Apple Silicon** (baseline: 12.5M+ ve
 | Retriever | **Python** | `python/retriever.py` | `VectroRetriever` with `from_file()` / `from_jsonl()` classmethods |
 | Vector DB connectors | **Python** | `python/integrations/` | One file per DB; mirror the `QdrantConnector` interface exactly |
 | Legacy scaffold | **Rust** | `rust/` | Do NOT add features; do NOT add crates; archive or delete only |
-| JS bindings | **C++ N-API** | `js/src/vectro_napi.cpp` | Phase 2 target: `.vqz` parser + zstd + SIMD INT8 dequantize |
+| JS bindings | **C++ N-API** | `js/src/vectro_napi.cpp` | ✅ Phase 2 complete: `.vqz` parser, zstd, SIMD INT8 dequantize, `VqzReader` class, 15/15 tests |
 
 **Never** put quantization algorithm logic in Python. If a new method is being added, implement it in Mojo first and bridge it through `_mojo_bridge.py`.
 
@@ -309,15 +309,17 @@ cd js && npm install && npm run build
 
 ---
 
-### 🗺️ Roadmap (Active — as of v4.7.0 / v7.2.0)
+### 🗺️ Roadmap (Active — as of v4.8.0 / v7.3.0)
 
 | Phase | Target Version | Focus | Ship Gate |
 |-------|---------------|-------|-----------|
 | IVF/BF16/Retriever surface | v4.5.0 / v7.0.0 | ✅ COMPLETE — `IVFIndex`, `IVFPQIndex`, `Bf16Encoder`, `from_file`/`from_jsonl`, type stubs, npm bump | 677/677 passing |
 | ONNX runtime fixes | v4.6.0 / v7.1.0 | ✅ COMPLETE — `_HAVE_ONNX` flag bug, descriptor protocol bug, 14 new passes | 691/691 passing |
 | JS Bindings P2 | v4.7.0 / v7.2.0 | ✅ COMPLETE — `js/src/vectro_napi.cpp` (507 lines), `.vqz` parser + zstd + SIMD INT8 dequantize, `VqzReader` class, 15/15 JS tests, Node 18+20 CI | 691 Python + 15 JS tests passing |
-| Distribution | v4.8.0 / v7.3.0 | PyPI wheels (bundled Mojo binary or two-tier docs), Homebrew tap, binary CLI releases on GitHub Releases | `pip install vectro` works; `brew install vectro` works |
+| Distribution | v4.8.0 / v7.3.0 | ✅ COMPLETE — Mojo binary bundled in macOS ARM64 + Linux x86_64 wheels; `_mojo_bridge.py` wheel-local search path; `MANIFEST.in`; `homebrew-tap.yml` auto-update workflow | 691 Python + 15 JS tests passing |
 | v5.0 / v8.0 Design | v5.0.0 / v8.0.0 | Architecture ADR: LLM embedding pipeline (<1 ms), WASM target, model-type-aware AutoQuantize profiles, Rust CLI fate decision | ADR committed before first implementation line |
+
+**Bundled binary note:** `python/_mojo_bridge.py` `_find_binary()` must always have `pathlib.Path(__file__).parent / _BINARY_NAME` as the **first** candidate. This is what makes the installed wheel self-contained. Never reorder the candidates list without verifying wheel smoke-test passes.
 
 ---
 

@@ -1,0 +1,55 @@
+name: Update Homebrew tap
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  update-tap:
+    name: Update Formula/vectro.rb in homebrew-tap
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute SHA256 of release tarball
+        id: sha
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          URL="https://github.com/wesleyscholl/vectro/archive/refs/tags/${TAG}.tar.gz"
+          SHA256=$(curl -fsSL "$URL" | sha256sum | awk '{print $1}')
+          echo "url=$URL"    >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"    >> "$GITHUB_OUTPUT"
+
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@v4
+        with:
+          repository: wesleyscholl/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_PAT }}
+          path: homebrew-tap
+
+      - name: Update formula URL and SHA256
+        run: |
+          FORMULA="homebrew-tap/Formula/vectro.rb"
+          TAG="${{ steps.sha.outputs.tag }}"
+          URL="${{ steps.sha.outputs.url }}"
+          SHA256="${{ steps.sha.outputs.sha256 }}"
+
+          # Replace the url line
+          sed -i "s|url \"https://github.com/wesleyscholl/vectro/archive/refs/tags/v.*\.tar\.gz\"|url \"${URL}\"|" "$FORMULA"
+          # Replace the sha256 line (handles PLACEHOLDER or real hash)
+          sed -i "s|sha256 \".*\"|sha256 \"${SHA256}\"|" "$FORMULA"
+
+          echo "Updated $FORMULA to $TAG ($SHA256)"
+          cat "$FORMULA"
+
+      - name: Commit and push
+        run: |
+          cd homebrew-tap
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/vectro.rb
+          git diff --cached --quiet && echo "No changes, skipping commit" && exit 0
+          git commit -m "chore(vectro): update formula to ${{ steps.sha.outputs.tag }}"
+          git push

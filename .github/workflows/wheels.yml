@@ -25,13 +25,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS ARM64 (Apple Silicon)
+          # macOS ARM64 (Apple Silicon) — Mojo binary bundled
           - os: macos-latest
             target: aarch64-apple-darwin
             python-version: "3.10"
+            bundle_mojo: true
           - os: macos-latest
             target: aarch64-apple-darwin
             python-version: "3.12"
+            bundle_mojo: true
 
           # macOS x86-64
           - os: macos-13
@@ -41,16 +43,19 @@ jobs:
             target: x86_64-apple-darwin
             python-version: "3.12"
 
-          # Linux x86-64 (manylinux)
+          # Linux x86-64 (manylinux) — Mojo binary bundled
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             python-version: "3.10"
+            bundle_mojo: true
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             python-version: "3.11"
+            bundle_mojo: true
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             python-version: "3.12"
+            bundle_mojo: true
 
           # Linux ARM64 (manylinux QEMU cross-compile)
           - os: ubuntu-latest
@@ -63,6 +68,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Install pixi (Mojo build tool)
+        if: matrix.bundle_mojo
+        run: |
+          curl -fsSL https://pixi.sh/install.sh | bash
+          echo "$HOME/.pixi/bin" >> $GITHUB_PATH
+
+      - name: Build and stage Mojo quantizer binary
+        if: matrix.bundle_mojo
+        run: |
+          pixi run build-mojo
+          cp vectro_quantizer python/vectro_quantizer
+          echo "Built Mojo binary: $(file python/vectro_quantizer)"
 
       # maturin/action handles Rust toolchain, cross-compilation, manylinux
       # containers, and wheel signing automatically.
@@ -221,6 +239,11 @@ jobs:
           ids = [r[0] for r in results]
           assert 0 in ids, f"vec[0] not found in top-5: {ids}"
           print(f"smoke test ok — INT8 encoder + HNSW top-5 self-search passed (ids={ids})")
+
+          # Verify bundled Mojo binary is discoverable in the installed wheel
+          from python import _mojo_bridge
+          assert _mojo_bridge.is_available(), "Mojo binary not found in installed wheel"
+          print(f"Mojo binary ok: {_mojo_bridge._binary_path}")
           EOF
 
   # ────────────────────────────────────────────────────────────────────────────

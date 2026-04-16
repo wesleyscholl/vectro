@@ -1,0 +1,5 @@
+include README.md CHANGELOG.md LICENSE pyproject.toml pixi.toml
+recursive-include src *.mojo
+recursive-include python *.py
+# Compiled binary must not be committed to source; it is staged by CI
+exclude python/vectro_quantizer

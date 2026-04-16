@@ -716,4 +716,41 @@ All 15 tests passed.
 
 ---
 
-*Last updated: 2026-04-16 (v7.2.0 complete — JS Bindings Phase 2, 15 JS tests, Node 18+20 CI)*
+## v4.8.0 / v7.3.0 — Distribution Sprint ✅ COMPLETE (2026-04-17)
+
+> Python 4.8.0 / Rust 7.3.0 / npm 7.3.0 — 691 Python tests passing, 15 JS tests passing
+
+### Goal
+Bundle the pre-compiled `vectro_quantizer` Mojo binary inside platform wheels (macOS ARM64 + Linux x86_64) so `pip install vectro` includes the 12.5M vec/s SIMD path without requiring users to install Mojo/pixi. Auto-update Homebrew tap on release.
+
+### Deliverables
+
+| # | Task | Status |
+|---|------|--------|
+| 1 | `pixi.toml` — `platforms = ["osx-arm64", "linux-64"]`, version `4.8.0` | ✅ |
+| 2 | `python/__init__.py`, `python/vectro.py` — `__version__ = "4.8.0"` | ✅ |
+| 3 | `tests/test_release_candidate.py` — `EXPECTED_VERSION = "4.8.0"` | ✅ |
+| 4 | `rust/vectro_py/Cargo.toml` — version `7.3.0` | ✅ |
+| 5 | `js/package.json` — version `7.3.0` | ✅ |
+| 6 | `.gitignore` — exclude `python/vectro_quantizer` compiled binary | ✅ |
+| 7 | `pyproject.toml` — version `4.8.0`; `package-data` includes `vectro_quantizer` | ✅ |
+| 8 | `python/_mojo_bridge.py` — prepend `Path(__file__).parent / _BINARY_NAME` as first `candidates` entry | ✅ |
+| 9 | `Formula/vectro.rb` — URL updated to `v4.8.0`; sha256 auto-updated by tap workflow | ✅ |
+| 10 | `MANIFEST.in` (new) — includes Mojo source, excludes compiled binary | ✅ |
+| 11 | `.github/workflows/homebrew-tap.yml` (new) — SHA256 auto-update on release published | ✅ |
+| 12 | `.github/workflows/wheels.yml` — `bundle_mojo: true` matrix flag; pixi+Mojo build steps; smoke-test asserts `is_available()` | ✅ |
+
+### Bundle targets
+- macOS aarch64-apple-darwin (Apple Silicon) — pixi `osx-arm64`
+- Linux x86_64-unknown-linux-gnu (manylinux) — pixi `linux-64`
+- macOS x86_64, Linux aarch64 (QEMU) — NumPy fallback, no Mojo bundle
+
+### Performance
+| Path | Throughput |
+|------|------------|
+| Mojo SIMD (bundled wheel) | 12.5M+ vec/s |
+| NumPy fallback | ~210K vec/s |
+
+---
+
+*Last updated: 2026-04-17 (v4.8.0 / v7.3.0 complete — Distribution Sprint, bundled Mojo binary)*

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vectro"
-version = "4.7.0"
+version = "4.8.0"
 description = "Mojo-first ultra-high-performance LLM embedding compressor with vector DB integrations, migration tooling, streaming decompression, and a CLI (v2.0: 158 tests, 11 modules)"
 readme = "README.md"
 license = {text = "MIT"}
@@ -140,7 +140,7 @@ packages = ["python"]
 package-dir = {"python" = "python"}
 
 [tool.setuptools.package-data]
-python = ["*.pyx"]
+python = ["*.pyx", "vectro_quantizer"]
 "*" = ["src/*.mojo"]
 
 [tool.cython]

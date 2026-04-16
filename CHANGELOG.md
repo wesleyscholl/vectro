@@ -5,6 +5,29 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.8.0] / [7.3.0] — 2026-04-17  Distribution: bundled Mojo binary, Homebrew tap, MANIFEST.in
+
+### Added
+- `MANIFEST.in` — proper sdist: includes Mojo source (`src/*.mojo`), excludes compiled binary
+- `.github/workflows/homebrew-tap.yml` — auto-updates `Formula/vectro.rb` SHA256 on every `release: published` event via `HOMEBREW_TAP_PAT` secret
+- `pixi.toml`: `linux-64` platform added alongside `osx-arm64` so Mojo binary can be built on GitHub Linux runners
+- `python/_mojo_bridge.py`: bundled-wheel binary path (`pathlib.Path(__file__).parent / _BINARY_NAME`) prepended as first candidate in `_find_binary()`, ahead of repo-root and cwd paths
+- `.github/workflows/wheels.yml`: `bundle_mojo: true` matrix flag on macOS ARM64 + Linux x86_64 entries; two new steps (`Install pixi`, `Build and stage Mojo quantizer binary`) gate on that flag; smoke-test asserts `_mojo_bridge.is_available()` in the installed wheel
+
+### Changed
+- `pyproject.toml` version `4.7.0 → 4.8.0`; `[tool.setuptools.package-data]` now includes `vectro_quantizer` binary so maturin packs it inside the wheel
+- `Formula/vectro.rb` URL updated to `v4.8.0`
+- `pixi.toml` version `4.7.0 → 4.8.0`
+- `rust/vectro_py/Cargo.toml` version `7.2.0 → 7.3.0`
+- `js/package.json` version `7.2.0 → 7.3.0`
+
+### Performance context
+- Bundled Mojo binary: **12.5M+ vec/s** INT8 (4.85× FAISS C++)
+- NumPy fallback (no binary): ~210K vec/s
+- Bundling eliminates `pixi run build-mojo` requirement for end users on macOS ARM64 and Linux x86_64
+
+---
+
 ## [7.2.0] — 2026-04-16  JS Bindings Phase 2: VQZ N-API addon, 15 JS tests, Node 18+20 CI
 
 ### Added

@@ -6,6 +6,9 @@ __pycache__/
 # C extensions
 *.so
 
+# Compiled Mojo binary (built by pixi, not committed)
+python/vectro_quantizer
+
 # Figure files
 Figure*
 
