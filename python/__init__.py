@@ -89,6 +89,7 @@ from .nf4_api import (
 )
 from .binary_api import quantize_binary, dequantize_binary
 from .rq_api import ResidualQuantizer
+from .lora_api import compress_lora, decompress_lora, compress_lora_adapter, LoRAResult
 from .codebook_api import Codebook
 from .auto_quantize_api import auto_quantize
 from .storage_v3 import save_vqz, load_vqz, save_compressed, load_compressed, VQZResult
@@ -187,6 +188,11 @@ __all__ = [
     "dequantize_binary",
     "ResidualQuantizer",
     "Codebook",
+    # LoRA adapter compression
+    "compress_lora",
+    "decompress_lora",
+    "compress_lora_adapter",
+    "LoRAResult",
     "auto_quantize",
     # v3 storage
     "save_vqz",

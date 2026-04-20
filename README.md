@@ -391,6 +391,63 @@ gcs = GCSBackend(bucket="my-vectors")
 
 ---
 
+## 🔌 LLM Adapter Storage
+
+Vectro compresses LoRA adapter matrices (A, B) using the same quantization
+backends as embedding compression. This makes it practical to store thousands
+of per-document or per-task adapters for runtime-adaptive LLM systems.
+
+### Compress a LoRA adapter
+
+```python
+from python.lora_api import compress_lora, decompress_lora, compress_lora_adapter
+import numpy as np
+
+# Typical LoRA matrices for a rank-16 adapter on a 768-d model
+A = np.random.randn(16, 768).astype(np.float32)   # (rank, in_features)
+B = np.random.randn(768, 16).astype(np.float32)   # (out_features, rank)
+
+# Compress — NF4 gives 8× compression with cosine ≥ 0.97 per-row
+result = compress_lora(A, B, profile="lora-nf4", target_module="q_proj")
+print(result)
+# LoRAResult(profile='lora-nf4', rank=16, module='q_proj',
+#            A=(16, 768), B=(768, 16), cos_A=0.9821, cos_B=0.9804)
+
+# Reconstruct for inference
+A_r, B_r = decompress_lora(result)
+```
+
+### Compress a full adapter (all target modules)
+
+```python
+adapter = {
+    "q_proj": (A_q, B_q),
+    "v_proj": (A_v, B_v),
+    "k_proj": (A_k, B_k),
+}
+compressed = compress_lora_adapter(adapter, profile="lora-nf4")
+# Returns: Dict[str, LoRAResult] — one entry per module
+```
+
+### Profiles and compression ratios
+
+| Profile | Compression | cosine (per row) | Best for |
+|---------|-------------|-----------------|---------|
+| `lora-int8` | 4× | ≥ 0.99 | High-fidelity fine-tuning adapters |
+| `lora-nf4` | 8× | ≥ 0.97 | General adapters; recommended default |
+| `lora-rq` | 16–32× | ≥ 0.85 | Large adapters (rank ≥ 32); auto-falls back to NF4 for small rank |
+
+### Fast-weight snapshot archives
+
+On-the-fly learning systems (e.g. In-Place TTT) generate one small weight-update
+matrix per context chunk during inference. Vectro's streaming compression format
+is the natural archive layer for these snapshots:
+
+- Each fast-weight update is a dense float32 matrix — the same structure as a LoRA B matrix
+- `compress_lora(fast_weight, identity, profile="lora-nf4")` reduces snapshot size 8×
+- Over a long inference session, NF4 compression makes storing hundreds of checkpoint
+  snapshots tractable without growing unbounded RAM usage
+
 ## 🔗 Vector Database Integrations
 
 | Connector | Store | Search | Notes |

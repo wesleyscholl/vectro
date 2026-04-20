@@ -37,6 +37,7 @@ from .rq_api import ResidualQuantizer
 from .auto_quantize_api import auto_quantize
 from .interface import quantize_embeddings, reconstruct_embeddings
 from .storage_v3 import save_vqz, load_vqz
+from .lora_api import compress_lora, decompress_lora, compress_lora_adapter, LoRAResult
 
 _SAVE_VERSION = 3
 
@@ -346,7 +347,8 @@ class HNSWIndex:
 # ---------------------------------------------------------------------------
 
 _VALID_PROFILES = frozenset(
-    {"int8", "nf4", "nf4-mixed", "pq-96", "pq-48", "binary", "rq-3pass"}
+    {"int8", "nf4", "nf4-mixed", "pq-96", "pq-48", "binary", "rq-3pass",
+     "lora-nf4", "lora-int8", "lora-rq"}
 )
 
 
@@ -510,6 +512,13 @@ class VectroV3:
                 data={"codes": codes_list, "n_passes": len(codes_list)},
             )
 
+        if profile.startswith("lora-"):
+            raise ValueError(
+                f"Profile {profile!r} requires (A, B) matrix inputs. "
+                "Use compress_lora(A, B, profile=...) directly, or pass "
+                "vectors as a dict {'A': np.ndarray, 'B': np.ndarray}."
+            )
+
         raise ValueError(f"Unhandled profile: {profile}")  # pragma: no cover
 
     # -- decompress --
@@ -570,6 +579,12 @@ class VectroV3:
                     "Cannot decompress RQ result without the trained ResidualQuantizer."
                 )
             return self._rq.decode(data["codes"])
+
+        if profile.startswith("lora-"):
+            raise ValueError(
+                f"Profile {profile!r} is a LoRA result. "
+                "Use decompress_lora(result) instead of VectroV3.decompress()."
+            )
 
         raise ValueError(f"Unhandled profile: {profile}")  # pragma: no cover
 
