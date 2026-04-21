@@ -1,7 +1,7 @@
 # Vectro — Plan
 
-> Last updated: 2026-04-16
-> Current version: **4.8.0** (Python) / **7.3.0** (Rust) — Distribution complete, bundled Mojo binary, 741 Python tests passing
+> Last updated: 2026-05-19
+> Current version: **4.11.0** (Python) / **7.4.0** (Rust) — Distribution complete, bundled Mojo binary, 741 Python tests passing
 
 ---
 
