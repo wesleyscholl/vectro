@@ -4,16 +4,23 @@ All tests run without a real pyarrow installation, making CI fast.
 """
 
 import io
+import os
 import pickle
+import subprocess
 import sys
+import textwrap
 import types
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
 
 from python.batch_api import BatchQuantizationResult
 from python.interface import QuantizationResult
@@ -182,6 +189,25 @@ def _make_quant_result(n: int = 4, dim: int = 8) -> QuantizationResult:
     return QuantizationResult(quantized=q, scales=scales, dims=dim, n=n)
 
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _run_python_snippet(snippet: str) -> subprocess.CompletedProcess[str]:
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        str(_REPO_ROOT) if not existing else f"{_REPO_ROOT}{os.pathsep}{existing}"
+    )
+    return subprocess.run(
+        [sys.executable, "-c", snippet],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(_REPO_ROOT),
+        check=False,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -191,22 +217,47 @@ class TestArrowBridgeImportError(unittest.TestCase):
     """When pyarrow is absent, functions raise a clear RuntimeError."""
 
     def test_lazy_import_raises_when_absent(self):
-        """_pa() raises RuntimeError with a helpful message."""
-        with patch.dict(sys.modules, {"pyarrow": None}):
-            from python.integrations import arrow_bridge
-            import importlib as _il
+        """_pa() raises RuntimeError with a helpful message.
 
-            # Re-import helper after patching
-            orig = sys.modules.get("pyarrow")
-            sys.modules["pyarrow"] = None  # type: ignore[assignment]
+        Run this in a subprocess to avoid mutating import state in the test runner.
+        """
+        snippet = textwrap.dedent(
+            """
+            import importlib
+
+            from python.integrations import arrow_bridge
+
+            _real_import_module = importlib.import_module
+
+            def _blocked_import(name, package=None):
+                if name == "pyarrow":
+                    raise ImportError("blocked by test")
+                return _real_import_module(name, package)
+
+            importlib.import_module = _blocked_import
             try:
-                with self.assertRaises((RuntimeError, ImportError)):
+                try:
                     arrow_bridge._pa()
-            finally:
-                if orig is None:
-                    del sys.modules["pyarrow"]
+                except (RuntimeError, ImportError):
+                    print("arrow_missing_ok")
                 else:
-                    sys.modules["pyarrow"] = orig
+                    raise SystemExit("Expected _pa() to fail when pyarrow is unavailable")
+            finally:
+                importlib.import_module = _real_import_module
+            """
+        )
+
+        result = _run_python_snippet(snippet)
+        self.assertEqual(
+            result.returncode,
+            0,
+            msg=(
+                "Arrow import-error subprocess check failed\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            ),
+        )
+        self.assertIn("arrow_missing_ok", result.stdout)
 
 
 class TestResultToTable(unittest.TestCase):

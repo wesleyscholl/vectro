@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `tests/test_sklearn_subprocess_isolation.py`: subprocess isolation smoke tests for
   `python.rq_api` and `python.v3_api` RQ-path execution (including repeated fresh-interpreter
   stability check).
+- `tests/_path_setup.py`: shared repo-root path helper for test modules importing from `python/`.
 
 ### Fixed
 - `python/batch_api.py` (`VectroBatchProcessor.quantize_batch`): `profile="binary"` now correctly
@@ -44,11 +45,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   referencing `docs/adr-002-v4-architecture.md` as the satisfied ADR gate.
 - `NEXT_SESSION_PROMPT.md` refreshed to remove stale "ADR drafting" guidance and point
   to current priorities (test hygiene hardening, benchmark reproducibility, ADR execution audit).
+- `tests/test_arrow_bridge.py`: uses shared path helper and validates pyarrow-missing import
+  behavior via subprocess isolation (no import-state mutation in the main test process).
+- `tests/test_torch_bridge.py`: uses shared path helper instead of per-file inline
+  `sys.path.insert(...)` setup.
 
 ### Tested
 - `python3 -m pytest tests/test_mojo_bridge.py tests/test_pq.py -v` → `41 passed, 0 failed`.
 - `python3 -m pytest tests/test_batch_api.py -v` → `21 passed, 0 failed`.
 - `python3 -m pytest tests/ -q` → **792 passed, 1 skipped, 0 failed**.
+- `python3 -m pytest tests/test_arrow_bridge.py tests/test_torch_bridge.py -v`
+  → **24 passed, 0 failed**.
+- `python3 -m pytest tests/ -q --timeout=120` → **792 passed, 1 skipped, 0 failed**.
 
 ## [4.11.0] — 2026-04-18  Sprint 3: SIMD batch encode — encode_fast_into NEON/AVX2
 

@@ -30,6 +30,12 @@ Read this first. It takes under a minute and prevents context drift.
 - Added `tests/test_sklearn_subprocess_isolation.py` to execute sklearn-backed
   RQ/v3 paths in fresh subprocesses and guard against in-process C-extension reload risks.
 
+5. Test hygiene follow-through on high-churn suites:
+- Added `tests/_path_setup.py` shared helper to centralize repo-root path setup.
+- Migrated `tests/test_arrow_bridge.py` and `tests/test_torch_bridge.py` to shared path setup.
+- Moved pyarrow-missing import-behavior assertion in `test_arrow_bridge.py` to subprocess
+  execution so import-state mutation does not occur in the main pytest process.
+
 ## Active invariants to respect
 
 - INT8 throughput floor remains >=10M vec/s on M3 for Mojo SIMD path.
@@ -40,14 +46,18 @@ Read this first. It takes under a minute and prevents context drift.
 ## Known blockers / open risks
 
 - CLAUDE.md and AGENTS.md still contain historical roadmap rows with older test counts by version (intentional historical records). Do not rewrite historical entries unless facts are wrong.
-- Legacy suites still use repo-root `sys.path.insert(...)` patterns; standardizing on a shared
-  import helper remains open.
+- Legacy suites still use repo-root `sys.path.insert(...)` patterns in multiple files;
+  shared-helper migration is now started (arrow/torch done) but not complete across the suite.
 
 ## Next high-value tasks
 
 1. Continue test hygiene hardening
-- Audit high-churn suites (`test_arrow_bridge.py`, `test_torch_bridge.py`) for process-state
-  mutations and migrate fragile import-behavior checks to subprocess boundaries where appropriate.
+- Extend shared path-helper migration to the remaining path-mutating suites
+  (`test_weaviate_connector.py`, `test_qdrant_connector.py`, `test_batch_api.py`,
+  `test_profiles_api.py`, `test_integrations_api.py`, `test_onnx_runtime.py`,
+  `test_chroma_connector.py`, `test_quantization_extra.py`, `test_benchmark_suite.py`,
+  `test_auto_quantize_profiles.py`, `test_gpu_equivalence.py`, `test_quality_api.py`,
+  `test_onnx_export.py`).
 
 2. Benchmark reproducibility pass
 - Re-run canonical benchmark commands and ensure benchmark docs remain consistent with measured data.

@@ -29,11 +29,19 @@
   with active priorities (test hygiene, benchmark reproducibility, ADR execution audit).
 - Added `tests/test_sklearn_subprocess_isolation.py` with subprocess smoke tests for
   sklearn-backed RQ and v3 RQ-profile paths to reduce in-process C-extension risk.
+- Added `tests/_path_setup.py` to standardize repo-root path setup for test modules.
+- Migrated `tests/test_arrow_bridge.py` and `tests/test_torch_bridge.py` to the shared
+  path helper (removes per-file inline `sys.path.insert(...)` boilerplate).
+- `tests/test_arrow_bridge.py`: moved pyarrow-missing import-behavior validation to a
+  subprocess snippet to avoid mutating import state in the main pytest process.
 
 ### Validation
 - `python3 -m pytest tests/test_batch_api.py -v` → **21 passed, 0 failed**
 - `python3 -m pytest tests/ -q` → **792 passed, 1 skipped, 0 failed**
 - `python3 -m pytest tests/test_sklearn_subprocess_isolation.py -q` → **3 passed, 0 failed**
+- `python3 -m pytest tests/test_arrow_bridge.py tests/test_torch_bridge.py -v`
+  → **24 passed, 0 failed**
+- `python3 -m pytest tests/ -q --timeout=120` → **792 passed, 1 skipped, 0 failed**
 
 ---
 
