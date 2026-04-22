@@ -1,0 +1,58 @@
+name: Feature Request
+description: Suggest a new feature or improvement for Vectro
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to suggest a feature.
+        Please search [existing issues](https://github.com/wesleyscholl/vectro/issues)
+        first to avoid duplicates.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the pain point or limitation you're running into.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe what you'd like to see implemented.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: feature_area
+    attributes:
+      label: Feature area
+      options:
+        - CLI (vectro compress / search / bench / serve)
+        - Python bindings (PyO3 / NumPy API)
+        - Rust core (vectro_lib)
+        - WASM / JavaScript bindings
+        - Quantization (INT8 / INT4 / NF4 / Binary / PQ / RQ)
+        - ANN algorithms (IVF / HNSW / Flat / Matryoshka)
+        - Streaming / large-dataset support
+        - REST API server
+        - Benchmarking & evaluation
+        - ONNX export
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+      description: Other approaches or libraries you've looked at.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Links to papers, benchmarks, reference implementations, or example datasets.

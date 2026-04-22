@@ -1,0 +1,61 @@
+name: Format / Quantization Request
+description: Request support for a new embedding format, quantization method, or distance metric
+labels: ["enhancement", "format-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to request a new quantization format, encoding scheme,
+        or distance metric for Vectro.
+        Please include a reference implementation or paper link if one exists.
+
+  - type: input
+    id: format_name
+    attributes:
+      label: Format or method name
+      description: e.g. "Residual Quantization (RQ)", "NF4", "Matryoshka", "dot-product distance"
+      placeholder: Product Quantization (PQ)
+    validations:
+      required: true
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use case and motivation
+      description: |
+        Describe the embedding type, dataset size, or retrieval scenario
+        where this format would improve compression ratio or recall@k.
+    validations:
+      required: true
+
+  - type: input
+    id: reference
+    attributes:
+      label: Reference paper or implementation
+      description: arXiv link, GitHub repo, or documentation URL (if available).
+      placeholder: "https://arxiv.org/abs/..."
+
+  - type: dropdown
+    id: target_compression
+    attributes:
+      label: Approximate target compression ratio
+      options:
+        - 2× (lossless-tier)
+        - 4× (INT8 / scalar quant tier)
+        - 8× (INT4 / NF4 tier)
+        - 16× (PQ / codebook tier)
+        - 32× or more (binary / ultra-compressed)
+        - Not sure
+
+  - type: textarea
+    id: accuracy
+    attributes:
+      label: Expected accuracy impact
+      description: |
+        What recall@10 or cosine similarity degradation do you expect vs FP32?
+        Include benchmark results if you have them.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context

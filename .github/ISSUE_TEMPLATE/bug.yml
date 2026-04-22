@@ -1,0 +1,95 @@
+name: Bug Report
+description: File a bug report for Vectro
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in as much
+        detail as possible. Output from `python -c "import vectro; print(vectro.__version__)"` and `rustc --version` is especially useful.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: A clear description of the bug.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Minimal code or command sequence to reproduce.
+      placeholder: |
+        ```python
+        import numpy as np
+        from vectro import Int8Quantizer
+        q = Int8Quantizer()
+        vecs = np.random.randn(1000, 768).astype(np.float32)
+        codes = q.encode(vecs)
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: vectro_info
+    attributes:
+      label: vectro info output
+      description: |
+        Run `python -c "import vectro, platform, sys; print(vectro.__version__, sys.version, platform.platform())"` and paste the output.
+      render: text
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux (x86-64)
+        - Linux (aarch64)
+        - Windows
+        - Other / unsure
+    validations:
+      required: true
+
+  - type: input
+    id: python_version
+    attributes:
+      label: Python version
+      placeholder: "3.12.4"
+    validations:
+      required: true
+
+  - type: input
+    id: vectro_version
+    attributes:
+      label: Vectro version
+      description: Run `python -c "import vectro; print(vectro.__version__)"`
+      placeholder: "4.11.0"
+    validations:
+      required: true
+
+  - type: input
+    id: rust_version
+    attributes:
+      label: Rust / rustc version (if building from source)
+      description: Run `rustc --version`
+      placeholder: "rustc 1.82.0 (f6e511eec 2024-10-15)"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error output / logs
+      description: Paste any error messages, stack traces, or terminal output here.
+      render: text
