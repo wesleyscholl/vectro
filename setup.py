@@ -18,7 +18,7 @@ class BuildPyWithMojo(build_py):
     
     def run(self):
         # Try to compile Mojo binary if Mojo is available
-        mojo_source = Path("src/vectro_standalone.mojo")
+        mojo_source = Path("experimental/mojo/vectro_standalone.mojo")
         mojo_binary = Path("vectro_quantizer")
         
         if mojo_source.exists():

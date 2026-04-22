@@ -47,7 +47,7 @@ from .profiles_api import (
     create_custom_profile
 )
 
-__version__ = "4.11.0"
+__version__ = "4.11.1"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"
@@ -140,6 +140,23 @@ class Vectro:
         if vectors.ndim == 1:
             # Single vector
             vectors = vectors.reshape(1, -1)
+            if requested_precision == "binary":
+                from .binary_api import quantize_binary
+                packed = quantize_binary(vectors)   # shape (1, ceil(d/8)), uint8
+                d = vectors.shape[1]
+                single_result = QuantizationResult(
+                    quantized=packed[0],
+                    scales=np.ones(1, dtype=np.float32),
+                    dims=d,
+                    n=1,
+                    precision_mode="binary",
+                    group_size=0,
+                )
+                if return_quality_metrics:
+                    reconstructed = self.decompress(single_result)
+                    quality = self.quality_analyzer.evaluate_quality(vectors, reconstructed.reshape(1, -1))
+                    return single_result, quality
+                return single_result
             quantized_result = quantize_embeddings(
                 vectors,
                 backend=self.backend,
@@ -169,7 +186,24 @@ class Vectro:
                 
         elif vectors.ndim == 2:
             # Batch of vectors
-            if self.enable_batch_optimization and len(vectors) > 1:
+            if requested_precision == "binary":
+                from .binary_api import quantize_binary
+                packed = quantize_binary(vectors)   # shape (n, ceil(d/8)), uint8
+                n, d = vectors.shape
+                orig_bytes = n * d * 4
+                comp_bytes = packed.nbytes
+                result = BatchQuantizationResult(
+                    quantized_vectors=[packed[i] for i in range(n)],
+                    scales=np.ones(n, dtype=np.float32),
+                    batch_size=n,
+                    vector_dim=d,
+                    compression_ratio=float(orig_bytes) / float(comp_bytes),
+                    total_original_bytes=orig_bytes,
+                    total_compressed_bytes=comp_bytes,
+                    precision_mode="binary",
+                    group_size=0,
+                )
+            elif self.enable_batch_optimization and len(vectors) > 1:
                 result = self._compress_single_batch(vectors, profile, requested_precision)
             else:
                 # Process individually for small batches
@@ -198,6 +232,13 @@ class Vectro:
             Reconstructed vectors as float32 array
         """
         if isinstance(result, QuantizationResult):
+            if getattr(result, 'precision_mode', '') == 'binary':
+                from .binary_api import dequantize_binary
+                packed = result.quantized
+                if packed.ndim == 1:
+                    packed = packed.reshape(1, -1)
+                reconstructed = dequantize_binary(packed, result.dims)
+                return reconstructed[0] if result.n == 1 else reconstructed
             return reconstruct_embeddings(result, backend=self.backend)
         elif isinstance(result, BatchQuantizationResult):
             return result.reconstruct_batch()
@@ -225,7 +266,10 @@ class Vectro:
         else:
             # Estimate compression ratio for single vector
             orig_bytes = original.size * 4
-            comp_bytes = len(compressed_result.quantized) * 1 + 4
+            if getattr(compressed_result, 'precision_mode', '') == 'binary':
+                comp_bytes = ((compressed_result.dims + 7) // 8) * compressed_result.n
+            else:
+                comp_bytes = len(compressed_result.quantized) * 1 + 4
             compression_ratio = orig_bytes / comp_bytes
             
         return self.quality_analyzer.evaluate_quality(

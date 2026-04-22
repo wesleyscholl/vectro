@@ -13,6 +13,10 @@ Protocol (all integers as decimal strings in argv):
   pipe nf4  decode   <n> <d>  stdin: n*ceil(d/2) u8 + n*4 f32  stdout: n*d*4 f32
   pipe bin  encode   <n> <d>  stdin: n*d*4 bytes f32   stdout: n*ceil(d/8) u8
   pipe bin  decode   <n> <d>  stdin: n*ceil(d/8) u8    stdout: n*d*4 f32
+    pipe pq   encode   <n> <d> <M> <K>  stdin: n*d*4 bytes f32 + M*K*(d/M)*4 f32
+                                                                         stdout: n*M u8
+    pipe pq   decode   <n> <d> <M> <K>  stdin: n*M u8 + M*K*(d/M)*4 f32
+                                                                         stdout: n*d*4 f32
 
 Exit 0 on success, 1 on unknown subcommand.
 """
@@ -101,6 +105,36 @@ def _bin_decode(packed: np.ndarray, d: int) -> np.ndarray:
     return out
 
 
+def _pq_encode(vecs: np.ndarray, centroids: np.ndarray) -> np.ndarray:
+    n, d = vecs.shape
+    M, K, sub_dim = centroids.shape
+    if d != M * sub_dim:
+        raise ValueError(f"dimension mismatch: d={d}, M*sub_dim={M*sub_dim}")
+
+    codes = np.empty((n, M), dtype=np.uint8)
+    for m in range(M):
+        sub = vecs[:, m * sub_dim : (m + 1) * sub_dim]    # (n, sub_dim)
+        cen = centroids[m]                                  # (K, sub_dim)
+        v_sq = (sub ** 2).sum(axis=1, keepdims=True)
+        c_sq = (cen ** 2).sum(axis=1)
+        cross = sub @ cen.T
+        dists = v_sq + c_sq - 2 * cross
+        codes[:, m] = dists.argmin(axis=1).astype(np.uint8)
+    return codes
+
+
+def _pq_decode(codes: np.ndarray, centroids: np.ndarray) -> np.ndarray:
+    n, M = codes.shape
+    m2, _k, sub_dim = centroids.shape
+    if M != m2:
+        raise ValueError(f"codes M={M} does not match centroids M={m2}")
+
+    out = np.empty((n, M * sub_dim), dtype=np.float32)
+    for m in range(M):
+        out[:, m * sub_dim : (m + 1) * sub_dim] = centroids[m][codes[:, m]]
+    return out
+
+
 def _read_stdin(n_bytes: int) -> bytes:
     data = sys.stdin.buffer.read(n_bytes)
     if len(data) != n_bytes:
@@ -115,8 +149,20 @@ def main() -> int:
         return 1
 
     _, op, cmd, *rest = argv
-    n = int(rest[0])
-    d = int(rest[1])
+    if op == "pq":
+        if len(rest) < 4:
+            sys.stderr.write("usage: vectro_quantizer pipe pq <encode|decode> <n> <d> <M> <K>\n")
+            return 1
+        n = int(rest[0])
+        d = int(rest[1])
+        M = int(rest[2])
+        K = int(rest[3])
+        if M <= 0 or K <= 0 or K > 256 or d % M != 0:
+            sys.stderr.write("Invalid PQ params: require M>0, 0<K<=256, and d%M==0\n")
+            return 1
+    else:
+        n = int(rest[0])
+        d = int(rest[1])
 
     if op == "int8" and cmd == "quantize":
         raw = _read_stdin(n * d * 4)
@@ -160,6 +206,24 @@ def main() -> int:
         raw = _read_stdin(n * bpv)
         packed = np.frombuffer(raw, dtype=np.uint8).reshape(n, bpv)
         recon = _bin_decode(packed, d)
+        sys.stdout.buffer.write(recon.astype("<f4").tobytes())
+
+    elif op == "pq" and cmd == "encode":
+        sub_dim = d // M
+        raw_vecs = _read_stdin(n * d * 4)
+        raw_cen = _read_stdin(M * K * sub_dim * 4)
+        vecs = np.frombuffer(raw_vecs, dtype="<f4").reshape(n, d)
+        centroids = np.frombuffer(raw_cen, dtype="<f4").reshape(M, K, sub_dim)
+        codes = _pq_encode(vecs, centroids)
+        sys.stdout.buffer.write(codes.tobytes())
+
+    elif op == "pq" and cmd == "decode":
+        sub_dim = d // M
+        raw_codes = _read_stdin(n * M)
+        raw_cen = _read_stdin(M * K * sub_dim * 4)
+        codes = np.frombuffer(raw_codes, dtype=np.uint8).reshape(n, M)
+        centroids = np.frombuffer(raw_cen, dtype="<f4").reshape(M, K, sub_dim)
+        recon = _pq_decode(codes, centroids)
         sys.stdout.buffer.write(recon.astype("<f4").tobytes())
 
     else:

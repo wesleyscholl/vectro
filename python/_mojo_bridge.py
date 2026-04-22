@@ -269,3 +269,81 @@ def bin_decode(
     stdout = _run_pipe(["pipe", "bin", "decode", str(n), str(d)], packed.tobytes())
 
     return np.frombuffer(stdout, dtype="<f4").reshape(n, d).copy()
+
+
+# ── Product Quantization (PQ) ───────────────────────────────────────────────
+
+def pq_encode(
+    vectors: np.ndarray,
+    centroids: np.ndarray,
+) -> np.ndarray:
+    """PQ-encode float32 vectors using Mojo pipe protocol.
+
+    Args:
+        vectors: Shape (n, d), float32.
+        centroids: Shape (M, K, sub_dim), float32 where d == M * sub_dim.
+
+    Returns:
+        codes: Shape (n, M), uint8.
+    """
+    vectors = np.ascontiguousarray(vectors, dtype=np.float32)
+    if vectors.ndim == 1:
+        vectors = vectors[np.newaxis]
+    if vectors.ndim != 2:
+        raise ValueError(f"vectors must be 2D, got shape={vectors.shape}")
+
+    centroids = np.ascontiguousarray(centroids, dtype=np.float32)
+    if centroids.ndim != 3:
+        raise ValueError(f"centroids must be 3D [M,K,sub_dim], got shape={centroids.shape}")
+
+    n, d = vectors.shape
+    M, K, sub_dim = centroids.shape
+    if K > 256:
+        raise ValueError(f"K={K} exceeds uint8 code limit (256)")
+    if d != M * sub_dim:
+        raise ValueError(f"dimension mismatch: d={d}, M*sub_dim={M * sub_dim}")
+
+    stdin_data = vectors.tobytes() + centroids.tobytes()
+    stdout = _run_pipe(["pipe", "pq", "encode", str(n), str(d), str(M), str(K)], stdin_data)
+
+    return np.frombuffer(stdout, dtype=np.uint8).reshape(n, M).copy()
+
+
+def pq_decode(
+    codes: np.ndarray,
+    centroids: np.ndarray,
+    d: int | None = None,
+) -> np.ndarray:
+    """Decode PQ codes to approximate float32 vectors via Mojo pipe protocol.
+
+    Args:
+        codes: Shape (n, M), uint8.
+        centroids: Shape (M, K, sub_dim), float32.
+        d: Optional output dimension override (validated if provided).
+
+    Returns:
+        vectors: Shape (n, d), float32.
+    """
+    codes = np.ascontiguousarray(codes, dtype=np.uint8)
+    if codes.ndim != 2:
+        raise ValueError(f"codes must be 2D [n,M], got shape={codes.shape}")
+
+    centroids = np.ascontiguousarray(centroids, dtype=np.float32)
+    if centroids.ndim != 3:
+        raise ValueError(f"centroids must be 3D [M,K,sub_dim], got shape={centroids.shape}")
+
+    n, M_codes = codes.shape
+    M, K, sub_dim = centroids.shape
+    if K > 256:
+        raise ValueError(f"K={K} exceeds uint8 code limit (256)")
+    if M_codes != M:
+        raise ValueError(f"codebook mismatch: codes M={M_codes}, centroids M={M}")
+
+    out_d = M * sub_dim
+    if d is not None and d != out_d:
+        raise ValueError(f"d mismatch: provided {d}, inferred {out_d}")
+
+    stdin_data = codes.tobytes() + centroids.tobytes()
+    stdout = _run_pipe(["pipe", "pq", "decode", str(n), str(out_d), str(M), str(K)], stdin_data)
+
+    return np.frombuffer(stdout, dtype="<f4").reshape(n, out_d).copy()

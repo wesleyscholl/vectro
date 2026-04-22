@@ -40,6 +40,12 @@ class BatchQuantizationResult:
     
     def reconstruct_vector(self, index: int) -> np.ndarray:
         """Reconstruct a specific vector from quantized form."""
+        if index >= len(self.quantized_vectors):
+            raise IndexError(f"Vector index {index} out of range")
+        # Binary mode carries no per-vector scale — decode directly
+        if self.precision_mode == "binary":
+            from .binary_api import dequantize_binary
+            return dequantize_binary(self.quantized_vectors[index].reshape(1, -1), self.vector_dim)[0]
         quantized, scale = self.get_vector(index)
         if self.precision_mode == "int4":
             return dequantize_int4(
@@ -57,6 +63,11 @@ class BatchQuantizationResult:
                 np.asarray(self.scales, dtype=np.float32),
                 group_size=self.group_size or 64,
             )
+
+        if self.precision_mode == "binary":
+            from .binary_api import dequantize_binary
+            packed = np.stack(self.quantized_vectors)
+            return dequantize_binary(packed, self.vector_dim)
 
         reconstructed = np.zeros((self.batch_size, self.vector_dim), dtype=np.float32)
         for i in range(self.batch_size):
@@ -95,11 +106,12 @@ class VectroBatchProcessor:
         profile: str = "balanced"
     ) -> BatchQuantizationResult:
         """Quantize a batch of vectors efficiently.
-        
+
         Args:
             vectors: Array of shape (n, d) or list of vectors to quantize
-            profile: Compression profile ("fast", "balanced", "quality")
-            
+            profile: Compression profile ("fast", "balanced", "quality", "binary").
+                     "binary" encodes sign bits (1 bit/dim, ~32x), all others INT8 (~4x).
+
         Returns:
             BatchQuantizationResult with quantized data and metadata
         """
@@ -114,9 +126,9 @@ class VectroBatchProcessor:
             
         vectors = vectors.astype(np.float32)
         batch_size, vector_dim = vectors.shape
-        
-        # Choose backend
-        if self.backend == "mojo" and self._mojo_binary:
+
+        # Choose backend — binary profile bypasses Mojo (INT8-only) path
+        if self.backend == "mojo" and self._mojo_binary and profile != "binary":
             return self._quantize_batch_mojo(vectors, profile)
         else:
             return self._quantize_batch_python(vectors, profile)
@@ -146,25 +158,44 @@ class VectroBatchProcessor:
         )
     
     def _quantize_batch_python(
-        self, 
-        vectors: np.ndarray, 
+        self,
+        vectors: np.ndarray,
         profile: str
     ) -> BatchQuantizationResult:
         """Quantize batch using Python implementation."""
         batch_size, vector_dim = vectors.shape
-        
-        # Profile configurations
-        profiles = {
-            "fast": {"range_factor": 1.0, "precision": "int8"},
-            "balanced": {"range_factor": 0.95, "precision": "int8"}, 
-            "quality": {"range_factor": 0.90, "precision": "int8"}
+
+        # Binary profile: 1-bit sign encoding, ~32x compression
+        # sign(v_i) packed 8 bits per byte; no per-vector scale needed.
+        if profile == "binary":
+            from .binary_api import quantize_binary
+            packed = quantize_binary(vectors, normalize=True)  # (n, ceil(d/8)), uint8
+            bytes_per_vec = (vector_dim + 7) // 8
+            original_bytes = batch_size * vector_dim * 4       # float32
+            compressed_bytes = batch_size * bytes_per_vec      # packed bits
+            compression_ratio = original_bytes / compressed_bytes  # ≈ 32x
+            return BatchQuantizationResult(
+                quantized_vectors=[packed[i] for i in range(batch_size)],
+                scales=np.array([], dtype=np.float32),
+                batch_size=batch_size,
+                vector_dim=vector_dim,
+                compression_ratio=compression_ratio,
+                total_original_bytes=original_bytes,
+                total_compressed_bytes=compressed_bytes,
+                precision_mode="binary",
+            )
+
+        # INT8 profiles
+        int8_profiles = {
+            "fast": {"range_factor": 1.0},
+            "balanced": {"range_factor": 0.95},
+            "quality": {"range_factor": 0.90},
         }
-        
-        if profile not in profiles:
+
+        if profile not in int8_profiles:
             profile = "balanced"
-        
-        config = profiles[profile]
-        range_factor = config["range_factor"]
+
+        range_factor = int8_profiles[profile]["range_factor"]
         
         quantized_vectors = []
         scales = np.zeros(batch_size, dtype=np.float32)

@@ -134,6 +134,44 @@ class TestVectroBatchProcessorStreaming(unittest.TestCase):
         for r in results:
             self.assertEqual(r.vector_dim, d)
 
+    def test_binary_profile_compression_ratio_approx_32x(self):
+        """Binary profile must report ~32x compression (1 bit/dim, not ~4x INT8)."""
+        d = 256
+        n = 10
+        vecs = _RNG.standard_normal((n, d)).astype(np.float32)
+        result = _processor().quantize_batch(vecs, profile="binary")
+        self.assertEqual(result.precision_mode, "binary")
+        # 256 dims → ceil(256/8)=32 bytes/vec; ratio = 256*4/32 = 32.0x exactly
+        self.assertAlmostEqual(result.compression_ratio, 32.0, places=1)
+        self.assertEqual(result.batch_size, n)
+        self.assertEqual(result.vector_dim, d)
+
+    def test_binary_profile_packed_bytes_correct_shape(self):
+        """Each binary-encoded vector must be ceil(d/8) uint8 bytes."""
+        d = 768
+        n = 4
+        vecs = _RNG.standard_normal((n, d)).astype(np.float32)
+        result = _processor().quantize_batch(vecs, profile="binary")
+        expected_bytes_per_vec = (d + 7) // 8  # 96 for d=768
+        for packed_vec in result.quantized_vectors:
+            self.assertEqual(packed_vec.dtype, np.uint8)
+            self.assertEqual(packed_vec.shape, (expected_bytes_per_vec,))
+
+    def test_binary_profile_roundtrip_cosine_similarity(self):
+        """Reconstructed vectors via binary must achieve cosine ≥ 0.75 (spec floor)."""
+        import math
+        d = 128
+        n = 8
+        np.random.seed(42)
+        vecs = np.random.standard_normal((n, d)).astype(np.float32)
+        result = _processor().quantize_batch(vecs, profile="binary")
+        for i in range(n):
+            reconstructed = result.reconstruct_vector(i)
+            orig = vecs[i]
+            cos = float(np.dot(orig, reconstructed) /
+                        (np.linalg.norm(orig) * np.linalg.norm(reconstructed) + 1e-9))
+            self.assertGreaterEqual(cos, 0.75, msg=f"Binary cosine below floor at vector {i}")
+
 
 # ---------------------------------------------------------------------------
 # BatchCompressionAnalyzer

@@ -2,7 +2,7 @@
 Comprehensive benchmarking suite for quantization performance.
 Mojo implementation for high-precision timing and throughput measurement.
 """
-from time import now
+from time import perf_counter_ns
 
 
 struct BenchmarkResult:
@@ -126,41 +126,57 @@ fn benchmark_quantization_simple(
             vec.append(Float32(i * vector_dim + j) * 0.001)
         test_data.append(vec^)
     
-    # Warm-up
-    for i in range(10):
+    # Warm-up (full kernel, discarded)
+    for _ in range(5):
         for v in range(num_vectors):
             var vec = test_data[v]
-            var max_val: Float32 = 0.0
-            for j in range(vector_dim):
-                if vec[j] > max_val:
-                    max_val = vec[j]
-    
-    # Actual benchmark
-    var start = now()
-    
-    for iter in range(iterations):
-        for v in range(num_vectors):
-            var vec = test_data[v]
-            
+
             # Find max
             var max_val: Float32 = 0.0
             for j in range(vector_dim):
                 if vec[j] > max_val:
                     max_val = vec[j]
-            
+
             # Quantize
-            var scale = max_val / 127.0
+            var scale = max_val / 127.0 if max_val > 1e-12 else Float32(1.0)
             var inv_scale = 1.0 / scale
-            
+
             var quantized = List[Int8]()
             for j in range(vector_dim):
                 var val = vec[j] * inv_scale
                 var quant = Int8(val + 0.5)
                 quantized.append(quant)
-    
-    var end = now()
-    var elapsed = Float64(end - start) / 1_000_000_000.0
+
+    # Actual benchmark (real wall-clock timing)
+    var total_ns: UInt = 0
+    var best_ns: UInt = UInt(1) << 62
+    for _ in range(iterations):
+        var iter_start = perf_counter_ns()
+        for v in range(num_vectors):
+            var vec = test_data[v]
+
+            var max_val: Float32 = 0.0
+            for j in range(vector_dim):
+                if vec[j] > max_val:
+                    max_val = vec[j]
+
+            var scale = max_val / 127.0 if max_val > 1e-12 else Float32(1.0)
+            var inv_scale = 1.0 / scale
+
+            var quantized = List[Int8]()
+            for j in range(vector_dim):
+                var val = vec[j] * inv_scale
+                var quant = Int8(val + 0.5)
+                quantized.append(quant)
+
+        var iter_ns = UInt(perf_counter_ns() - iter_start)
+        total_ns += iter_ns
+        if iter_ns < best_ns:
+            best_ns = iter_ns
+
+    var elapsed = Float64(total_ns) / 1_000_000_000.0
     var total_vecs = num_vectors * iterations
+    print("  Best iteration:", Float64(best_ns) / 1_000_000_000.0, "seconds")
     
     return BenchmarkResult("Simple Quantization", iterations, total_vecs, elapsed)
 
@@ -194,29 +210,35 @@ fn benchmark_reconstruction_simple(
         test_quantized.append(vec^)
         test_scales.append(Float32(i) * 0.01 + 0.1)
     
-    # Warm-up
-    for i in range(10):
+    # Warm-up (full kernel, discarded)
+    for _ in range(5):
         for v in range(num_vectors):
             var qvec = test_quantized[v]
             var scale = test_scales[v]
             for j in range(vector_dim):
                 var val = Float32(qvec[j]) * scale
-    
-    # Actual benchmark
-    var start = now()
-    
-    for iter in range(iterations):
+
+    # Actual benchmark (real wall-clock timing)
+    var total_ns: UInt = 0
+    var best_ns: UInt = UInt(1) << 62
+    for _ in range(iterations):
+        var iter_start = perf_counter_ns()
         for v in range(num_vectors):
             var qvec = test_quantized[v]
             var scale = test_scales[v]
-            
+
             var reconstructed = List[Float32]()
             for j in range(vector_dim):
                 reconstructed.append(Float32(qvec[j]) * scale)
-    
-    var end = now()
-    var elapsed = Float64(end - start) / 1_000_000_000.0
+
+        var iter_ns = UInt(perf_counter_ns() - iter_start)
+        total_ns += iter_ns
+        if iter_ns < best_ns:
+            best_ns = iter_ns
+
+    var elapsed = Float64(total_ns) / 1_000_000_000.0
     var total_vecs = num_vectors * iterations
+    print("  Best iteration:", Float64(best_ns) / 1_000_000_000.0, "seconds")
     
     return BenchmarkResult("Simple Reconstruction", iterations, total_vecs, elapsed)
 
@@ -247,34 +269,63 @@ fn benchmark_end_to_end(
             vec.append(Float32(i * vector_dim + j) * 0.001)
         test_data.append(vec^)
     
-    var start = now()
-    
-    for iter in range(iterations):
+    # Warm-up (full kernel, discarded)
+    for _ in range(5):
         for v in range(num_vectors):
             var vec = test_data[v]
-            
+
             # Quantize
             var max_val: Float32 = 0.0
             for j in range(vector_dim):
                 if vec[j] > max_val:
                     max_val = vec[j]
-            
-            var scale = max_val / 127.0
+
+            var scale = max_val / 127.0 if max_val > 1e-12 else Float32(1.0)
             var inv_scale = 1.0 / scale
-            
+
             var quantized = List[Int8]()
             for j in range(vector_dim):
                 var val = vec[j] * inv_scale
                 quantized.append(Int8(val + 0.5))
-            
+
             # Reconstruct
             var reconstructed = List[Float32]()
             for j in range(vector_dim):
                 reconstructed.append(Float32(quantized[j]) * scale)
-    
-    var end = now()
-    var elapsed = Float64(end - start) / 1_000_000_000.0
+
+    # Actual benchmark (real wall-clock timing)
+    var total_ns: UInt = 0
+    var best_ns: UInt = UInt(1) << 62
+    for _ in range(iterations):
+        var iter_start = perf_counter_ns()
+        for v in range(num_vectors):
+            var vec = test_data[v]
+
+            var max_val: Float32 = 0.0
+            for j in range(vector_dim):
+                if vec[j] > max_val:
+                    max_val = vec[j]
+
+            var scale = max_val / 127.0 if max_val > 1e-12 else Float32(1.0)
+            var inv_scale = 1.0 / scale
+
+            var quantized = List[Int8]()
+            for j in range(vector_dim):
+                var val = vec[j] * inv_scale
+                quantized.append(Int8(val + 0.5))
+
+            var reconstructed = List[Float32]()
+            for j in range(vector_dim):
+                reconstructed.append(Float32(quantized[j]) * scale)
+
+        var iter_ns = UInt(perf_counter_ns() - iter_start)
+        total_ns += iter_ns
+        if iter_ns < best_ns:
+            best_ns = iter_ns
+
+    var elapsed = Float64(total_ns) / 1_000_000_000.0
     var total_vecs = num_vectors * iterations
+    print("  Best iteration:", Float64(best_ns) / 1_000_000_000.0, "seconds")
     
     return BenchmarkResult("End-to-End (Quant+Recon)", iterations, total_vecs, elapsed)
 

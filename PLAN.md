@@ -1,7 +1,48 @@
 # Vectro — Plan
 
-> Last updated: 2026-05-19
-> Current version: **4.11.0** (Python) / **7.4.0** (Rust) — Distribution complete, bundled Mojo binary, 741 Python tests passing
+> Last updated: 2026-04-22
+> Current version: **4.11.1** (Python) / **7.4.0** (Rust) — Binary batch profile fix, 789 Python tests passing
+
+---
+
+## v4.11.1 — Binary batch fix + docs sync ✅ COMPLETE (2026-04-22)
+
+### Completed in this wave
+- `python/batch_api.py`: binary profile (`quantize_batch(…, profile="binary")`) now routes to
+  `binary_api.quantize_binary()` instead of silently falling back to INT8.
+  Compression ratio correctly reports ~32x (was incorrectly ~3.85x).
+  Mojo path bypassed for binary (Mojo path is INT8-only).
+- `python/batch_api.py`: `reconstruct_vector()` — binary mode now decodes without touching
+  `scales` (empty for binary), eliminating `IndexError`.
+- `tests/test_batch_api.py`: 3 new tests:
+  - `test_binary_profile_compression_ratio_approx_32x` — asserts ratio ≈ 32.0
+  - `test_binary_profile_packed_bytes_correct_shape` — asserts packed shape = (ceil(d/8),) uint8
+  - `test_binary_profile_roundtrip_cosine_similarity` — asserts cosine ≥ 0.75 spec floor
+- Version bumped `4.11.0 → 4.11.1` across pyproject.toml, pixi.toml, python/__init__.py,
+  python/vectro.py, tests/test_release_candidate.py.
+- PLAN.md header date corrected (was incorrectly `2026-05-19`).
+- CLAUDE.md + AGENTS.md version references synced to v4.11.1 / 790 tests.
+
+### Validation
+- `python3 -m pytest tests/test_batch_api.py -v` → **21 passed, 0 failed**
+- `python3 -m pytest tests/ -q` → **789 passed, 1 skipped, 0 failed**
+
+---
+
+## v4.11.0 — F1/F3 + PQ bridge wiring ✅ COMPLETE
+
+### Completed in this wave
+- `experimental/mojo/vector_ops.mojo`: batch cosine/euclidean paths now use preallocated outputs + parallel row execution (F1 follow-through).
+- `experimental/mojo/benchmark_mojo.mojo`: benchmark timing moved to monotonic wall-clock nanoseconds with explicit warmup and per-iteration best-of reporting (F3 follow-through).
+- `experimental/mojo/vectro_standalone.mojo`: added `pq encode` / `pq decode` CLI and `pipe pq encode|decode <n> <d> <M> <K>` protocol handling.
+- `python/_mojo_bridge.py` + `python/_mojo_bridge.pyi`: added `pq_encode` and `pq_decode` bridge APIs.
+- `python/pq_api.py`: now attempts Mojo PQ bridge first and falls back to NumPy/scikit path on bridge failure.
+- `scripts/vectro_quantizer_stub.py`: CI stub now understands PQ pipe commands.
+- Build path repair: `pixi.toml` and `setup.py` now point to the existing Mojo source at `experimental/mojo/vectro_standalone.mojo`.
+
+### Validation in this wave
+- `python -m pytest tests/test_mojo_bridge.py tests/test_pq.py -v`
+- Result: **41 passed, 0 failed** (with the rebuilt Mojo binary exposing `pipe pq`).
 
 ---
 

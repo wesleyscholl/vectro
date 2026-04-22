@@ -5,6 +5,43 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.11.1] — 2026-04-22
+
+### Added
+- `experimental/mojo/vectro_standalone.mojo`: Product Quantization commands and pipe protocol support:
+  - `pq encode` / `pq decode`
+  - `pipe pq encode <n> <d> <M> <K>`
+  - `pipe pq decode <n> <d> <M> <K>`
+- `python/_mojo_bridge.py`: new bridge APIs `pq_encode(vectors, centroids)` and `pq_decode(codes, centroids, d=None)`.
+- `python/_mojo_bridge.pyi`: type stubs for the new PQ bridge APIs.
+- `scripts/vectro_quantizer_stub.py`: PQ pipe command support for CI/local smoke paths.
+- `tests/test_batch_api.py`: 3 new binary profile tests — compression ratio ~32x, packed shape,
+  and cosine similarity roundtrip (spec floor ≥ 0.75).
+
+### Fixed
+- `python/batch_api.py` (`VectroBatchProcessor.quantize_batch`): `profile="binary"` now correctly
+  routes to `binary_api.quantize_binary()` instead of silently falling back to INT8.
+  Compression ratio is now reported as ~32x (was incorrectly ~3.85x — a 8.3× misrepresentation).
+  Mojo path is explicitly bypassed for binary (Mojo backend is INT8-only).
+- `python/batch_api.py` (`BatchQuantizationResult.reconstruct_vector`): binary mode no longer
+  accesses the `scales` array (empty for binary), eliminating `IndexError` on index 0.
+
+### Changed
+- `python/pq_api.py`: PQ encode/decode now prefer the native Mojo bridge path and fall back to NumPy/scikit-learn on bridge failure.
+- `experimental/mojo/vector_ops.mojo`: batch cosine/euclidean implementations switched to preallocated outputs with parallel row execution.
+- `experimental/mojo/benchmark_mojo.mojo`: benchmark timing now uses monotonic ns wall-clock with explicit warmup and per-iteration timing aggregation.
+- Build path fixes:
+  - `pixi.toml` Mojo build tasks now target `experimental/mojo/vectro_standalone.mojo`.
+  - `setup.py` Mojo compile path now targets `experimental/mojo/vectro_standalone.mojo`.
+- Version bumped `4.11.0 → 4.11.1` across pyproject.toml, pixi.toml, python/__init__.py,
+  python/vectro.py, tests/test_release_candidate.py.
+- CLAUDE.md + AGENTS.md version references synced to v4.11.1 / 790 tests.
+
+### Tested
+- `python3 -m pytest tests/test_mojo_bridge.py tests/test_pq.py -v` → `41 passed, 0 failed`.
+- `python3 -m pytest tests/test_batch_api.py -v` → `21 passed, 0 failed`.
+- `python3 -m pytest tests/ -q` → **789 passed, 1 skipped, 0 failed**.
+
 ## [4.11.0] — 2026-04-18  Sprint 3: SIMD batch encode — encode_fast_into NEON/AVX2
 
 ### Added

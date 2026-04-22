@@ -21,6 +21,14 @@ import numpy as np
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
+try:
+    from . import _mojo_bridge as _mojo_bridge
+except Exception:
+    try:
+        import _mojo_bridge as _mojo_bridge  # type: ignore
+    except Exception:
+        _mojo_bridge = None
+
 
 @dataclass
 class PQCodebook:
@@ -112,6 +120,8 @@ def pq_encode(
         Codes of shape (n, M), dtype uint8.
     """
     vectors = np.ascontiguousarray(vectors, dtype=np.float32)
+    if vectors.ndim == 1:
+        vectors = vectors[np.newaxis]
     n, d = vectors.shape
     M = codebook.n_subspaces
     K = codebook.n_centroids
@@ -119,6 +129,14 @@ def pq_encode(
 
     if codebook.rotation is not None:
         vectors = vectors @ codebook.rotation
+
+    # Preferred path: Mojo PQ kernels via pipe protocol.
+    if _mojo_bridge is not None and _mojo_bridge.is_available() and K <= 256:
+        try:
+            return _mojo_bridge.pq_encode(vectors, codebook.centroids)
+        except Exception:
+            # Fall through to NumPy path for robustness.
+            pass
 
     codes = np.empty((n, M), dtype=np.uint8)
 
@@ -154,9 +172,18 @@ def pq_decode(
     sub_dim = codebook.sub_dim
     d = M * sub_dim
 
-    out = np.empty((n, d), dtype=np.float32)
-    for m in range(M):
-        out[:, m * sub_dim : (m + 1) * sub_dim] = codebook.centroids[m][codes[:, m]]
+    # Preferred path: Mojo PQ kernels via pipe protocol.
+    if _mojo_bridge is not None and _mojo_bridge.is_available() and codebook.n_centroids <= 256:
+        try:
+            out = _mojo_bridge.pq_decode(codes, codebook.centroids, d=d)
+        except Exception:
+            out = np.empty((n, d), dtype=np.float32)
+            for m in range(M):
+                out[:, m * sub_dim : (m + 1) * sub_dim] = codebook.centroids[m][codes[:, m]]
+    else:
+        out = np.empty((n, d), dtype=np.float32)
+        for m in range(M):
+            out[:, m * sub_dim : (m + 1) * sub_dim] = codebook.centroids[m][codes[:, m]]
 
     if codebook.rotation is not None:
         out = out @ codebook.rotation.T

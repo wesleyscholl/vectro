@@ -18,7 +18,7 @@ This file defines standing instructions for all AI and human contributors workin
 
 ## 🗂️ Planning First
 
-- **Always read `PLAN.md` at the repo root before starting any task.** There is no `docs/planning/PLAN.md`; the authoritative roadmap is `/PLAN.md`. Current active version: **v4.8.0 (Python API) / v7.3.0 (Rust crates)** — 741 tests passing.
+- **Always read `PLAN.md` at the repo root before starting any task.** There is no `docs/planning/PLAN.md`; the authoritative roadmap is `/PLAN.md`. Current active version: **v4.11.1 (Python API) / v7.4.0 (Rust crates)** — 789 tests passing.
 - Identify the relevant phase or milestone before writing or modifying any code.
 - After completing work, update `PLAN.md`, `CHANGELOG.md`, and `README.md` to reflect what changed, what is done, and what is next.
 - If a task deviates from the current plan, call it out explicitly before continuing.

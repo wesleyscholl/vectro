@@ -30,6 +30,20 @@ def _rand_vecs(n: int, d: int) -> np.ndarray:
     return RNG.standard_normal((n, d)).astype(np.float32)
 
 
+def _supports_pq_pipe() -> bool:
+    """Return True when the current binary exposes pipe pq encode/decode."""
+    try:
+        vecs = _rand_vecs(1, 4)
+        centroids = _rand_vecs(2, 4).reshape(1, 2, 4)
+        _ = mb.pq_encode(vecs, centroids)
+        return True
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "Unknown op/cmd: pq/encode" in msg or "Unknown op/cmd: pq/decode" in msg:
+            return False
+        raise
+
+
 # ── is_available / binary_path ────────────────────────────────────────────────
 
 def test_is_available():
@@ -183,6 +197,43 @@ class TestBinary:
         packed = mb.bin_encode(vecs)
         recon = mb.bin_decode(packed, 8)
         np.testing.assert_array_equal(recon, -np.ones_like(recon))
+
+
+# ── Product Quantization (PQ) ───────────────────────────────────────────────
+
+class TestPQ:
+    @pytest.mark.skipif(not _supports_pq_pipe(), reason="vectro_quantizer binary does not expose pq pipe commands")
+    def test_pq_encode_shape(self):
+        vecs = _rand_vecs(16, 32)
+        M, K = 4, 16
+        centroids = _rand_vecs(M * K, 8).reshape(M, K, 8)
+
+        codes = mb.pq_encode(vecs, centroids)
+        assert codes.shape == (16, M)
+        assert codes.dtype == np.uint8
+
+    @pytest.mark.skipif(not _supports_pq_pipe(), reason="vectro_quantizer binary does not expose pq pipe commands")
+    def test_pq_decode_shape(self):
+        n, M, K, sub_dim = 12, 4, 8, 8
+        codes = RNG.integers(0, K, size=(n, M), dtype=np.uint8)
+        centroids = _rand_vecs(M * K, sub_dim).reshape(M, K, sub_dim)
+
+        recon = mb.pq_decode(codes, centroids)
+        assert recon.shape == (n, M * sub_dim)
+        assert recon.dtype == np.float32
+
+    @pytest.mark.skipif(not _supports_pq_pipe(), reason="vectro_quantizer binary does not expose pq pipe commands")
+    def test_decode_then_encode_identity(self):
+        """Vectors decoded from centroid codes should re-encode to same codes."""
+        n, M, K, sub_dim = 24, 6, 12, 4
+        codes = RNG.integers(0, K, size=(n, M), dtype=np.uint8)
+
+        # Spread centroids to reduce accidental ties on nearest-centroid argmin.
+        centroids = (3.0 * _rand_vecs(M * K, sub_dim)).reshape(M, K, sub_dim)
+
+        vecs = mb.pq_decode(codes, centroids)
+        recoded = mb.pq_encode(vecs, centroids)
+        np.testing.assert_array_equal(recoded, codes)
 
 
 # ── end-to-end via high-level API ─────────────────────────────────────────────

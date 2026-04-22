@@ -6,7 +6,7 @@ Data exchange via pipe (stdin/stdout) — zero temp-file overhead.
 Layout:
   float32 : n × d × 4 bytes, little-endian IEEE 754
   int8    : n × d × 1 bytes, signed two's complement
-  uint8   : n × k × 1 bytes (k = ceil(d/2) for NF4, ceil(d/8) for binary)
+    uint8   : n × k × 1 bytes (k = ceil(d/2) for NF4, ceil(d/8) for binary, or M for PQ)
   scales  : n × 4 bytes, little-endian IEEE 754 float32
 
 Commands (file-path mode, legacy):
@@ -16,6 +16,8 @@ Commands (file-path mode, legacy):
   vectro_quantizer nf4  decode   <in.u8>  <in_scales> <out.f32> <n> <d>
   vectro_quantizer bin  encode   <in.f32> <out.u8> <n> <d>
   vectro_quantizer bin  decode   <in.u8>  <out.f32> <n> <d>
+    vectro_quantizer pq   encode   <in.f32> <in_centroids.f32> <out.u8> <n> <d> <M> <K>
+    vectro_quantizer pq   decode   <in.u8>  <in_centroids.f32> <out.f32> <n> <d> <M> <K>
 
 Commands (pipe mode, preferred — no disk I/O):
   vectro_quantizer pipe int8 quantize <n> <d>
@@ -24,6 +26,8 @@ Commands (pipe mode, preferred — no disk I/O):
   vectro_quantizer pipe nf4  decode   <n> <d>
   vectro_quantizer pipe bin  encode   <n> <d>
   vectro_quantizer pipe bin  decode   <n> <d>
+    vectro_quantizer pipe pq   encode   <n> <d> <M> <K>
+    vectro_quantizer pipe pq   decode   <n> <d> <M> <K>
 
   Pipe stdin/stdout layout:
     int8 quantize  stdin : n*d float32       stdout: n*d int8 + n float32 scales
@@ -32,6 +36,8 @@ Commands (pipe mode, preferred — no disk I/O):
     nf4  decode    stdin : n*ceil(d/2)+n*4   stdout: n*d float32
     bin  encode    stdin : n*d float32       stdout: n*ceil(d/8) uint8
     bin  decode    stdin : n*ceil(d/8) uint8 stdout: n*d float32
+    pq   encode    stdin : n*d float32 + M*K*(d/M) float32  stdout: n*M uint8
+    pq   decode    stdin : n*M uint8 + M*K*(d/M) float32    stdout: n*d float32
 
 Other commands:
   vectro_quantizer benchmark <n> <d>
@@ -503,6 +509,120 @@ fn decode_binary(packed: List[UInt8], n: Int, d: Int) -> List[Float32]:
 
 
 # ────────────────────────────────────────────────────────────────────────────
+# 4. Product Quantization (PQ) encode / decode
+# ────────────────────────────────────────────────────────────────────────────
+
+fn pq_encode(
+    emb: List[Float32],
+    centroids: List[Float32],
+    n: Int,
+    d: Int,
+    M: Int,
+    K: Int,
+) -> List[UInt8]:
+    """Encode n vectors into PQ codes (one UInt8 code per sub-space).
+
+    Args:
+        emb: Flat float32 vectors [n*d].
+        centroids: Flat centroid table [M*K*sub_dim], row-major by (m, k, j).
+        n: Number of vectors.
+        d: Full vector dimension.
+        M: Number of sub-spaces.
+        K: Centroids per sub-space (must be <= 256).
+    Returns:
+        Flat code buffer [n*M] (uint8).
+    """
+    var sub_dim = d // M
+    var K_sub_dim = K * sub_dim
+
+    var codes = List[UInt8](capacity=n * M)
+    codes.resize(n * M, UInt8(0))
+
+    var emb_ptr = emb.unsafe_ptr()
+    var cen_ptr = centroids.unsafe_ptr()
+    var out_ptr = codes.unsafe_ptr()
+
+    @parameter
+    fn _encode_row(i: Int):
+        var row = emb_ptr + i * d
+        for m in range(M):
+            var vsub = row + m * sub_dim
+            var cbase = cen_ptr + m * K_sub_dim
+            var best_dist: Float32 = 1e38
+            var best_k: Int = 0
+
+            for k in range(K):
+                var c = cbase + k * sub_dim
+                var dist: Float32 = 0.0
+
+                @parameter
+                fn _l2[w: Int](j: Int):
+                    var diff = vsub.load[width=w](j) - c.load[width=w](j)
+                    dist += (diff * diff).reduce_add()
+
+                vectorize[_l2, SIMD_W](sub_dim)
+
+                if dist < best_dist:
+                    best_dist = dist
+                    best_k = k
+
+            out_ptr[i * M + m] = UInt8(best_k)
+
+    parallelize[_encode_row](n)
+
+    return codes^
+
+
+fn pq_decode(
+    codes: List[UInt8],
+    centroids: List[Float32],
+    n: Int,
+    d: Int,
+    M: Int,
+    K: Int,
+) -> List[Float32]:
+    """Decode PQ codes back to approximate float32 vectors.
+
+    Args:
+        codes: Flat code buffer [n*M].
+        centroids: Flat centroid table [M*K*sub_dim].
+        n: Number of vectors.
+        d: Full vector dimension.
+        M: Number of sub-spaces.
+        K: Centroids per sub-space.
+    Returns:
+        Reconstructed float32 buffer [n*d].
+    """
+    var sub_dim = d // M
+    var K_sub_dim = K * sub_dim
+
+    var out = List[Float32](capacity=n * d)
+    out.resize(n * d, Float32(0.0))
+
+    var code_ptr = codes.unsafe_ptr()
+    var cen_ptr = centroids.unsafe_ptr()
+    var out_ptr = out.unsafe_ptr()
+
+    @parameter
+    fn _decode_row(i: Int):
+        var row_out = out_ptr + i * d
+        for m in range(M):
+            var k = Int(code_ptr[i * M + m])
+            var c = cen_ptr + m * K_sub_dim + k * sub_dim
+            var o = row_out + m * sub_dim
+
+            @parameter
+            fn _copy[w: Int](j: Int):
+                o.store(j, c.load[width=w](j))
+
+            vectorize[_copy, SIMD_W](sub_dim)
+
+    parallelize[_decode_row](n)
+
+    return out^
+
+
+# ────────────────────────────────────────────────────────────────────────────
 # Benchmark
 # ────────────────────────────────────────────────────────────────────────────
 
@@ -708,15 +828,69 @@ fn main() raises:
         print("Unknown bin subcommand:", sub)
         return
 
+    # ── pq ───────────────────────────────────────────────────────────────────
+    if cmd == "pq":
+        if argc < 3:
+            print("Usage: vectro_quantizer pq <encode|decode> ...")
+            return
+        var sub = args[2]
+
+        if sub == "encode":
+            # pq encode <in.f32> <in_centroids.f32> <out.u8> <n> <d> <M> <K>
+            var n = Int(args[6])
+            var d = Int(args[7])
+            var M = Int(args[8])
+            var K = Int(args[9])
+            if M <= 0 or K <= 0 or K > 256 or d % M != 0:
+                print("Invalid PQ params: require M>0, 0<K<=256, and d%M==0")
+                return
+            var sub_dim = d // M
+            var data = read_f32(args[3], n * d)
+            var centroids = read_f32(args[4], M * K * sub_dim)
+            var codes = pq_encode(data, centroids, n, d, M, K)
+            write_u8(codes, args[5])
+            return
+
+        if sub == "decode":
+            # pq decode <in.u8> <in_centroids.f32> <out.f32> <n> <d> <M> <K>
+            var n = Int(args[6])
+            var d = Int(args[7])
+            var M = Int(args[8])
+            var K = Int(args[9])
+            if M <= 0 or K <= 0 or K > 256 or d % M != 0:
+                print("Invalid PQ params: require M>0, 0<K<=256, and d%M==0")
+                return
+            var sub_dim = d // M
+            var codes = read_u8(args[3], n * M)
+            var centroids = read_f32(args[4], M * K * sub_dim)
+            var recon = pq_decode(codes, centroids, n, d, M, K)
+            write_f32(recon, args[5])
+            return
+
+        print("Unknown pq subcommand:", sub)
+        return
+
     # ── pipe (stdin → stdout, zero disk I/O) ─────────────────────────────────
     if cmd == "pipe":
         if argc < 6:
-            print("Usage: vectro_quantizer pipe <type> <op> <n> <d>")
+            print("Usage: vectro_quantizer pipe <type> <op> <n> <d> [M K]")
             return
         var ptype = args[2]
         var pop   = args[3]
         var pn    = Int(args[4])
         var pd    = Int(args[5])
+
+        var pM = 0
+        var pK = 0
+        if ptype == "pq":
+            if argc < 8:
+                print("Usage: vectro_quantizer pipe pq <encode|decode> <n> <d> <M> <K>")
+                return
+            pM = Int(args[6])
+            pK = Int(args[7])
+            if pM <= 0 or pK <= 0 or pK > 256 or pd % pM != 0:
+                print("Invalid PQ params: require M>0, 0<K<=256, and d%M==0")
+                return
 
         var raw = read_stdin_bytes()
 
@@ -799,8 +973,33 @@ fn main() raises:
                 write_stdout_bytes(f32_to_bytes(recon))
                 return
 
+        if ptype == "pq":
+            var sub_dim = pd // pM
+            var centroid_count = pM * pK * sub_dim
+
+            if pop == "encode":
+                # stdin: pn*pd float32 + centroid_count float32 → stdout: pn*pM uint8
+                var data = read_f32_from_raw(raw, 0, pn * pd)
+                var centroids = read_f32_from_raw(raw, pn * pd * 4, centroid_count)
+                var codes = pq_encode(data, centroids, pn, pd, pM, pK)
+                write_stdout_bytes(codes)
+                return
+
+            if pop == "decode":
+                # stdin: pn*pM uint8 + centroid_count float32 → stdout: pn*pd float32
+                var codes = List[UInt8](capacity=pn * pM)
+                codes.resize(pn * pM, UInt8(0))
+                var src = raw.unsafe_ptr()
+                var dst = codes.unsafe_ptr()
+                for i in range(pn * pM):
+                    dst[i] = src[i]
+                var centroids = read_f32_from_raw(raw, pn * pM, centroid_count)
+                var recon = pq_decode(codes, centroids, pn, pd, pM, pK)
+                write_stdout_bytes(f32_to_bytes(recon))
+                return
+
         print("Unknown pipe subcommand:", ptype, pop)
         return
 
     print("Unknown command:", cmd)
-    print("Commands: int8, nf4, bin, benchmark, selftest")
+    print("Commands: int8, nf4, bin, pq, benchmark, selftest")

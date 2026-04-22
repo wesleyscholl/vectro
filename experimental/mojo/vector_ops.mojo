@@ -6,7 +6,7 @@ All hot functions operate on List[Float32] and use the native SIMD width
 so the compiler can emit AVX2/NEON instructions automatically.
 """
 
-from algorithm import vectorize
+from algorithm import vectorize, parallelize
 from math import sqrt
 from sys.info import simdwidthof
 
@@ -185,9 +185,19 @@ struct VectorOps:
             List of similarity scores.
         """
         var batch_size = len(vectors1)
-        var similarities = List[Float32]()
-        for i in range(batch_size):
-            similarities.append(cosine_similarity(vectors1[i], vectors2[i]))
+        if batch_size != len(vectors2):
+            print("Error: Batch sizes don't match")
+            return List[Float32]()
+
+        var similarities = List[Float32](capacity=batch_size)
+        similarities.resize(batch_size, Float32(0.0))
+        var out_ptr = similarities.unsafe_ptr()
+
+        @parameter
+        fn _row(i: Int):
+            out_ptr[i] = cosine_similarity(vectors1[i], vectors2[i])
+
+        parallelize[_row](batch_size)
         return similarities^
 
     @staticmethod
@@ -203,9 +213,19 @@ struct VectorOps:
             List of distance values.
         """
         var batch_size = len(vectors1)
-        var distances = List[Float32]()
-        for i in range(batch_size):
-            distances.append(euclidean_distance(vectors1[i], vectors2[i]))
+        if batch_size != len(vectors2):
+            print("Error: Batch sizes don't match")
+            return List[Float32]()
+
+        var distances = List[Float32](capacity=batch_size)
+        distances.resize(batch_size, Float32(0.0))
+        var out_ptr = distances.unsafe_ptr()
+
+        @parameter
+        fn _row(i: Int):
+            out_ptr[i] = euclidean_distance(vectors1[i], vectors2[i])
+
+        parallelize[_row](batch_size)
         return distances^
 
 
