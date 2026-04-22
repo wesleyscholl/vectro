@@ -1,23 +1,42 @@
 # Vectro — Plan
 
-> Last updated: 2026-04-23
-> Current version: **4.11.2** (Python) / **7.4.0** (Rust) — Test suite path-helper migration complete, 792 Python tests passing
+> Last updated: 2026-04-22
+> Current version: **4.11.2** (Python) / **7.4.0** (Rust) — ADR-002 CI gates closed, WASM browser tests added, 792 Python tests passing
 
 ---
 
-## v4.11.2 — Test hygiene: shared path-helper migration complete ✅ COMPLETE (2026-04-23)
+## v4.11.2 — ADR-002 CI gates + version bump ✅ COMPLETE (2026-04-22)
 
 ### Completed in this wave
-- Migrated all 29 remaining test files from inline `sys.path.insert(...)` to
-  `tests/_path_setup.ensure_repo_root_on_path()`.
-- Files previously pointing `sys.path` at `python/` (test_binary.py, test_nf4.py,
-  test_pq.py, test_hnsw.py, test_storage_v3.py) updated to `from python.xxx import`.
-- All in-body bare `import storage_v3` calls patched to
-  `import python.storage_v3 as storage_v3` for monkeypatch compatibility.
-- Restored accidentally-removed stdlib imports in test bodies:
-  `from pathlib import Path` in `test_profiles_api.py`,
-  `import os` in `test_codebook.py`.
-- Zero `sys.path` mutations remain in any test file outside `tests/_path_setup.py`.
+- **Version bump:** All version files bumped `4.11.1 → 4.11.2`
+  (pyproject.toml, pixi.toml, python/__init__.py, python/vectro.py,
+  tests/test_release_candidate.py — the test-hygiene wave omitted this).
+
+- **ADR-002 Decision 2 gate — WASM browser tests:**
+  - Added `[target.'cfg(target_arch = "wasm32")'.dev-dependencies] wasm-bindgen-test = "0.3"` to
+    `rust/vectro_lib/Cargo.toml`.
+  - Added `#[cfg(all(target_arch = "wasm32", test))] mod tests` to
+    `rust/vectro_lib/src/wasm.rs` with 11 `#[wasm_bindgen_test]` cases covering
+    INT8 (output length, codes in range, scale positive, zero-vector safety,
+    `encode_int8_full` size + scale, `encode_int8_full` scale matches independent call)
+    and NF4 (packed length even/odd dim, scale positive, `encode_nf4_dim` passthrough,
+    cross-method acceptance of extreme f32 values).
+  - Added `wasm-pack test --headless --chrome -- --lib` step to
+    `.github/workflows/wasm.yml` (runs before release build, so correctness is
+    validated before size is checked).
+
+- **ADR-002 Decision 1 gate — CI latency job hardened:**
+  - Updated the existing `latency-gate` CI job in `.github/workflows/ci.yml`:
+    - Pins to `--release` build (debug binaries fail the 1 ms contract by ~10×).
+    - Adds `pip install --upgrade pip` before maturin install.
+    - Narrows pytest run to `-k "test_p99"` to keep the job focused on the
+      ADR gate assertion and print timing stats via `-s`.
+    - Adds `timeout-minutes: 20` guard.
+    - Improves inline comments to document the ADR contract.
+
+- **Test-hygiene migration:** all 29 remaining test files migrated from inline
+  `sys.path.insert(...)` to `tests/_path_setup.ensure_repo_root_on_path()`.
+  (Carried forward from the commits on main since v4.11.1.)
 
 ### Validation
 - `python3 -m pytest tests/ -q --timeout=120` → **792 passed, 1 skipped, 0 failed**

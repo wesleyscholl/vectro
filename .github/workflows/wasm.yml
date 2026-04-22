@@ -36,6 +36,17 @@ jobs:
       - name: Install brotli (for size check)
         run: sudo apt-get install -y brotli
 
+      # ── ADR-002 Decision 2 gate: wasm-pack test passes in headless Chrome ──
+      # Runs the #[wasm_bindgen_test] suite in a real browser environment.
+      # Chrome is pre-installed on ubuntu-latest; wasm-pack manages chromedriver.
+      - name: Run WASM browser tests (headless Chrome)
+        working-directory: rust/vectro_lib
+        run: |
+          wasm-pack test \
+            --headless \
+            --chrome \
+            -- --lib
+
       - name: Build WASM package (release)
         working-directory: rust/vectro_lib
         run: |

@@ -5,18 +5,27 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.11.2] — 2026-04-23
+## [4.11.2] — 2026-04-22
+
+### Added
+- `rust/vectro_lib/src/wasm.rs`: browser test module with 11 `#[wasm_bindgen_test]`
+  cases covering INT8/NF4 shape/range/scale contracts and odd/even NF4 packing.
+- `rust/vectro_lib/Cargo.toml`: `wasm-bindgen-test` wasm32 dev-dependency for
+  headless browser test execution.
 
 ### Changed
-- Completed shared path-helper migration across the entire test suite.
-  All 29 remaining test files that contained inline `sys.path.insert(...)` have been
-  migrated to `tests/_path_setup.ensure_repo_root_on_path()`.
-  Files that previously pointed `sys.path` at `python/` and used bare module names
-  (`from pq_api import`, `from nf4_api import`, etc.) now use fully-qualified
-  `from python.xxx import` imports.
-  All in-body bare `import storage_v3` / `import python.storage_v3 as storage_v3`
-  monkeypatch references also corrected.
-  Zero `sys.path` mutations remain in any test file outside the helper itself.
+- `.github/workflows/wasm.yml`: now runs
+  `wasm-pack test --headless --chrome -- --lib` before release build and size gate,
+  closing ADR-002 Decision 2 CI gap.
+- `.github/workflows/ci.yml` (`latency-gate` job): hardened ADR-002 Decision 1 gate:
+  explicit release build via maturin, pip bootstrap, timeout guard, and focused
+  p99 assertions via `tests/test_latency_singleshot.py -k "test_p99"`.
+- Completed shared path-helper migration across the entire test suite:
+  all 29 remaining test files using inline `sys.path.insert(...)` now route via
+  `tests/_path_setup.ensure_repo_root_on_path()`.
+- Version synced to `4.11.2` across:
+  `pyproject.toml`, `pixi.toml`, `python/__init__.py`, `python/vectro.py`,
+  and `tests/test_release_candidate.py`.
 
 ### Validation
 - `python3 -m pytest tests/ -q --timeout=120` → **792 passed, 1 skipped, 0 failed**

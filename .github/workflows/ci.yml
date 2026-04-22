@@ -178,10 +178,15 @@ jobs:
 #     - run: pip install ".[all]"
 #     - run: python -m pytest tests/test_gpu_equivalence.py -v
 
-  # ── Latency gate: vectro_py shape / dtype / cosine + p99 < 1 ms ───────────
+  # ── ADR-002 Decision 1: PyO3 latency gate (p99 < 1 ms for d=768) ──────────
+  # Builds vectro_py via maturin (PyO3 Rust extension) then asserts:
+  #   • p99 INT8 encode latency at d=768 < 1 ms
+  #   • p99 NF4  encode latency at d=768 < 1 ms
+  # Warmup: 1 000 calls discarded; measurement: 10 000 calls.
   latency-gate:
-    name: Latency gate (vectro_py)
+    name: Latency gate (vectro_py — p99 < 1 ms)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: rust-tests
 
     steps:
@@ -205,13 +210,20 @@ jobs:
           python-version: "3.12"
 
       - name: Install maturin + test deps
-        run: pip install maturin numpy pytest
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin numpy "pytest>=7.0"
 
       - name: Build vectro_py (release)
+        # --release is mandatory: debug builds are ~10× slower and would fail
+        # the p99 < 1 ms contract on all CI hardware.
         run: maturin develop --release -m rust/vectro_py/Cargo.toml
 
-      - name: Run latency tests
-        run: python -m pytest tests/test_latency_singleshot.py -v --tb=short
+      - name: Run latency gate (p99 assertions only)
+        run: |
+          python -m pytest tests/test_latency_singleshot.py \
+            -v --tb=short -s \
+            -k "test_p99"
 
   mojo-ipc-smoke:
     name: Mojo IPC pipe smoke-test
