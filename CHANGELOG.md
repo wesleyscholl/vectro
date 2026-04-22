@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/vectro_quantizer_stub.py`: PQ pipe command support for CI/local smoke paths.
 - `tests/test_batch_api.py`: 3 new binary profile tests — compression ratio ~32x, packed shape,
   and cosine similarity roundtrip (spec floor ≥ 0.75).
+- `tests/test_sklearn_subprocess_isolation.py`: subprocess isolation smoke tests for
+  `python.rq_api` and `python.v3_api` RQ-path execution (including repeated fresh-interpreter
+  stability check).
 
 ### Fixed
 - `python/batch_api.py` (`VectroBatchProcessor.quantize_batch`): `profile="binary"` now correctly
@@ -35,8 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `setup.py` Mojo compile path now targets `experimental/mojo/vectro_standalone.mojo`.
 - Version bumped `4.11.0 → 4.11.1` across pyproject.toml, pixi.toml, python/__init__.py,
   python/vectro.py, tests/test_release_candidate.py.
-- CLAUDE.md + AGENTS.md version references synced to v4.11.1 / 789 tests.
-- `README.md` top metadata synced to v4.11.1 and tests-789 badge.
+- CLAUDE.md + AGENTS.md version references synced to v4.11.1 / 792 tests.
+- `README.md` top metadata synced to v4.11.1 and tests-792 badge.
 - CLAUDE.md + AGENTS.md roadmap row for v5.0/v8.0 now explicitly marked COMPLETE,
   referencing `docs/adr-002-v4-architecture.md` as the satisfied ADR gate.
 - `NEXT_SESSION_PROMPT.md` refreshed to remove stale "ADR drafting" guidance and point
@@ -45,7 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Tested
 - `python3 -m pytest tests/test_mojo_bridge.py tests/test_pq.py -v` → `41 passed, 0 failed`.
 - `python3 -m pytest tests/test_batch_api.py -v` → `21 passed, 0 failed`.
-- `python3 -m pytest tests/ -q` → **789 passed, 1 skipped, 0 failed**.
+- `python3 -m pytest tests/ -q` → **792 passed, 1 skipped, 0 failed**.
 
 ## [4.11.0] — 2026-04-18  Sprint 3: SIMD batch encode — encode_fast_into NEON/AVX2
 

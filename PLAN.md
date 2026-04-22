@@ -1,7 +1,7 @@
 # Vectro — Plan
 
 > Last updated: 2026-04-22
-> Current version: **4.11.1** (Python) / **7.4.0** (Rust) — Binary batch profile fix, 789 Python tests passing
+> Current version: **4.11.1** (Python) / **7.4.0** (Rust) — Binary batch profile fix, 792 Python tests passing
 
 ---
 
@@ -21,16 +21,19 @@
 - Version bumped `4.11.0 → 4.11.1` across pyproject.toml, pixi.toml, python/__init__.py,
   python/vectro.py, tests/test_release_candidate.py.
 - PLAN.md header date corrected (was incorrectly `2026-05-19`).
-- CLAUDE.md + AGENTS.md version references synced to v4.11.1 / 789 tests.
-- README top metadata synced to v4.11.1 and tests-789 badge.
+- CLAUDE.md + AGENTS.md version references synced to v4.11.1 / 792 tests.
+- README top metadata synced to v4.11.1 and tests-792 badge.
 - CLAUDE.md + AGENTS.md roadmap row for v5.0/v8.0 updated to explicit COMPLETE status
   with ADR reference (`docs/adr-002-v4-architecture.md`).
 - NEXT_SESSION_PROMPT.md refreshed: removed stale ADR-drafting next step and replaced
   with active priorities (test hygiene, benchmark reproducibility, ADR execution audit).
+- Added `tests/test_sklearn_subprocess_isolation.py` with subprocess smoke tests for
+  sklearn-backed RQ and v3 RQ-profile paths to reduce in-process C-extension risk.
 
 ### Validation
 - `python3 -m pytest tests/test_batch_api.py -v` → **21 passed, 0 failed**
-- `python3 -m pytest tests/ -q` → **789 passed, 1 skipped, 0 failed**
+- `python3 -m pytest tests/ -q` → **792 passed, 1 skipped, 0 failed**
+- `python3 -m pytest tests/test_sklearn_subprocess_isolation.py -q` → **3 passed, 0 failed**
 
 ---
 

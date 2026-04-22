@@ -7,7 +7,7 @@ Read this first. It takes under a minute and prevents context drift.
 - Version: Python 4.11.1 / Rust 7.4.0
 - Branch: main
 - Latest tagged release: v4.11.1
-- Test status: 789 passed, 1 skipped, 0 failed
+- Test status: 792 passed, 1 skipped, 0 failed
 
 ## What was done in the latest wave
 
@@ -19,12 +19,16 @@ Read this first. It takes under a minute and prevents context drift.
 2. Documentation contract drift reduced:
 - CLAUDE.md project identity, baseline tests, and roadmap header synced
 - AGENTS.md baseline tests and roadmap header synced
-- README version/test badges synced to 4.11.1 and 789 tests
-- PLAN.md and CHANGELOG.md stale 790 references corrected to 789
+- README version/test badges synced to 4.11.1 and 792 tests
+- PLAN.md and CHANGELOG.md stale test-count references corrected to 792
 
 3. Roadmap execution guidance corrected:
 - CLAUDE.md and AGENTS.md now explicitly mark v5.0/v8.0 ADR gate as complete.
 - Removed stale "ADR drafting" as a next task now that `docs/adr-002-v4-architecture.md` is already accepted.
+
+4. Test hygiene hardening increment:
+- Added `tests/test_sklearn_subprocess_isolation.py` to execute sklearn-backed
+  RQ/v3 paths in fresh subprocesses and guard against in-process C-extension reload risks.
 
 ## Active invariants to respect
 
@@ -36,12 +40,14 @@ Read this first. It takes under a minute and prevents context drift.
 ## Known blockers / open risks
 
 - CLAUDE.md and AGENTS.md still contain historical roadmap rows with older test counts by version (intentional historical records). Do not rewrite historical entries unless facts are wrong.
-- Pre-existing sklearn C-extension subprocess isolation debt remains in tests/test_rq.py and tests/test_v3_api.py notes.
+- Legacy suites still use repo-root `sys.path.insert(...)` patterns; standardizing on a shared
+  import helper remains open.
 
 ## Next high-value tasks
 
-1. Test hygiene hardening
-- Audit and isolate any remaining process-state-sensitive tests via subprocess patterns.
+1. Continue test hygiene hardening
+- Audit high-churn suites (`test_arrow_bridge.py`, `test_torch_bridge.py`) for process-state
+  mutations and migrate fragile import-behavior checks to subprocess boundaries where appropriate.
 
 2. Benchmark reproducibility pass
 - Re-run canonical benchmark commands and ensure benchmark docs remain consistent with measured data.

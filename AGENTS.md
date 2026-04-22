@@ -201,7 +201,7 @@ Do not proceed if:
 ### 📍 Project Identity
 
 **Vectro** is a **Mojo-first, production-grade embedding compression library.**  
-Current version: **v4.11.1 (Python API) / v7.4.0 (Rust crates)** — 789/789 tests passing.  
+Current version: **v4.11.1 (Python API) / v7.4.0 (Rust crates)** — 792/792 tests passing.  
 Performance target: **≥ 10M vec/s INT8 on Apple Silicon** (baseline: 12.5M+ vec/s, 4.85× FAISS C++).
 
 ---
@@ -273,7 +273,7 @@ Every quantization module test must include: (a) cosine similarity regression sn
 
 ### 🧪 Test Contracts
 
-- **Baseline:** 789 tests — do not ship a change that reduces this count
+- **Baseline:** 792 tests — do not ship a change that reduces this count
 - **Pre-existing sklearn failures:** `test_rq.py` and `test_v3_api.py` have known sklearn C-extension reload failures — these are NOT new failures. Fix them via subprocess isolation (the right fix) or explicitly mark as `xfail` with a root-cause note
 - **Connector tests** (5 vector DBs): mock the external service; never require a live DB instance in CI
 - **Mojo bridge tests:** `tests/test_mojo_bridge.py` must pass even when the Mojo binary is absent (fallback path coverage required)
@@ -333,7 +333,7 @@ cd js && npm install && npm run build
 | JS Bindings P2 | v4.7.0 / v7.2.0 | ✅ COMPLETE — `js/src/vectro_napi.cpp` (507 lines), `.vqz` parser + zstd + SIMD INT8 dequantize, `VqzReader` class, 15/15 JS tests, Node 18+20 CI | 691 Python + 15 JS tests passing |
 | Distribution | v4.8.0 / v7.3.0 | ✅ COMPLETE — Mojo binary bundled in macOS ARM64 + Linux x86_64 wheels; `_mojo_bridge.py` wheel-local search path; `MANIFEST.in`; `homebrew-tap.yml` auto-update workflow | 741 Python + 15 JS tests passing |
 | SIMD batch encode | v4.11.0 / v7.4.0 | ✅ COMPLETE — `encode_fast_into` NEON/AVX2, +22.6% INT8 encode throughput (13.07 M vec/s), 3 new LoRA tests | 786 Python + 15 JS tests passing |
-| Binary batch profile fix + v4.11.1 | v4.11.1 / v7.4.0 | ✅ COMPLETE — `batch_api` binary profile now routes to `binary_api`, correct ~32x ratio, 3 new tests, `reconstruct_vector` binary fix | 789 Python + 15 JS tests passing |
+| Binary batch profile fix + v4.11.1 | v4.11.1 / v7.4.0 | ✅ COMPLETE — `batch_api` binary profile now routes to `binary_api`, correct ~32x ratio, 3 new tests, `reconstruct_vector` binary fix | 792 Python + 15 JS tests passing |
 | v5.0 / v8.0 Design | v5.0.0 / v8.0.0 | ✅ COMPLETE — ADR decisions captured in `docs/adr-002-v4-architecture.md` (sub-1ms encode path, WASM target, model-family-aware profiles, Rust CLI direction) | Gate satisfied: ADR committed before implementation |
 
 **Bundled binary note:** `python/_mojo_bridge.py` `_find_binary()` must always have `pathlib.Path(__file__).parent / _BINARY_NAME` as the **first** candidate. This is what makes the installed wheel self-contained. Never reorder the candidates list without verifying wheel smoke-test passes.
