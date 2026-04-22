@@ -1,15 +1,18 @@
 """Tests for Weaviate connector behavior using a fake v4-style client."""
 
-import sys
 import unittest
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
 
-from python import WeaviateConnector
+ensure_repo_root_on_path()
+
+from python import WeaviateConnector  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

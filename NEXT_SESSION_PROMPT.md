@@ -36,6 +36,12 @@ Read this first. It takes under a minute and prevents context drift.
 - Moved pyarrow-missing import-behavior assertion in `test_arrow_bridge.py` to subprocess
   execution so import-state mutation does not occur in the main pytest process.
 
+6. Connector-suite path-helper migration continued:
+- Migrated `tests/test_qdrant_connector.py` and `tests/test_weaviate_connector.py`
+  from inline `sys.path.insert(...)` setup to `tests/_path_setup.py`.
+- Added explicit delayed-import annotations (`# noqa: E402`) so import ordering is
+  intentional and lint-clean after helper initialization.
+
 ## Active invariants to respect
 
 - INT8 throughput floor remains >=10M vec/s on M3 for Mojo SIMD path.
@@ -47,13 +53,14 @@ Read this first. It takes under a minute and prevents context drift.
 
 - CLAUDE.md and AGENTS.md still contain historical roadmap rows with older test counts by version (intentional historical records). Do not rewrite historical entries unless facts are wrong.
 - Legacy suites still use repo-root `sys.path.insert(...)` patterns in multiple files;
-  shared-helper migration is now started (arrow/torch done) but not complete across the suite.
+  shared-helper migration is in progress (arrow/torch/qdrant/weaviate done) but not
+  complete across the suite.
 
 ## Next high-value tasks
 
 1. Continue test hygiene hardening
 - Extend shared path-helper migration to the remaining path-mutating suites
-  (`test_weaviate_connector.py`, `test_qdrant_connector.py`, `test_batch_api.py`,
+  (`test_batch_api.py`,
   `test_profiles_api.py`, `test_integrations_api.py`, `test_onnx_runtime.py`,
   `test_chroma_connector.py`, `test_quantization_extra.py`, `test_benchmark_suite.py`,
   `test_auto_quantize_profiles.py`, `test_gpu_equivalence.py`, `test_quality_api.py`,

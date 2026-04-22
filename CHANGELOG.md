@@ -49,6 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   behavior via subprocess isolation (no import-state mutation in the main test process).
 - `tests/test_torch_bridge.py`: uses shared path helper instead of per-file inline
   `sys.path.insert(...)` setup.
+- `tests/test_qdrant_connector.py` and `tests/test_weaviate_connector.py`: migrated to
+  `tests/_path_setup.py` shared path helper; inline repo-root `sys.path.insert(...)`
+  removed and delayed imports explicitly marked (`# noqa: E402`) for lint clarity.
 
 ### Tested
 - `python3 -m pytest tests/test_mojo_bridge.py tests/test_pq.py -v` → `41 passed, 0 failed`.
@@ -56,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `python3 -m pytest tests/ -q` → **792 passed, 1 skipped, 0 failed**.
 - `python3 -m pytest tests/test_arrow_bridge.py tests/test_torch_bridge.py -v`
   → **24 passed, 0 failed**.
+- `python3 -m pytest tests/test_qdrant_connector.py tests/test_weaviate_connector.py -v`
+  → **10 passed, 0 failed**.
+- `python3 -m ruff check tests/test_qdrant_connector.py tests/test_weaviate_connector.py`
+  → **All checks passed**.
 - `python3 -m pytest tests/ -q --timeout=120` → **792 passed, 1 skipped, 0 failed**.
 
 ## [4.11.0] — 2026-04-18  Sprint 3: SIMD batch encode — encode_fast_into NEON/AVX2

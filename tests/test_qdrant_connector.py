@@ -2,13 +2,16 @@
 
 import unittest
 import numpy as np
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
 
-from python import QdrantConnector
+ensure_repo_root_on_path()
+
+from python import QdrantConnector  # noqa: E402
 
 
 class _FakeQdrantClient:
