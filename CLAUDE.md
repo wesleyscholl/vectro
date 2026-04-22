@@ -332,7 +332,7 @@ cd js && npm install && npm run build
 | Distribution | v4.8.0 / v7.3.0 | ✅ COMPLETE — Mojo binary bundled in macOS ARM64 + Linux x86_64 wheels; `_mojo_bridge.py` wheel-local search path; `MANIFEST.in`; `homebrew-tap.yml` auto-update workflow | 741 Python + 15 JS tests passing |
 | SIMD batch encode | v4.11.0 / v7.4.0 | ✅ COMPLETE — `encode_fast_into` NEON/AVX2, +22.6% INT8 encode throughput (13.07 M vec/s), 3 new LoRA tests | 786 Python + 15 JS tests passing |
 | Binary batch profile fix + v4.11.1 | v4.11.1 / v7.4.0 | ✅ COMPLETE — `batch_api` binary profile now routes to `binary_api`, correct ~32x ratio, 3 new tests, `reconstruct_vector` binary fix | 789 Python + 15 JS tests passing |
-| v5.0 / v8.0 Design | v5.0.0 / v8.0.0 | Architecture ADR: LLM embedding pipeline (<1 ms), WASM target, model-type-aware AutoQuantize profiles, Rust CLI fate decision | ADR committed before first implementation line |
+| v5.0 / v8.0 Design | v5.0.0 / v8.0.0 | ✅ COMPLETE — ADR decisions captured in `docs/adr-002-v4-architecture.md` (sub-1ms encode path, WASM target, model-family-aware profiles, Rust CLI direction) | Gate satisfied: ADR committed before implementation |
 
 ---
 

@@ -22,6 +22,10 @@ Read this first. It takes under a minute and prevents context drift.
 - README version/test badges synced to 4.11.1 and 789 tests
 - PLAN.md and CHANGELOG.md stale 790 references corrected to 789
 
+3. Roadmap execution guidance corrected:
+- CLAUDE.md and AGENTS.md now explicitly mark v5.0/v8.0 ADR gate as complete.
+- Removed stale "ADR drafting" as a next task now that `docs/adr-002-v4-architecture.md` is already accepted.
+
 ## Active invariants to respect
 
 - INT8 throughput floor remains >=10M vec/s on M3 for Mojo SIMD path.
@@ -36,14 +40,16 @@ Read this first. It takes under a minute and prevents context drift.
 
 ## Next high-value tasks
 
-1. v5.0/v8.0 architecture ADR drafting
-- Define LLM embedding pipeline (<1 ms), WASM target, and Rust CLI direction.
-
-2. Test hygiene hardening
+1. Test hygiene hardening
 - Audit and isolate any remaining process-state-sensitive tests via subprocess patterns.
 
-3. Benchmark reproducibility pass
+2. Benchmark reproducibility pass
 - Re-run canonical benchmark commands and ensure benchmark docs remain consistent with measured data.
+
+3. ADR-002 execution audit
+- Verify all v4.1 implementation gates referenced by `docs/adr-002-v4-architecture.md`
+  are either complete or tracked with explicit blockers (single-shot latency gate,
+  wasm-pack CI gate, profile registry test coverage).
 
 ## Commands
 

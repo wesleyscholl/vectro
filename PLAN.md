@@ -23,6 +23,10 @@
 - PLAN.md header date corrected (was incorrectly `2026-05-19`).
 - CLAUDE.md + AGENTS.md version references synced to v4.11.1 / 789 tests.
 - README top metadata synced to v4.11.1 and tests-789 badge.
+- CLAUDE.md + AGENTS.md roadmap row for v5.0/v8.0 updated to explicit COMPLETE status
+  with ADR reference (`docs/adr-002-v4-architecture.md`).
+- NEXT_SESSION_PROMPT.md refreshed: removed stale ADR-drafting next step and replaced
+  with active priorities (test hygiene, benchmark reproducibility, ADR execution audit).
 
 ### Validation
 - `python3 -m pytest tests/test_batch_api.py -v` → **21 passed, 0 failed**

@@ -37,6 +37,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   python/vectro.py, tests/test_release_candidate.py.
 - CLAUDE.md + AGENTS.md version references synced to v4.11.1 / 789 tests.
 - `README.md` top metadata synced to v4.11.1 and tests-789 badge.
+- CLAUDE.md + AGENTS.md roadmap row for v5.0/v8.0 now explicitly marked COMPLETE,
+  referencing `docs/adr-002-v4-architecture.md` as the satisfied ADR gate.
+- `NEXT_SESSION_PROMPT.md` refreshed to remove stale "ADR drafting" guidance and point
+  to current priorities (test hygiene hardening, benchmark reproducibility, ADR execution audit).
 
 ### Tested
 - `python3 -m pytest tests/test_mojo_bridge.py tests/test_pq.py -v` → `41 passed, 0 failed`.
