@@ -33,6 +33,12 @@ Read this first. It takes under a minute and prevents context drift.
 - Bumped lingering `4.11.1` version constants/files to `4.11.2` in all
   release-gated locations.
 
+4. Documentation metadata consistency pass:
+- Synced active metadata markers to v4.11.2 in `README.md`, `CLAUDE.md`, and
+  `AGENTS.md`.
+- Corrected stale active-section test-count references in `README.md` to 792.
+- Preserved historical roadmap/test-count entries intentionally.
+
 ## Active invariants to respect
 
 - INT8 throughput floor remains >=10M vec/s on M3 for Mojo SIMD path.

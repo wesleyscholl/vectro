@@ -7,7 +7,7 @@
 ### Ultra-High-Performance LLM Embedding Compressor
 
 ![Mojo](https://img.shields.io/badge/Mojo-first-orange?logo=fire&style=for-the-badge)
-![Version](https://img.shields.io/badge/version-4.11.1-blue?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-4.11.2-blue?style=for-the-badge)
 ![Tests](https://img.shields.io/badge/tests-792_passing-green?style=for-the-badge)
 ![Python-Only](https://img.shields.io/badge/mode-Python--only-blue?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
@@ -16,7 +16,7 @@
 ╦  ╦╔═╗╔═╗╔╦╗╦═╗╔═╗
 ╚╗╔╝║╣ ║   ║ ╠╦╝║ ║
  ╚╝ ╚═╝╚═╝ ╩ ╩╚═╚═╝
-    v4.11.1 — Mojo-Accelerated Vector Quantization
+    v4.11.2 — Mojo-Accelerated Vector Quantization
 ```
 
 > ⚠️ **Note on Performance Claims**: This library includes a compiled Mojo binary (`vectro_quantizer`) for peak performance. Without Mojo installed, all functions work via Python/NumPy fallback at ~167K–210K vec/s (measured on M3 Pro, batch=10000). With the Mojo binary built, throughput reaches 12M+ vec/s — **4.85× faster than FAISS C++**. See [Requirements](#-requirements) below.
@@ -89,7 +89,7 @@ pixi install && pixi shell
 # 2. Run visual demo
 python demos/demo_v3.py
 
-# 3. Run the test suite (594 tests in Python-only mode)
+# 3. Run the test suite (792 tests in Python-only mode)
 python -m pytest tests/ -q
 
 # 4. Build and verify the Mojo binary
@@ -501,7 +501,7 @@ See [docs/migration-guide.md](docs/migration-guide.md) for the complete guide.
 ├───────────────────────────────────────────────────────────────────┤
 │  📚 14 Production Mojo Modules    SIMD + GPU + HNSW + Storage     │
 │  🐍 25+ Python Modules            Full v3 API surface             │
-│  ✅ 594 Tests (Python-only mode)  All phases verified             │
+│  ✅ 792 Tests (Python-only mode)  All phases verified             │
 │  📖 5 Documentation Guides        Migration · API · Benchmarks    │
 │  ⚡ SIMD Vectorized               vectorize[_kernel, SIMD_WIDTH]  │
 │  🔢 7 Quantization Modes          INT8/NF4/PQ/Binary/RQ/AE/Auto  │
@@ -626,7 +626,7 @@ RQ x3:   cosine >= 0.98
 
 ### ✅ Production Ready
 ```
-Tests:    594 passing      ████████
+Tests:    792 passing      ████████
 Coverage: pytest-cov (CI)  ████████
 Warnings: 0                ████████
 ```

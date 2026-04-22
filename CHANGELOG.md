@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Version synced to `4.11.2` across:
   `pyproject.toml`, `pixi.toml`, `python/__init__.py`, `python/vectro.py`,
   and `tests/test_release_candidate.py`.
+- `README.md`: current metadata synced to `v4.11.2`; stale active-section test-count
+  references updated to `792` (historical roadmap/test rows intentionally retained).
+- `CLAUDE.md` and `AGENTS.md`: current active version markers synced to
+  `v4.11.2 / v7.4.0`; active roadmap header updated and v4.11.2 completion row added.
 
 ### Validation
 - `python3 -m pytest tests/ -q --timeout=120` → **792 passed, 1 skipped, 0 failed**

@@ -18,7 +18,7 @@ This file defines standing instructions for all AI and human contributors workin
 
 ## 🗂️ Planning First
 
-- **Always read `PLAN.md` at the repo root before starting any task.** There is no `docs/planning/PLAN.md`; the authoritative roadmap is `/PLAN.md`. Current active version: **v4.11.1** (all phases complete).
+- **Always read `PLAN.md` at the repo root before starting any task.** There is no `docs/planning/PLAN.md`; the authoritative roadmap is `/PLAN.md`. Current active version: **v4.11.2** (all phases complete).
 - Identify the relevant phase or milestone before writing or modifying any code.
 - After completing work, update `PLAN.md`, `CHANGELOG.md`, and `README.md` to reflect what changed, what is done, and what is next.
 - If a task deviates from the current plan, call it out explicitly before continuing.
@@ -201,7 +201,7 @@ Do not proceed if:
 ### 📍 Project Identity
 
 **Vectro** is a **Mojo-first, production-grade embedding compression library.**  
-Current version: **v4.11.1 (Python API) / v7.4.0 (Rust crates)** — 792/792 tests passing.  
+Current version: **v4.11.2 (Python API) / v7.4.0 (Rust crates)** — 792/792 tests passing.  
 Performance target: **≥ 10M vec/s INT8 on Apple Silicon** (baseline: 12.5M+ vec/s, 4.85× FAISS C++).
 
 ---
@@ -324,10 +324,11 @@ cd js && npm install && npm run build
 
 ---
 
-### 🗺️ Roadmap (Active — as of v4.11.1 / v7.4.0)
+### 🗺️ Roadmap (Active — as of v4.11.2 / v7.4.0)
 
 | Phase | Target Version | Focus | Ship Gate |
 |-------|---------------|-------|-----------|
+| ADR-002 CI gates + version bump | v4.11.2 / v7.4.0 | ✅ COMPLETE — CI latency gate hardened to release-mode p99 assertions, wasm browser tests added, and test path-helper migration completed | 792 Python + 15 JS tests passing |
 | IVF/BF16/Retriever surface | v4.5.0 / v7.0.0 | ✅ COMPLETE — `IVFIndex`, `IVFPQIndex`, `Bf16Encoder`, `from_file`/`from_jsonl`, type stubs, npm bump | 677/677 passing |
 | ONNX runtime fixes | v4.6.0 / v7.1.0 | ✅ COMPLETE — `_HAVE_ONNX` flag bug, descriptor protocol bug, 14 new passes | 691/691 passing |
 | JS Bindings P2 | v4.7.0 / v7.2.0 | ✅ COMPLETE — `js/src/vectro_napi.cpp` (507 lines), `.vqz` parser + zstd + SIMD INT8 dequantize, `VqzReader` class, 15/15 JS tests, Node 18+20 CI | 691 Python + 15 JS tests passing |

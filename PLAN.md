@@ -8,6 +8,11 @@
 ## v4.11.2 — ADR-002 CI gates + version bump ✅ COMPLETE (2026-04-22)
 
 ### Completed in this wave
+- **Documentation consistency pass (current metadata only):**
+  - `README.md` current metadata synced to `v4.11.2` and current test-count references
+    in active sections corrected to `792` (historical roadmap rows intentionally untouched).
+  - `CLAUDE.md` and `AGENTS.md` current active version markers synced to
+    `v4.11.2 / v7.4.0` and roadmap headers updated to include the completed v4.11.2 row.
 - **Version bump:** All version files bumped `4.11.1 → 4.11.2`
   (pyproject.toml, pixi.toml, python/__init__.py, python/vectro.py,
   tests/test_release_candidate.py — the test-hygiene wave omitted this).
