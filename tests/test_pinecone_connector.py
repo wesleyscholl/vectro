@@ -1,15 +1,18 @@
 """Tests for PineconeConnector using a fake Pinecone index."""
 
-import sys
 import unittest
-from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
 
-from python import PineconeConnector
-from python.integrations.vector_db import StoredVectorBatch
+ensure_repo_root_on_path()
+
+from python import PineconeConnector  # noqa: E402
+from python.integrations.vector_db import StoredVectorBatch  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

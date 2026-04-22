@@ -1,7 +1,26 @@
 # Vectro — Plan
 
-> Last updated: 2026-04-22
-> Current version: **4.11.1** (Python) / **7.4.0** (Rust) — Binary batch profile fix, 792 Python tests passing
+> Last updated: 2026-04-23
+> Current version: **4.11.2** (Python) / **7.4.0** (Rust) — Test suite path-helper migration complete, 792 Python tests passing
+
+---
+
+## v4.11.2 — Test hygiene: shared path-helper migration complete ✅ COMPLETE (2026-04-23)
+
+### Completed in this wave
+- Migrated all 29 remaining test files from inline `sys.path.insert(...)` to
+  `tests/_path_setup.ensure_repo_root_on_path()`.
+- Files previously pointing `sys.path` at `python/` (test_binary.py, test_nf4.py,
+  test_pq.py, test_hnsw.py, test_storage_v3.py) updated to `from python.xxx import`.
+- All in-body bare `import storage_v3` calls patched to
+  `import python.storage_v3 as storage_v3` for monkeypatch compatibility.
+- Restored accidentally-removed stdlib imports in test bodies:
+  `from pathlib import Path` in `test_profiles_api.py`,
+  `import os` in `test_codebook.py`.
+- Zero `sys.path` mutations remain in any test file outside `tests/_path_setup.py`.
+
+### Validation
+- `python3 -m pytest tests/ -q --timeout=120` → **792 passed, 1 skipped, 0 failed**
 
 ---
 

@@ -5,6 +5,22 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.11.2] — 2026-04-23
+
+### Changed
+- Completed shared path-helper migration across the entire test suite.
+  All 29 remaining test files that contained inline `sys.path.insert(...)` have been
+  migrated to `tests/_path_setup.ensure_repo_root_on_path()`.
+  Files that previously pointed `sys.path` at `python/` and used bare module names
+  (`from pq_api import`, `from nf4_api import`, etc.) now use fully-qualified
+  `from python.xxx import` imports.
+  All in-body bare `import storage_v3` / `import python.storage_v3 as storage_v3`
+  monkeypatch references also corrected.
+  Zero `sys.path` mutations remain in any test file outside the helper itself.
+
+### Validation
+- `python3 -m pytest tests/ -q --timeout=120` → **792 passed, 1 skipped, 0 failed**
+
 ## [4.11.1] — 2026-04-22
 
 ### Added

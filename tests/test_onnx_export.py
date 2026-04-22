@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import importlib.util
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from typing import NamedTuple
 from unittest.mock import MagicMock, patch, mock_open
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
 
 
 # ---------------------------------------------------------------------------

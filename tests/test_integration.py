@@ -3,16 +3,19 @@ Integration tests for Vectro Python API with Mojo backend.
 Tests end-to-end functionality and performance benchmarks.
 """
 
-import unittest
-import numpy as np
 import time
-import sys
-from pathlib import Path
+import unittest
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import numpy as np
 
-from python import (
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
+
+from python import (  # noqa: E402
     Vectro,
     VectroBatchProcessor,
     VectroQualityAnalyzer,

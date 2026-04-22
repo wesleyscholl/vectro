@@ -1,11 +1,15 @@
 """Tests for Binary Quantization (Phase 4)."""
 import unittest
 import numpy as np
-import sys
-import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
-from binary_api import (
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
+
+from python.binary_api import (  # noqa: E402
     quantize_binary,
     dequantize_binary,
     hamming_distance_batch,

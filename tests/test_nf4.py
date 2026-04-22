@@ -1,11 +1,16 @@
 """Tests for NF4 quantizer Phase 2."""
 import unittest
-import numpy as np
-import sys
-import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
-from nf4_api import (
+import numpy as np
+
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
+
+from python.nf4_api import (  # noqa: E402
     NF4_LEVELS,
     quantize_nf4,
     dequantize_nf4,

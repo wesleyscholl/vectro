@@ -10,10 +10,14 @@ import zlib
 import numpy as np
 import pytest
 
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
 
-from storage_v3 import (
+ensure_repo_root_on_path()
+
+from python.storage_v3 import (  # noqa: E402
     MAGIC,
     HEADER_SIZE,
     save_vqz,
@@ -122,7 +126,7 @@ class TestCompression:
         assert _decompress(compressed, flag) == data
 
     def test_zstd_fallback_to_zlib_when_missing(self, monkeypatch):
-        import storage_v3
+        import python.storage_v3 as storage_v3
         monkeypatch.setattr(storage_v3, "_HAVE_ZSTD", False)
         data = b"fallback test " * 200
         compressed, flag = storage_v3._compress(data, "zstd", 3)
@@ -278,25 +282,25 @@ class TestSaveLoad:
 
 class TestCloudBackendStubs:
     def test_s3_backend_requires_fsspec(self, monkeypatch):
-        import storage_v3
+        import python.storage_v3 as storage_v3
         monkeypatch.setattr(storage_v3, "_HAVE_FSSPEC", False)
         with pytest.raises(ImportError, match="fsspec"):
             S3Backend("my-bucket")
 
     def test_gcs_backend_requires_fsspec(self, monkeypatch):
-        import storage_v3
+        import python.storage_v3 as storage_v3
         monkeypatch.setattr(storage_v3, "_HAVE_FSSPEC", False)
         with pytest.raises(ImportError, match="fsspec"):
             GCSBackend("my-bucket")
 
     def test_azure_backend_requires_fsspec(self, monkeypatch):
-        import storage_v3
+        import python.storage_v3 as storage_v3
         monkeypatch.setattr(storage_v3, "_HAVE_FSSPEC", False)
         with pytest.raises(ImportError, match="fsspec"):
             AzureBlobBackend("my-container")
 
     def test_backends_have_expected_attributes(self, monkeypatch):
-        import storage_v3
+        import python.storage_v3 as storage_v3
         # Patch _open_fs so we don't need real cloud credentials.
         monkeypatch.setattr(storage_v3, "_HAVE_FSSPEC", True)
 
@@ -374,7 +378,7 @@ class TestCloudBackendRoundTrip:
 
     def _make_backend(self, BackendCls, monkeypatch):
         """Return a backend instance wired to a MemFS, no real fsspec needed."""
-        import storage_v3
+        import python.storage_v3 as storage_v3
         monkeypatch.setattr(storage_v3, "_HAVE_FSSPEC", True)
         mem = _MemFS()
         monkeypatch.setattr(BackendCls, "_open_fs", lambda self: mem)
@@ -417,7 +421,7 @@ class TestCloudBackendRoundTrip:
         assert backend._full_path("file.vqz") == "test-bucket/prefix/file.vqz"
 
     def test_full_path_without_prefix(self, monkeypatch, small):
-        import storage_v3
+        import python.storage_v3 as storage_v3
         monkeypatch.setattr(storage_v3, "_HAVE_FSSPEC", True)
         mem = _MemFS()
         monkeypatch.setattr(S3Backend, "_open_fs", lambda self: mem)
@@ -453,7 +457,7 @@ class TestCloudBackendRoundTrip:
 # 5. save_compressed / load_compressed (QuantizationResult wrappers)
 # ---------------------------------------------------------------------------
 
-from storage_v3 import save_compressed, load_compressed, VQZResult
+from python.storage_v3 import save_compressed, load_compressed, VQZResult  # noqa: E402
 
 
 # Local lightweight stand-in for python.interface.QuantizationResult.

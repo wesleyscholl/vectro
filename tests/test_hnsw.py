@@ -1,13 +1,18 @@
 """Tests for HNSW Index (Phase 5)."""
 import os
-import sys
 import tempfile
 import unittest
 
 import numpy as np
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
-from hnsw_api import (
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
+
+from python.hnsw_api import (  # noqa: E402
     HNSWIndex,
     build_hnsw_index,
     hnsw_search,

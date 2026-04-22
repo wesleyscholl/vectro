@@ -13,7 +13,6 @@ To enable these tests::
 from __future__ import annotations
 
 import importlib.util
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,7 +20,12 @@ from typing import NamedTuple
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
 
 _ONNX_AVAILABLE = importlib.util.find_spec("onnx") is not None
 _RT_AVAILABLE = importlib.util.find_spec("onnxruntime") is not None

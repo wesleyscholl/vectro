@@ -1,16 +1,19 @@
 """Tests for the vectro info --benchmark CLI flag."""
 
-import sys
 import unittest
 from io import StringIO
-from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
 
-from python.cli import _build_parser, _cmd_info
+ensure_repo_root_on_path()
+
+from python.cli import _build_parser, _cmd_info  # noqa: E402
 
 
 def _parse_info(*extra_args):

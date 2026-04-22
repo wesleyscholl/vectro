@@ -8,10 +8,14 @@ import tempfile
 import numpy as np
 import pytest
 
-import sys
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
 
-from python.v3_api import (
+ensure_repo_root_on_path()
+
+from python.v3_api import (  # noqa: E402
     PQCodebook,
     HNSWIndex,
     V3Result,

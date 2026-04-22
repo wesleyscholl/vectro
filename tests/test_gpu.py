@@ -1,12 +1,16 @@
 """Tests for Phase 6 GPU API — cpu fallback path."""
 
-import sys
-import os
 import unittest
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from python.gpu_api import (
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
+
+from python.gpu_api import (  # noqa: E402
     gpu_available,
     gpu_device_info,
     quantize_int8_batch,

@@ -1,14 +1,17 @@
 """Tests for python/quantization_extra.py — INT2 and adaptive INT8 quantization."""
 
-import sys
 import unittest
-from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
 
-from python.interface import QuantizationResult
+ensure_repo_root_on_path()
+
+from python.interface import QuantizationResult  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

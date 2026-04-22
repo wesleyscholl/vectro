@@ -1,10 +1,14 @@
 """Tests for Product Quantization (Phase 3)."""
 import unittest
-import numpy as np
-import sys
-import os
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "python"))
+import numpy as np
+
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
 
 # Skip if sklearn not available
 try:
@@ -13,7 +17,7 @@ try:
 except ImportError:
     _SKLEARN = False
 
-from pq_api import (
+from python.pq_api import (  # noqa: E402
     PQCodebook,
     train_pq_codebook,
     pq_encode,

@@ -1,10 +1,16 @@
 """Parametrized tests for python.profiles.get_profile() model-family detection."""
-import sys
 from pathlib import Path
+
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from python.profiles import get_profile, QuantProfile
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
+
+from python.profiles import get_profile, QuantProfile  # noqa: E402
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 

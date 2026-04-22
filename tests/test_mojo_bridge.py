@@ -5,15 +5,19 @@ NumPy.
 """
 from __future__ import annotations
 
-import sys
 import pathlib
+
 import numpy as np
 import pytest
 
-# ── path setup ────────────────────────────────────────────────────────────────
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
 
-from python import _mojo_bridge as mb
+ensure_repo_root_on_path()
+
+from python import _mojo_bridge as mb  # noqa: E402
 
 # Skip the entire module if the binary isn't built yet.
 pytestmark = pytest.mark.skipif(

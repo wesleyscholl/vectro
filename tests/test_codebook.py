@@ -1,13 +1,18 @@
 """Tests for Phase 7b — Autoencoder Codebook."""
 
-import sys
 import os
 import tempfile
 import unittest
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from python.codebook_api import Codebook
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
+
+from python.codebook_api import Codebook  # noqa: E402
 
 
 class TestCodebookBasic(unittest.TestCase):

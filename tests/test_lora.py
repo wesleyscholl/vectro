@@ -1,13 +1,17 @@
 """Tests for LoRA adapter compression — lora_api.py"""
-import sys
-import os
 import unittest
 import warnings
 
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from python.lora_api import (
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
+
+from python.lora_api import (  # noqa: E402
     compress_lora,
     decompress_lora,
     compress_lora_adapter,

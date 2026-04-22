@@ -7,15 +7,18 @@ so that a real GPU runner can run these same tests with a hardware target.
 
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
 
-from python.gpu_api import (
+ensure_repo_root_on_path()
+
+from python.gpu_api import (  # noqa: E402
     batch_cosine_similarity,
     gpu_available,
     gpu_benchmark,

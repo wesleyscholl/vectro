@@ -3,18 +3,21 @@ Comprehensive test suite for Vectro Python API.
 Tests all new Python bindings and functionality.
 """
 
-import unittest
-import numpy as np
-import tempfile
-import os
 import json
-from pathlib import Path
-import sys
+import os
+import tempfile
+import unittest
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent))
+import numpy as np
 
-from python import (
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
+
+from python import (  # noqa: E402
     Vectro,
     compress_vectors,
     decompress_vectors,

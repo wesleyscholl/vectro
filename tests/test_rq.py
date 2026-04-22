@@ -1,12 +1,17 @@
 """Tests for Phase 7a — Residual Quantizer."""
 
-import sys
-import os
 import unittest
+
 import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from python.rq_api import ResidualQuantizer
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
+
+ensure_repo_root_on_path()
+
+from python.rq_api import ResidualQuantizer  # noqa: E402
 
 
 class TestResidualQuantizerBasic(unittest.TestCase):

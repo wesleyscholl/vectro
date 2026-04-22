@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from tests._path_setup import ensure_repo_root_on_path
+except ModuleNotFoundError:
+    from _path_setup import ensure_repo_root_on_path
 
-from python.batch_api import (
+ensure_repo_root_on_path()
+
+from python.batch_api import (  # noqa: E402
     BatchCompressionAnalyzer,
     BatchQuantizationResult,
     VectroBatchProcessor,
