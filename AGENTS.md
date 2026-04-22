@@ -273,7 +273,7 @@ Every quantization module test must include: (a) cosine similarity regression sn
 
 ### 🧪 Test Contracts
 
-- **Baseline:** 691 tests — do not ship a change that reduces this count
+- **Baseline:** 789 tests — do not ship a change that reduces this count
 - **Pre-existing sklearn failures:** `test_rq.py` and `test_v3_api.py` have known sklearn C-extension reload failures — these are NOT new failures. Fix them via subprocess isolation (the right fix) or explicitly mark as `xfail` with a root-cause note
 - **Connector tests** (5 vector DBs): mock the external service; never require a live DB instance in CI
 - **Mojo bridge tests:** `tests/test_mojo_bridge.py` must pass even when the Mojo binary is absent (fallback path coverage required)
@@ -324,7 +324,7 @@ cd js && npm install && npm run build
 
 ---
 
-### 🗺️ Roadmap (Active — as of v4.8.0 / v7.3.0)
+### 🗺️ Roadmap (Active — as of v4.11.1 / v7.4.0)
 
 | Phase | Target Version | Focus | Ship Gate |
 |-------|---------------|-------|-----------|

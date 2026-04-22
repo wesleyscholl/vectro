@@ -21,7 +21,8 @@
 - Version bumped `4.11.0 → 4.11.1` across pyproject.toml, pixi.toml, python/__init__.py,
   python/vectro.py, tests/test_release_candidate.py.
 - PLAN.md header date corrected (was incorrectly `2026-05-19`).
-- CLAUDE.md + AGENTS.md version references synced to v4.11.1 / 790 tests.
+- CLAUDE.md + AGENTS.md version references synced to v4.11.1 / 789 tests.
+- README top metadata synced to v4.11.1 and tests-789 badge.
 
 ### Validation
 - `python3 -m pytest tests/test_batch_api.py -v` → **21 passed, 0 failed**
