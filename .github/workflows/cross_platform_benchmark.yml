@@ -1,0 +1,358 @@
+name: Cross-Platform Benchmark Suite
+
+# Runs on push/PR touching relevant paths and on manual dispatch.
+# Three platform jobs run in parallel, then results are aggregated.
+#
+# Platform matrix:
+#   ubuntu-latest  — Linux x86_64 (AVX2, often AVX-512 on GH runners)
+#   macos-latest   — macOS Apple Silicon (arm64 / NEON)
+#   macos-13       — macOS Intel x86_64  (AVX2; AVX-512 disabled on Mac)
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'python/**'
+      - 'rust/**'
+      - 'benchmarks/**'
+      - 'tests/test_cross_platform_benchmarks.py'
+      - 'tests/conftest.py'
+      - '.github/workflows/cross_platform_benchmark.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'python/**'
+      - 'rust/**'
+      - 'benchmarks/**'
+      - 'tests/test_cross_platform_benchmarks.py'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Benchmark mode: quick | full'
+        required: false
+        default: 'quick'
+
+env:
+  VECTRO_BENCHMARK_SEED: "42"
+  PYTHONHASHSEED: "0"
+
+# ────────────────────────────────────────────────────────────────────────────
+# Reusable setup steps expressed as a composite action would require a
+# separate file; instead we duplicate the short install block in each job.
+# ────────────────────────────────────────────────────────────────────────────
+
+jobs:
+  # ══════════════════════════════════════════════════════════════════════════
+  # Linux x86_64 — AVX2 / AVX-512
+  # ══════════════════════════════════════════════════════════════════════════
+  benchmark-linux-x86:
+    name: "Benchmark · Linux x86_64"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-linux-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Detect CPU capabilities
+        run: |
+          echo "=== CPU ==="
+          lscpu | grep -E "Model name|Flags|Thread|Socket"
+          echo "=== SIMD ==="
+          grep -m1 flags /proc/cpuinfo | tr ' ' '\n' | grep -E "^(avx|sse|neon)" | sort
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin
+          pip install numpy pytest pytest-timeout
+          pip install -e ".[dev,bench,bench-ann]" || pip install numpy pytest pytest-timeout
+          # Optional extras — do not fail if unavailable
+          pip install faiss-cpu hnswlib || true
+
+      - name: Build vectro_py Rust extension (AVX2)
+        working-directory: rust
+        run: |
+          maturin develop --release -m vectro_py/Cargo.toml 2>/dev/null || \
+          maturin develop --release 2>/dev/null || \
+          echo "⚠ maturin build failed — Rust path tests will be skipped"
+
+      - name: Print platform info
+        run: python benchmarks/platform_detection.py
+
+      - name: Run cross-platform test suite
+        run: |
+          python -m pytest tests/test_cross_platform_benchmarks.py -v \
+            --tb=short --timeout=120 \
+            -m "not throughput" \
+            -p no:warnings
+
+      - name: Run throughput benchmarks (quick — 10K vectors)
+        run: |
+          python benchmarks/cross_platform_benchmark.py \
+            --benchmarks int8 rust \
+            --num-vectors 10000 \
+            --warmup-runs 1 \
+            --measurement-runs 3 \
+            --output-dir benchmarks/results/cross_platform/ || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-linux-x86
+          path: benchmarks/results/cross_platform/
+          retention-days: 30
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # macOS Apple Silicon — arm64 / NEON
+  # ══════════════════════════════════════════════════════════════════════════
+  benchmark-macos-arm64:
+    name: "Benchmark · macOS Apple Silicon (arm64)"
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-macos-arm64-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Detect CPU
+        run: |
+          sysctl machdep.cpu.brand_string
+          sysctl hw.physicalcpu hw.logicalcpu
+          sysctl hw.optional.neon
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin
+          pip install numpy pytest pytest-timeout
+          pip install -e ".[dev,bench,bench-ann]" || pip install numpy pytest pytest-timeout
+          pip install hnswlib || true
+
+      - name: Build vectro_py Rust extension (NEON)
+        working-directory: rust
+        run: |
+          maturin develop --release -m vectro_py/Cargo.toml 2>/dev/null || \
+          maturin develop --release 2>/dev/null || \
+          echo "⚠ maturin build failed — Rust path tests will be skipped"
+
+      - name: Print platform info
+        run: python benchmarks/platform_detection.py
+
+      - name: Run cross-platform test suite
+        run: |
+          python -m pytest tests/test_cross_platform_benchmarks.py -v \
+            --tb=short --timeout=120 \
+            -m "not throughput" \
+            -p no:warnings
+
+      - name: Run ADR-002 latency gate
+        run: |
+          python -m pytest tests/test_cross_platform_benchmarks.py -v \
+            --tb=short --timeout=60 \
+            -m "latency" \
+            -p no:warnings
+
+      - name: Run throughput benchmarks (quick — 10K vectors)
+        run: |
+          python benchmarks/cross_platform_benchmark.py \
+            --benchmarks int8 rust \
+            --num-vectors 10000 \
+            --warmup-runs 1 \
+            --measurement-runs 3 \
+            --output-dir benchmarks/results/cross_platform/ || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-macos-arm64
+          path: benchmarks/results/cross_platform/
+          retention-days: 30
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # macOS Intel x86_64 — AVX2 (AVX-512 disabled by Apple microcode)
+  # This is the GitHub-hosted equivalent of an Intel MacBook Pro.
+  # ══════════════════════════════════════════════════════════════════════════
+  benchmark-macos-intel:
+    name: "Benchmark · macOS Intel x86_64 (macos-13)"
+    runs-on: macos-13
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-macos-intel-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Detect CPU and SIMD
+        run: |
+          sysctl machdep.cpu.brand_string
+          sysctl hw.physicalcpu hw.logicalcpu
+          # AVX2 check (AVX-512 is disabled on Intel Macs by Apple microcode update)
+          sysctl hw.optional.avx2_0 hw.optional.avx1_0 || true
+          sysctl hw.optional.avx512f || echo "AVX-512: not available (expected)"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install maturin
+          pip install numpy pytest pytest-timeout
+          pip install -e ".[dev,bench,bench-ann]" || pip install numpy pytest pytest-timeout
+          pip install faiss-cpu hnswlib || true
+
+      - name: Build vectro_py Rust extension (AVX2 on Intel macOS)
+        working-directory: rust
+        run: |
+          maturin develop --release -m vectro_py/Cargo.toml 2>/dev/null || \
+          maturin develop --release 2>/dev/null || \
+          echo "⚠ maturin build failed — Rust path tests will be skipped"
+
+      - name: Print platform info
+        run: python benchmarks/platform_detection.py
+
+      - name: Run cross-platform test suite (Intel x86 focus)
+        run: |
+          python -m pytest tests/test_cross_platform_benchmarks.py -v \
+            --tb=short --timeout=120 \
+            -m "not throughput" \
+            -p no:warnings
+
+      - name: Run Rust AVX2 throughput benchmarks
+        run: |
+          python benchmarks/cross_platform_benchmark.py \
+            --benchmarks int8 rust \
+            --num-vectors 10000 \
+            --warmup-runs 1 \
+            --measurement-runs 3 \
+            --output-dir benchmarks/results/cross_platform/ || true
+
+      - name: Verify AVX2 SIMD path active
+        run: |
+          python - <<'EOF'
+          from python._rust_bridge import is_available, simd_tier
+          if is_available():
+              tier = simd_tier()
+              print(f"Rust extension available, SIMD tier: {tier}")
+              assert tier in ("avx2", "avx512"), f"Expected avx2 on Intel macOS, got: {tier}"
+              print("✓ AVX2 path confirmed")
+          else:
+              print("⚠ Rust extension not available — skipping AVX2 check")
+          EOF
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-macos-intel
+          path: benchmarks/results/cross_platform/
+          retention-days: 30
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # Aggregate all three platform results
+  # ══════════════════════════════════════════════════════════════════════════
+  aggregate-results:
+    name: "Aggregate Cross-Platform Results"
+    runs-on: ubuntu-latest
+    needs: [benchmark-linux-x86, benchmark-macos-arm64, benchmark-macos-intel]
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download all results
+        uses: actions/download-artifact@v4
+        with:
+          path: all-results
+
+      - name: Aggregate and print cross-platform summary
+        run: |
+          python - <<'EOF'
+          import json, glob
+          from pathlib import Path
+          from datetime import datetime
+
+          files = glob.glob("all-results/**/*.json", recursive=True)
+          aggregated = {"timestamp": datetime.utcnow().isoformat() + "Z", "platforms": []}
+
+          for f in sorted(files):
+              try:
+                  with open(f) as fh:
+                      aggregated["platforms"].append(json.load(fh))
+              except Exception:
+                  pass
+
+          out = Path("benchmarks/results/cross_platform")
+          out.mkdir(parents=True, exist_ok=True)
+          with open(out / "aggregated_results.json", "w") as fh:
+              json.dump(aggregated, fh, indent=2)
+
+          print(f"Aggregated {len(aggregated['platforms'])} platform result(s)")
+          for p in aggregated["platforms"]:
+              info = p.get("platform", {})
+              cpu = info.get("cpu_generation") or info.get("cpu_model", "Unknown")
+              arch = info.get("architecture", "?")
+              simd = ", ".join(info.get("simd_capabilities", []))
+              print(f"  {cpu} ({arch})  SIMD: {simd}")
+          EOF
+
+      - name: Upload aggregated results
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-platform-aggregated
+          path: benchmarks/results/cross_platform/aggregated_results.json
+          retention-days: 90

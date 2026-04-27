@@ -5,6 +5,37 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.11.2] — 2026-04-27 (patch: cross-platform benchmarking)
+
+### Added
+- `benchmarks/platform_detection.py`: hardware and SIMD capability detection
+  (macOS ARM64 / Intel x86 / Linux x86; reports AVX2, AVX-512, NEON).
+- `benchmarks/cross_platform_benchmark.py`: unified benchmark harness across
+  INT8, NF4, Binary quantization paths; new `--benchmarks rust` flag invokes
+  the Rust SIMD path directly via `_rust_bridge`.
+- `python/_rust_bridge.py`: thin wrapper over `vectro_py.quantize_int8_batch`,
+  `dequantize_int8_batch`, and `encode_nf4_fast`; exposes `simd_tier()` which
+  returns `neon | avx2 | avx512 | scalar` based on runtime platform detection.
+- `benchmarks/reproduce_paper.sh`: reproducibility script for arXiv paper tables.
+- `scripts/validate_paper_results.py`: validates benchmark JSON against paper gates.
+- `notebooks/vectro_cross_platform_benchmark.ipynb`: Jupyter analysis notebook.
+- `tests/test_cross_platform_benchmarks.py`: cross-platform test suite including
+  `TestRustSIMDPath` (Rust SIMD ≥1M vec/s, round-trip quality ≥0.9997),
+  `TestINT8Throughput` (60K vec/s floor, CV <5%), `TestSingleVectorLatency`
+  (ADR-002 <1ms p99), `TestPlatformDetection`, `TestQuantizationQuality`,
+  `TestHNSWSearch`, `TestFAISSComparison`.
+- `tests/conftest.py`: shared pytest marker registration (intel, m3, linux,
+  throughput, quality, latency) for the full test suite.
+
+### Changed
+- `.github/workflows/cross_platform_benchmark.yml`: rebuilt with three parallel
+  platform jobs — `ubuntu-latest` (Linux AVX2/AVX-512), `macos-latest` (arm64
+  NEON), `macos-13` (Intel x86_64 AVX2); maturin Rust build in all three jobs;
+  `aggregate-results` depends on all three; upgraded to actions/upload-artifact@v4
+  and actions/setup-python@v5.
+
+---
+
 ## [4.11.2] — 2026-04-22
 
 ### Added

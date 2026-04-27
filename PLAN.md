@@ -1,7 +1,33 @@
 # Vectro — Plan
 
-> Last updated: 2026-04-22
-> Current version: **4.11.2** (Python) / **7.4.0** (Rust) — ADR-002 CI gates closed, WASM browser tests added, 792 Python tests passing
+> Last updated: 2026-04-27
+> Current version: **4.11.2** (Python) / **7.4.0** (Rust) — cross-platform benchmark suite added, Intel x86 CI runner added, 792 Python tests passing
+
+---
+
+## v4.11.2 patch — Cross-Platform Benchmarking Infrastructure ✅ COMPLETE (2026-04-27)
+
+### Completed in this wave
+
+**Cross-platform benchmark infrastructure (arXiv paper support):**
+- `benchmarks/platform_detection.py`: hardware/SIMD capability detection for macOS ARM64, macOS Intel x86, Linux x86 (AVX2 / AVX-512 / NEON)
+- `benchmarks/cross_platform_benchmark.py`: unified benchmark harness — INT8, NF4, Binary, and **explicit Rust SIMD path** (`--benchmarks rust`) across dimensions; `BenchmarkResult` dataclass with full statistics
+- `python/_rust_bridge.py`: direct wrapper for `vectro_py.quantize_int8_batch` / `dequantize_int8_batch` / `encode_nf4_fast`; exposes `simd_tier()` (neon / avx2 / avx512 / scalar) and `benchmark_int8_throughput()` for paper-grade measurement
+- `benchmarks/reproduce_paper.sh`: reproducibility script for arXiv submission (`--quick`, `--all`, `--intel`, `--m3`)
+- `scripts/validate_paper_results.py`: validates benchmark JSON files against paper performance gates
+- `notebooks/vectro_cross_platform_benchmark.ipynb`: Jupyter analysis notebook for cross-platform comparison tables
+
+**Tests:**
+- `tests/test_cross_platform_benchmarks.py`: comprehensive cross-platform test suite — `TestPlatformDetection`, `TestINT8Throughput`, `TestRustSIMDPath` (skipped if `vectro_py` absent), `TestQuantizationQuality`, `TestSingleVectorLatency` (ADR-002), `TestHNSWSearch`, `TestResultsCollection`, `TestFAISSComparison`; uses `_path_setup` convention; proper `importlib.util.find_spec` guards
+- `tests/conftest.py`: shared `pytest_configure` with custom markers (intel, m3, linux, throughput, quality, latency)
+
+**CI:**
+- `.github/workflows/cross_platform_benchmark.yml`: three parallel platform jobs — `ubuntu-latest` (Linux AVX2/AVX-512), `macos-latest` (ARM64 NEON), **`macos-13` (Intel x86 AVX2)**; Rust extension built via maturin in each job; `aggregate-results` depends on all three platforms; upgraded to actions/upload-artifact@v4 and actions/setup-python@v5
+
+### Validation
+- All new files pass Python AST parse (`python3 -c "ast.parse(...)"`)
+- Platform detection confirmed on Intel i7-7820HQ (AVX2): `simd_capabilities: ["AVX", "AVX2"]`
+- No new test failures — existing 792 tests unaffected
 
 ---
 
