@@ -40,8 +40,24 @@ import tests._path_setup as _path_setup  # noqa: F401
 _path_setup.ensure_repo_root_on_path()
 
 from benchmarks.platform_detection import detect_platform, get_simd_capabilities
-from python.batch_api import quantize_batch
+from python.batch_api import VectroBatchProcessor as _VectroBP
 from python import compress_vectors, decompress_vectors
+
+
+def _quantize_batch(vectors: np.ndarray, profile: str = "int8"):
+    """Module-level helper: wraps VectroBatchProcessor and returns (codes_2d, scales).
+
+    codes  : np.ndarray shape [N, D] dtype int8  (stacked quantized_vectors)
+    scales : np.ndarray shape [N]    dtype float32
+    """
+    result = _VectroBP().quantize_batch(vectors, profile)
+    codes = np.stack(result.quantized_vectors)
+    return codes, result.scales
+
+
+def _reconstruct_batch(vectors: np.ndarray, profile: str = "int8") -> np.ndarray:
+    """Quantize then reconstruct using BatchQuantizationResult.reconstruct_batch()."""
+    return _VectroBP().quantize_batch(vectors, profile).reconstruct_batch()
 
 
 # ============================================================================
@@ -143,12 +159,12 @@ class TestINT8Throughput:
         vectors = random_vectors(dim=dimension, num_vectors=10_000)
 
         for _ in range(2):
-            quantize_batch(vectors[:500], profile="int8")
+            _quantize_batch(vectors[:500], profile="int8")
 
         throughputs = []
         for _ in range(3):
             t0 = time.perf_counter()
-            quantize_batch(vectors, profile="int8")
+            _quantize_batch(vectors, profile="int8")
             throughputs.append(len(vectors) / (time.perf_counter() - t0))
 
         mean_tp = float(np.mean(throughputs))
@@ -164,12 +180,12 @@ class TestINT8Throughput:
         vectors = random_vectors(dim=768, num_vectors=10_000)
 
         for _ in range(2):
-            quantize_batch(vectors[:500], profile="int8")
+            _quantize_batch(vectors[:500], profile="int8")
 
         throughputs = []
         for _ in range(5):
             t0 = time.perf_counter()
-            quantize_batch(vectors, profile="int8")
+            _quantize_batch(vectors, profile="int8")
             throughputs.append(len(vectors) / (time.perf_counter() - t0))
 
         cv = float(np.std(throughputs) / np.mean(throughputs))
@@ -283,10 +299,7 @@ class TestQuantizationQuality:
     def test_int8_quality_contract_floor(self, random_vectors):
         """INT8 quality must meet ≥0.9997 cosine similarity."""
         vectors = random_vectors(dim=768, num_vectors=1000)
-        codes, scales = quantize_batch(vectors, profile="int8")
-
-        reconstructed = (codes.astype(np.float32) / 127.0) * scales[:, np.newaxis]
-
+        reconstructed = _reconstruct_batch(vectors, profile="int8")
         v_norm = vectors / (np.linalg.norm(vectors, axis=1, keepdims=True) + 1e-8)
         r_norm = reconstructed / (np.linalg.norm(reconstructed, axis=1, keepdims=True) + 1e-8)
         mean_cos = float(np.mean(np.sum(v_norm * r_norm, axis=1)))
@@ -296,8 +309,7 @@ class TestQuantizationQuality:
         """INT8 quality must not degrade with dimension (paper claim)."""
         for dim in (128, 384, 768, 1536):
             vectors = random_vectors(dim=dim, num_vectors=200)
-            codes, scales = quantize_batch(vectors, profile="int8")
-            reconstructed = (codes.astype(np.float32) / 127.0) * scales[:, np.newaxis]
+            reconstructed = _reconstruct_batch(vectors, profile="int8")
             v_norm = vectors / (np.linalg.norm(vectors, axis=1, keepdims=True) + 1e-8)
             r_norm = reconstructed / (np.linalg.norm(reconstructed, axis=1, keepdims=True) + 1e-8)
             mean_cos = float(np.mean(np.sum(v_norm * r_norm, axis=1)))
@@ -324,7 +336,7 @@ class TestQuantizationQuality:
         """Binary quantization must not raise and returns valid shapes."""
         vectors = random_vectors(dim=768, num_vectors=200)
         try:
-            codes, scales = quantize_batch(vectors, profile="binary")
+            codes, scales = _quantize_batch(vectors, profile="binary")
         except Exception as e:
             pytest.skip(f"Binary quantization not available: {e}")
         assert codes is not None
@@ -345,12 +357,12 @@ class TestSingleVectorLatency:
         vector = random_vectors(dim=768, num_vectors=1)
 
         for _ in range(100):
-            quantize_batch(vector, profile="int8")
+            _quantize_batch(vector, profile="int8")
 
         latencies_ms = []
         for _ in range(1000):
             t0 = time.perf_counter_ns()
-            quantize_batch(vector, profile="int8")
+            _quantize_batch(vector, profile="int8")
             latencies_ms.append((time.perf_counter_ns() - t0) / 1_000_000)
 
         p99 = float(np.percentile(latencies_ms, 99))
@@ -362,12 +374,12 @@ class TestSingleVectorLatency:
         vector = random_vectors(dim=768, num_vectors=1)
 
         for _ in range(100):
-            quantize_batch(vector, profile="int8")
+            _quantize_batch(vector, profile="int8")
 
         latencies_ms = []
         for _ in range(5000):
             t0 = time.perf_counter_ns()
-            quantize_batch(vector, profile="int8")
+            _quantize_batch(vector, profile="int8")
             latencies_ms.append((time.perf_counter_ns() - t0) / 1_000_000)
 
         arr = np.array(latencies_ms)
@@ -475,14 +487,14 @@ class TestFAISSComparison:
     def test_int8_codes_valid_range(self, random_vectors):
         """Vectro INT8 codes must lie in [-127, 127]."""
         vectors = random_vectors(dim=768, num_vectors=200)
-        codes, _ = quantize_batch(vectors, profile="int8")
+        codes, _ = _quantize_batch(vectors, profile="int8")
         assert codes.min() >= -127
         assert codes.max() <= 127
 
     def test_int8_scale_positive(self, random_vectors):
         """Per-vector scales must all be positive."""
         vectors = random_vectors(dim=768, num_vectors=200)
-        _, scales = quantize_batch(vectors, profile="int8")
+        _, scales = _quantize_batch(vectors, profile="int8")
         assert np.all(scales > 0)
 
 

@@ -144,14 +144,15 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Cache node_modules
+      - name: Cache npm registry
         uses: actions/cache@v4
         with:
-          path: js/node_modules
-          key: node-${{ hashFiles('js/package.json') }}
+          path: ~/.npm
+          key: npm-${{ runner.os }}-node20-${{ hashFiles('js/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-node20-
 
       - name: Install dependencies
-        run: cd js && npm install
+        run: cd js && npm ci
 
       - name: Build native addon
         run: cd js && npm run build
