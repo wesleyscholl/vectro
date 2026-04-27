@@ -159,6 +159,7 @@ def to_onnx_model(result: object) -> "onnx.ModelProto":  # type: ignore[name-def
     model = _oh.make_model(
         graph,
         opset_imports=[_oh.make_opsetid(_OPSET_DOMAIN, _OPSET_VERSION)],
+        ir_version=8,
     )
     model.doc_string = (
         "Vectro INT8 dequantization — opset 17. "

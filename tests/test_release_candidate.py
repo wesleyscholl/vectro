@@ -360,13 +360,19 @@ class TestDistributionGates:
         assert not missing, f"Missing public symbols: {missing}"
 
     def test_version_pyproject(self):
-        import tomllib
+        try:
+            import tomllib
+        except ImportError:
+            pytest.skip("tomllib unavailable (Python < 3.11)")
         text = (REPO_ROOT / "pyproject.toml").read_text()
         data = tomllib.loads(text)
         assert data["project"]["version"] == EXPECTED_VERSION
 
     def test_version_pixi(self):
-        import tomllib
+        try:
+            import tomllib
+        except ImportError:
+            pytest.skip("tomllib unavailable (Python < 3.11)")
         text = (REPO_ROOT / "pixi.toml").read_text()
         data = tomllib.loads(text)
         # version is nested under [workspace]
@@ -464,7 +470,10 @@ class TestLaunchReadinessGates:
         assert cli.exists()
 
     def test_pyproject_script_entry_point_correct(self):
-        import tomllib
+        try:
+            import tomllib
+        except ImportError:
+            pytest.skip("tomllib unavailable (Python < 3.11)")
         text = (REPO_ROOT / "pyproject.toml").read_text()
         data = tomllib.loads(text)
         scripts = data.get("project", {}).get("scripts", {})

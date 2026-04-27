@@ -196,27 +196,13 @@ class VectroBatchProcessor:
             profile = "balanced"
 
         range_factor = int8_profiles[profile]["range_factor"]
-        
-        quantized_vectors = []
-        scales = np.zeros(batch_size, dtype=np.float32)
-        
-        # Process each vector
-        for i in range(batch_size):
-            vector = vectors[i]
-            
-            # Calculate scale factor
-            max_abs = np.max(np.abs(vector))
-            if max_abs == 0:
-                scale = 1.0
-            else:
-                scale = max_abs / (127.0 * range_factor)
-            
-            # Quantize vector
-            quantized = np.round(vector / scale).astype(np.int8)
-            quantized = np.clip(quantized, -127, 127)
-            
-            quantized_vectors.append(quantized)
-            scales[i] = scale
+
+        max_abs = np.max(np.abs(vectors), axis=1)                           # (n,)
+        scales = np.where(max_abs == 0, 1.0, max_abs / (127.0 * range_factor)).astype(np.float32)
+        quantized_matrix = np.clip(
+            np.round(vectors / scales[:, np.newaxis]), -127, 127
+        ).astype(np.int8)
+        quantized_vectors = list(quantized_matrix)
         
         # Calculate compression metrics
         original_bytes = batch_size * vector_dim * 4  # float32
