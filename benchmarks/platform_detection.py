@@ -174,16 +174,11 @@ def _detect_cpu() -> tuple[str, Optional[str]]:
 
 
 def _detect_cpu_cores() -> int:
-    """Detect number of CPU cores."""
+    """Detect number of logical CPU cores."""
+    import os
     try:
-        return len(platform.platform()) or 1
-    except:
-        pass
-    
-    try:
-        import os
         return os.cpu_count() or 1
-    except:
+    except Exception:
         return 1
 
 

@@ -89,8 +89,7 @@ jobs:
       - name: Build vectro_py Rust extension (AVX2)
         working-directory: rust
         run: |
-          maturin develop --release -m vectro_py/Cargo.toml 2>/dev/null || \
-          maturin develop --release 2>/dev/null || \
+          maturin develop --release -m vectro_py/Cargo.toml || \
           echo "⚠ maturin build failed — Rust path tests will be skipped"
 
       - name: Print platform info
@@ -153,7 +152,7 @@ jobs:
         run: |
           sysctl machdep.cpu.brand_string
           sysctl hw.physicalcpu hw.logicalcpu
-          sysctl hw.optional.neon
+          sysctl hw.optional.AdvSIMD 2>/dev/null || sysctl hw.optional.neon 2>/dev/null || echo "NEON: always present on AArch64"
 
       - name: Install Python dependencies
         run: |
@@ -166,8 +165,7 @@ jobs:
       - name: Build vectro_py Rust extension (NEON)
         working-directory: rust
         run: |
-          maturin develop --release -m vectro_py/Cargo.toml 2>/dev/null || \
-          maturin develop --release 2>/dev/null || \
+          maturin develop --release -m vectro_py/Cargo.toml || \
           echo "⚠ maturin build failed — Rust path tests will be skipped"
 
       - name: Print platform info
@@ -253,8 +251,7 @@ jobs:
       - name: Build vectro_py Rust extension (AVX2 on Intel macOS)
         working-directory: rust
         run: |
-          maturin develop --release -m vectro_py/Cargo.toml 2>/dev/null || \
-          maturin develop --release 2>/dev/null || \
+          maturin develop --release -m vectro_py/Cargo.toml || \
           echo "⚠ maturin build failed — Rust path tests will be skipped"
 
       - name: Print platform info
