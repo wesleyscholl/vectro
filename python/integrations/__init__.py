@@ -21,6 +21,7 @@ from .arrow_bridge import (
 )
 from .langchain_integration import VectroVectorStore as LangChainVectorStore
 from .llamaindex_integration import VectroVectorStore as LlamaIndexVectorStore
+from .haystack_integration import VectroDocumentStore as HaystackDocumentStore
 
 __all__ = [
     "StoredVectorBatch",
@@ -44,4 +45,5 @@ __all__ = [
     # Framework integrations
     "LangChainVectorStore",
     "LlamaIndexVectorStore",
+    "HaystackDocumentStore",
 ]

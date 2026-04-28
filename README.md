@@ -7,8 +7,8 @@
 ### Ultra-High-Performance LLM Embedding Compressor
 
 ![Mojo](https://img.shields.io/badge/Mojo-first-orange?logo=fire&style=for-the-badge)
-![Version](https://img.shields.io/badge/version-4.11.2-blue?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-792_passing-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-4.14.0-blue?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-834_passing-green?style=for-the-badge)
 ![Python-Only](https://img.shields.io/badge/mode-Python--only-blue?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 
@@ -16,7 +16,7 @@
 ╦  ╦╔═╗╔═╗╔╦╗╦═╗╔═╗
 ╚╗╔╝║╣ ║   ║ ╠╦╝║ ║
  ╚╝ ╚═╝╚═╝ ╩ ╩╚═╚═╝
-    v4.11.2 — Mojo-Accelerated Vector Quantization
+    v4.14.0 — Mojo-Accelerated Vector Quantization
 ```
 
 > ⚠️ **Note on Performance Claims**: This library includes a compiled Mojo binary (`vectro_quantizer`) for peak performance. Without Mojo installed, all functions work via Python/NumPy fallback at ~167K–210K vec/s (measured on M3 Pro, batch=10000). With the Mojo binary built, throughput reaches 12M+ vec/s — **4.85× faster than FAISS C++**. See [Requirements](#-requirements) below.
@@ -56,6 +56,9 @@ A vector quantization library with Mojo SIMD acceleration and comprehensive Pyth
 **Optional Vector DB Support**
 - `pip install "vectro[integrations]"` for Qdrant, Weaviate connectors
 - `pip install "vectro[data]"` for Arrow/Parquet export
+- `pip install "vectro[integrations] langchain-core"` for LangChain VectorStore
+- `pip install "vectro[integrations] llama-index-core"` for LlamaIndex VectorStore
+- `pip install "vectro[integrations] haystack-ai"` for Haystack 2.x DocumentStore
 
 All core functions work in Python-only mode. Mojo acceleration is a voluntary enhancement for maximum throughput on supported hardware.
 
@@ -637,6 +640,92 @@ Warnings: 0                ████████
 
 ---
 
+## 🔗 RAG Framework Integrations
+
+Vectro provides drop-in compressed vector stores for the three dominant RAG frameworks.  Embeddings are compressed at write time (INT8 or NF4) and decompressed on-the-fly at query time via Mojo SIMD.
+
+### LangChain
+
+```python
+from langchain_openai import OpenAIEmbeddings
+from python.integrations import LangChainVectorStore
+
+# Build store from texts — same interface as FAISS.from_texts, Chroma.from_texts
+store = LangChainVectorStore.from_texts(
+    texts=["Paris is the capital of France", "Berlin is cold in winter"],
+    embedding=OpenAIEmbeddings(),
+    compression_profile="balanced",   # INT8 ~4× compression
+)
+
+# Similarity search
+docs = store.similarity_search("European capitals", k=2)
+docs_with_scores = store.similarity_search_with_score("weather", k=2)
+
+# Diversity-promoting MMR retrieval
+mmr_docs = store.max_marginal_relevance_search("history", k=4, fetch_k=20, lambda_mult=0.5)
+
+# Async variants (FastAPI / asyncio services)
+docs = await store.asimilarity_search("async query", k=2)
+mmr_docs = await store.amax_marginal_relevance_search("async query", k=4)
+
+# Persist and reload
+store.save("/path/to/store")
+store = LangChainVectorStore.load("/path/to/store", embedding=OpenAIEmbeddings())
+
+print(store.compression_stats)
+# {'n_vectors': 2, 'dimensions': 1536, 'compression_ratio': 3.97, ...}
+```
+
+### LlamaIndex
+
+```python
+from llama_index.core import VectorStoreIndex, StorageContext
+from python.integrations import LlamaIndexVectorStore
+
+vector_store = LlamaIndexVectorStore(compression_profile="quality")  # NF4 ~8×
+storage_context = StorageContext.from_defaults(vector_store=vector_store)
+index = VectorStoreIndex(nodes=[], storage_context=storage_context)
+
+# Persist and reload
+vector_store.save("/path/to/store")
+vector_store = LlamaIndexVectorStore.load("/path/to/store")
+```
+
+### Haystack 2.x
+
+```python
+from haystack.dataclasses import Document
+from python.integrations import HaystackDocumentStore
+
+store = HaystackDocumentStore(compression_profile="balanced")
+
+# Write documents (embeddings set by Haystack's DocumentEmbedder)
+store.write_documents([
+    Document(content="Paris is the capital of France", embedding=[...]),
+    Document(content="Berlin is cold in winter",       embedding=[...]),
+])
+
+# ANN retrieval
+results = store.embedding_retrieval(query_embedding=[...], top_k=3)
+
+# CRUD
+store.filter_documents({"source": "wiki"})
+store.delete_documents(["doc-id-1"])
+
+# Persist and reload
+store.save("/path/to/store")
+store = HaystackDocumentStore.load("/path/to/store")
+```
+
+### Memory comparison (768-dim, 1M documents)
+| Store backend | Memory | Compression |
+|---------------|--------|-------------|
+| float32 (baseline) | 3 072 MB | 1× |
+| INT8 balanced | ~784 MB | ~3.9× |
+| NF4 quality | ~416 MB | ~7.4× |
+
+---
+
 ## 🧪 Testing
 
 ```bash
@@ -667,6 +756,7 @@ Test categories:
 - ✅ **RQ / Codebook / AutoQuantize** — learned compression quality gates
 - ✅ **VQZ Storage** — magic, checksum, compression round-trips, cloud stubs
 - ✅ **Vector DB** — Qdrant, Weaviate, in-memory round-trip
+- ✅ **RAG Frameworks** — LangChain (MMR + async + save/load), LlamaIndex (save/load), Haystack 2.x
 - ✅ **Arrow / Parquet** — table export, IPC bytes
 - ✅ **Migration** — v1/v2 upgrade, dry-run, validation
 - ✅ **RC Hardening** — 7 verification gates for release launch

@@ -249,6 +249,88 @@ class VectroVectorStore:
         return nodes
 
     # ------------------------------------------------------------------
+    # Persistence (save / load)
+    # ------------------------------------------------------------------
+
+    def save(self, path: str) -> None:
+        """Persist the store to *path* (a directory).
+
+        Creates two files:
+        - ``meta.json`` — node ids, text, metadata, profile, model_dir
+        - ``vectors.npy`` — reconstructed float32 embeddings
+
+        The directory is created automatically.
+        """
+        import json
+        import os
+
+        os.makedirs(path, exist_ok=True)
+
+        with self._lock:
+            n = len(self._node_ids)
+            if n == 0:
+                mat = np.zeros((0, max(self._n_dims, 1)), dtype=np.float32)
+            else:
+                mat = self._compressed.reconstruct_batch()
+            node_ids = list(self._node_ids)
+            node_store_serial = {
+                nid: {"text": v[0], "meta": v[1]}
+                for nid, v in self._node_store.items()
+            }
+
+        np.save(os.path.join(path, "vectors.npy"), mat)
+        meta = {
+            "version": 1,
+            "store_type": "llamaindex",
+            "profile": self._profile,
+            "model_dir": self._model_dir,
+            "n_dims": self._n_dims,
+            "node_ids": node_ids,
+            "node_store": node_store_serial,
+        }
+        with open(os.path.join(path, "meta.json"), "w") as fh:
+            json.dump(meta, fh)
+
+    @classmethod
+    def load(cls, path: str) -> "VectroVectorStore":
+        """Load a previously saved store from *path*.
+
+        Returns:
+            Fully restored ``VectroVectorStore`` (LlamaIndex adapter).
+        """
+        import json
+        import os
+
+        with open(os.path.join(path, "meta.json")) as fh:
+            meta = json.load(fh)
+
+        if meta.get("store_type") != "llamaindex":
+            raise ValueError(
+                f"meta.json store_type={meta.get('store_type')!r} is not 'llamaindex'."
+            )
+
+        store = cls(
+            compression_profile=meta["profile"],
+            model_dir=meta.get("model_dir"),
+        )
+        mat = np.load(os.path.join(path, "vectors.npy"))
+        node_ids = meta["node_ids"]
+        node_store_serial = meta["node_store"]
+
+        if len(mat) > 0 and len(node_ids) > 0:
+            with store._lock:
+                for nid in node_ids:
+                    entry = node_store_serial.get(nid, {"text": "", "meta": {}})
+                    store._node_store[nid] = (entry["text"], entry["meta"])
+                    store._node_ids.append(nid)
+                store._n_dims = meta["n_dims"]
+                store._compressed = store._vectro.compress(
+                    mat, profile=meta["profile"], model_dir=meta.get("model_dir")
+                )
+
+        return store
+
+    # ------------------------------------------------------------------
     # Vectro-specific helpers
     # ------------------------------------------------------------------
 

@@ -291,6 +291,191 @@ class VectroVectorStore:
         )
 
     # ------------------------------------------------------------------
+    # Max Marginal Relevance (MMR)
+    # ------------------------------------------------------------------
+
+    def max_marginal_relevance_search(
+        self,
+        query: str,
+        k: int = 4,
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5,
+        **kwargs: Any,
+    ) -> List[Any]:
+        """Diversity-promoting retrieval using Maximal Marginal Relevance.
+
+        MMR balances relevance (cosine similarity to *query*) against redundancy
+        (similarity to already-selected documents).  Increasing *lambda_mult*
+        towards 1.0 emphasizes relevance; decreasing towards 0.0 emphasizes
+        diversity.
+
+        Args:
+            query: Search query string.
+            k: Number of documents to return.
+            fetch_k: Candidate pool size.  Larger values trade speed for
+                better diversity coverage (default: 20).
+            lambda_mult: Relevance–diversity trade-off in [0, 1].
+
+        Returns:
+            List of :class:`Document` objects in MMR-selected order.
+        """
+        return [
+            doc for doc, _ in self.max_marginal_relevance_search_with_score(
+                query, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult
+            )
+        ]
+
+    def max_marginal_relevance_search_with_score(
+        self,
+        query: str,
+        k: int = 4,
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5,
+        **kwargs: Any,
+    ) -> List[Tuple[Any, float]]:
+        """MMR search returning *(Document, relevance_score)* pairs."""
+        try:
+            from langchain_core.documents import Document
+        except ImportError as exc:
+            raise ImportError(_LANGCHAIN_ERROR) from exc
+
+        with self._lock:
+            if self._compressed is None:
+                return []
+            q_emb = self._embed_query(query)
+            mat = self._compressed.reconstruct_batch()  # (n, d) float32
+            ids = list(self._ids)
+            texts = list(self._texts)
+            metas = list(self._metadatas)
+
+        mmr_idx = _mmr_select(mat, q_emb, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult)
+
+        q_norm = q_emb / (np.linalg.norm(q_emb) + 1e-10)
+        norms = np.linalg.norm(mat, axis=1, keepdims=True) + 1e-10
+        all_scores = (mat / norms) @ q_norm
+
+        return [
+            (
+                Document(
+                    page_content=texts[i],
+                    metadata={**metas[i], "_vectro_id": ids[i]},
+                ),
+                float(all_scores[i]),
+            )
+            for i in mmr_idx
+        ]
+
+    async def amax_marginal_relevance_search(
+        self,
+        query: str,
+        k: int = 4,
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5,
+        **kwargs: Any,
+    ) -> List[Any]:
+        """Async MMR search."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.max_marginal_relevance_search(
+                query, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # Persistence (save / load)
+    # ------------------------------------------------------------------
+
+    def save(self, path: str) -> None:
+        """Persist the store to *path* (a directory).
+
+        Creates two files:
+        - ``meta.json`` — ids, texts, metadatas, profile, model_dir
+        - ``vectors.npy`` — reconstructed float32 embeddings
+
+        The directory is created automatically.
+        """
+        import json
+        import os
+
+        os.makedirs(path, exist_ok=True)
+
+        with self._lock:
+            n = len(self._ids)
+            if n == 0:
+                mat = np.zeros((0, max(self._n_dims, 1)), dtype=np.float32)
+            else:
+                mat = self._compressed.reconstruct_batch()
+            ids = list(self._ids)
+            texts = list(self._texts)
+            metas = list(self._metadatas)
+
+        np.save(os.path.join(path, "vectors.npy"), mat)
+        meta = {
+            "version": 1,
+            "store_type": "langchain",
+            "profile": self._profile,
+            "model_dir": self._model_dir,
+            "n_dims": self._n_dims,
+            "ids": ids,
+            "texts": texts,
+            "metadatas": metas,
+        }
+        with open(os.path.join(path, "meta.json"), "w") as fh:
+            json.dump(meta, fh)
+
+    @classmethod
+    def load(
+        cls,
+        path: str,
+        embedding: Any,
+    ) -> "VectroVectorStore":
+        """Load a previously saved store from *path*.
+
+        Args:
+            path: Directory previously written by :meth:`save`.
+            embedding: LangChain ``Embeddings`` object used for future queries
+                and :meth:`add_texts` calls.
+
+        Returns:
+            Fully restored ``VectroVectorStore``.
+        """
+        import json
+        import os
+
+        with open(os.path.join(path, "meta.json")) as fh:
+            meta = json.load(fh)
+
+        if meta.get("store_type") != "langchain":
+            raise ValueError(
+                f"meta.json store_type={meta.get('store_type')!r} is not 'langchain'."
+            )
+
+        store = cls(
+            embedding=embedding,
+            compression_profile=meta["profile"],
+            model_dir=meta.get("model_dir"),
+        )
+        mat = np.load(os.path.join(path, "vectors.npy"))
+        ids = meta["ids"]
+        texts = meta["texts"]
+        metas = meta["metadatas"]
+
+        if len(mat) > 0 and len(ids) > 0:
+            with store._lock:
+                store._ids = ids
+                store._texts = texts
+                store._metadatas = metas
+                store._n_dims = meta["n_dims"]
+                store._compressed = store._vectro.compress(
+                    mat,
+                    profile=meta["profile"],
+                    model_dir=meta.get("model_dir"),
+                )
+
+        return store
+
+    # ------------------------------------------------------------------
     # Constructor classmethod
     # ------------------------------------------------------------------
 
@@ -348,3 +533,75 @@ class VectroVectorStore:
             f"VectroVectorStore(n={len(self)}, profile={self._profile!r}, "
             f"dims={self._n_dims})"
         )
+
+
+# ---------------------------------------------------------------------------
+# MMR selection (module-level so it can be tested independently)
+# ---------------------------------------------------------------------------
+
+def _mmr_select(
+    embeddings: np.ndarray,
+    query_vec: np.ndarray,
+    k: int,
+    fetch_k: int,
+    lambda_mult: float = 0.5,
+) -> np.ndarray:
+    """Return indices of *k* documents chosen by Maximal Marginal Relevance.
+
+    Algorithm:
+        1. Fetch ``fetch_k`` most relevant candidates by cosine similarity.
+        2. Greedily add the document that maximises:
+               lambda_mult * sim(doc, query)
+             - (1 - lambda_mult) * max_sim(doc, already_selected)
+
+    Args:
+        embeddings: All stored vectors, shape (n, d).
+        query_vec: Query embedding, shape (d,).
+        k: Number of documents to select.
+        fetch_k: Candidate pool size (≥ k).
+        lambda_mult: Relevance weight in [0, 1].
+
+    Returns:
+        Index array of length *k* in selection order.
+    """
+    n = len(embeddings)
+    k = min(k, n)
+    fetch_k = min(fetch_k, n)
+
+    # Normalised embeddings for cosine arithmetic
+    q = query_vec / (np.linalg.norm(query_vec) + 1e-10)
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-10
+    emb_norm = embeddings / norms  # (n, d)
+
+    # Step 1: cosine similarity of all vectors to query → fetch top fetch_k
+    rel_scores = emb_norm @ q  # (n,)
+    cand_idx = np.argpartition(rel_scores, -fetch_k)[-fetch_k:]
+    cand_idx = cand_idx[np.argsort(rel_scores[cand_idx])[::-1]]  # descending
+
+    cand_embs = emb_norm[cand_idx]  # (fetch_k, d) — already normalised
+
+    # Step 2: greedy MMR selection
+    selected_local: List[int] = []  # indices into cand_idx
+    selected_global: List[int] = []
+
+    remaining = list(range(len(cand_idx)))
+
+    for _ in range(k):
+        if not selected_local:
+            best_local = 0  # highest cosine is first
+        else:
+            sel_embs = cand_embs[np.array(selected_local)]  # (s, d)
+            # sim of each remaining candidate to all selected
+            sim_to_sel = cand_embs[remaining] @ sel_embs.T  # (r, s)
+            max_sim_to_sel = sim_to_sel.max(axis=1)          # (r,)
+            rel = rel_scores[cand_idx[remaining]]             # (r,)
+            mmr = lambda_mult * rel - (1.0 - lambda_mult) * max_sim_to_sel
+            best_local = remaining[int(np.argmax(mmr))]
+
+        selected_local.append(best_local)
+        selected_global.append(int(cand_idx[best_local]))
+        remaining = [i for i in remaining if i != best_local]
+        if not remaining:
+            break
+
+    return np.array(selected_global)

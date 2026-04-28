@@ -1,0 +1,27 @@
+{
+  "timestamp": "2026-04-28T19:51:33.854580Z",
+  "platform": {
+    "os_type": "macOS",
+    "os_version": "22.6.0",
+    "architecture": "x86_64",
+    "cpu_model": "Intel(R) Core(TM) i7-7820HQ CPU @ 2.90GHz",
+    "cpu_cores": 8,
+    "cpu_frequency_ghz": 2.9,
+    "cpu_generation": null,
+    "memory_gb": 16.0,
+    "simd_capabilities": [
+      "AVX",
+      "AVX2"
+    ],
+    "mojo_available": false,
+    "rust_available": false,
+    "faiss_available": false,
+    "numpy_version": "2.0.2",
+    "python_version": "3.9.6",
+    "timestamp": "2026-04-28T23:51:30.331596Z"
+  },
+  "test_results": {
+    "int8_throughput_floor_passed": true,
+    "adr002_latency_passed": true
+  }
+}

@@ -76,11 +76,11 @@ class TestVectroCore(unittest.TestCase):
         compressed = self.vectro.compress(self.single_vector)
         decompressed = self.vectro.decompress(compressed)
         
-        # Single vector decompression returns (1, dim) shape
-        self.assertEqual(decompressed.shape, (1, self.single_vector.shape[0]))
-        
+        # Single vector decompression returns 1D (dim,) shape
+        self.assertEqual(decompressed.shape, (self.single_vector.shape[0],))
+
         # Should have reasonable reconstruction quality
-        mae = np.mean(np.abs(self.single_vector - decompressed.flatten()))
+        mae = np.mean(np.abs(self.single_vector - decompressed))
         self.assertLess(mae, 0.1)  # Mean error < 0.1
         
         # Test batch

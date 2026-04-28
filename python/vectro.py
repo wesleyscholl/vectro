@@ -47,7 +47,7 @@ from .profiles_api import (
     create_custom_profile
 )
 
-__version__ = "4.13.0"
+__version__ = "4.14.0"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"
@@ -298,7 +298,11 @@ class Vectro:
                     packed = packed.reshape(1, -1)
                 reconstructed = dequantize_binary(packed, result.dims)
                 return reconstructed[0] if result.n == 1 else reconstructed
-            return reconstruct_embeddings(result, backend=self.backend)
+            recon = reconstruct_embeddings(result, backend=self.backend)
+            # Single-vector QuantizationResult: squeeze (1, d) → (d,)
+            if result.n == 1 and recon.ndim == 2:
+                recon = recon[0]
+            return recon
         elif isinstance(result, BatchQuantizationResult):
             return result.reconstruct_batch()
         else:

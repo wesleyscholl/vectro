@@ -268,18 +268,18 @@ class TestRobustnessIntegration(unittest.TestCase):
         compressed = self.vectro.compress(zero_vector)
         decompressed = self.vectro.decompress(compressed)
         
-        # Decompressed shape will be (1, 256) for single vector
-        self.assertEqual(decompressed.shape[1], 256)
-        
+        # Single-vector decompress returns 1D (d,) shape
+        self.assertEqual(decompressed.shape, (256,))
+
         # Unit vector
         unit_vector = np.zeros(256, dtype=np.float32)
         unit_vector[0] = 1.0
-        
+
         compressed = self.vectro.compress(unit_vector)
         decompressed = self.vectro.decompress(compressed)
-        
-        # Decompressed shape will be (1, 256) for single vector
-        self.assertEqual(decompressed.shape[1], 256)
+
+        # Single-vector decompress returns 1D (d,) shape
+        self.assertEqual(decompressed.shape, (256,))
     
     def test_batch_size_variations(self):
         """Test various batch sizes."""
