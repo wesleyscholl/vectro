@@ -5,6 +5,47 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.13.0] — 2026-04-28
+
+### Added
+- `python/integrations/langchain_integration.py`: `VectroVectorStore` — a
+  drop-in LangChain `VectorStore` implementation backed by Vectro compression.
+  Full protocol coverage: `add_texts`, `similarity_search`,
+  `similarity_search_with_score`, `_similarity_search_with_relevance_scores`,
+  `delete`, `from_texts` classmethod, `aadd_texts` / `asimilarity_search` /
+  `asimilarity_search_with_score` async variants, `compression_stats` property.
+  Uses INT8 or NF4 depending on `compression_profile`; respects `model_dir`
+  for family-aware method selection. No hard LangChain import at module load.
+- `python/integrations/llamaindex_integration.py`: `VectroVectorStore` — a
+  LlamaIndex `BasePydanticVectorStore` duck-typed adapter.  Implements `add`,
+  `delete`, `query` (returns `VectorStoreQueryResult`), `get_nodes`, and
+  `compression_stats`.  Embedding field required on nodes at `add()` time;
+  missing embeddings raise `ValueError` with clear message.
+- `python/vectro.py`: `compress_async()` and `decompress_async()` — awaitable
+  coroutines that delegate to `compress()` / `decompress()` via
+  `loop.run_in_executor(None, ...)`.  Safe to call from FastAPI / aiohttp
+  request handlers without blocking the event loop.
+- `python/integrations/__init__.py`: exports `LangChainVectorStore` and
+  `LlamaIndexVectorStore` (aliased from the respective modules).
+- `python/__init__.py`: `LangChainVectorStore` and `LlamaIndexVectorStore`
+  added to top-level imports and `__all__`.
+- `tests/test_langchain_integration.py`: 34 tests covering construction,
+  `add_texts`, `similarity_search`, scoring, delete, `compression_stats`,
+  async variants (concurrent adds, concurrent searches), and top-level import.
+  Uses a `_FakeEmbeddings` stub — zero external API dependencies.
+- `tests/test_llamaindex_integration.py`: 26 tests covering construction,
+  `add`, `query` (top-k, score order, range, empty store), `delete`,
+  `get_nodes`, `compression_stats`, and top-level import.  Uses minimal
+  llama-index stubs injected into `sys.modules` — zero external dependencies.
+- `tests/test_async_compress.py`: 12 tests for `compress_async` and
+  `decompress_async` — single/batch, profile/precision forwarding, numerical
+  equivalence with sync path, cosine floor assertion, concurrent execution.
+
+### Changed
+- Version bumped `4.12.0 → 4.13.0` across all version files.
+
+---
+
 ## [4.12.0] — 2026-04-28
 
 ### Added

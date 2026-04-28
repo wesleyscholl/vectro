@@ -47,7 +47,7 @@ from .profiles_api import (
     create_custom_profile
 )
 
-__version__ = "4.12.0"
+__version__ = "4.13.0"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"
@@ -234,8 +234,52 @@ class Vectro:
         else:
             raise ValueError("vectors must be 1D or 2D array")
     
+    # ------------------------------------------------------------------
+    # Async API
+    # ------------------------------------------------------------------
+
+    async def compress_async(
+        self,
+        vectors: Union[np.ndarray, List[np.ndarray]],
+        profile: Optional[str] = None,
+        precision_mode: Optional[str] = None,
+        model_dir: Optional[str] = None,
+    ) -> Union[QuantizationResult, BatchQuantizationResult]:
+        """Non-blocking compress — runs :meth:`compress` in a thread-pool.
+
+        Identical to :meth:`compress` but returns an awaitable, making it
+        safe to call from ``async def`` request handlers (FastAPI, aiohttp,
+        etc.) without blocking the event loop.
+
+        Example::
+
+            result = await vectro.compress_async(vectors, profile="balanced")
+        """
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.compress(
+                vectors,
+                profile=profile,
+                precision_mode=precision_mode,
+                model_dir=model_dir,
+            ),
+        )
+
+    async def decompress_async(
+        self,
+        result: Union[QuantizationResult, BatchQuantizationResult],
+    ) -> np.ndarray:
+        """Non-blocking decompress — runs :meth:`decompress` in a thread-pool."""
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: self.decompress(result))
+
+    # ------------------------------------------------------------------
+
     def decompress(
-        self, 
+        self,
         result: Union[QuantizationResult, BatchQuantizationResult]
     ) -> np.ndarray:
         """Decompress quantized vectors back to float32.

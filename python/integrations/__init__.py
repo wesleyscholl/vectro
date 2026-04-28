@@ -19,6 +19,8 @@ from .arrow_bridge import (
     to_arrow_bytes,
     from_arrow_bytes,
 )
+from .langchain_integration import VectroVectorStore as LangChainVectorStore
+from .llamaindex_integration import VectroVectorStore as LlamaIndexVectorStore
 
 __all__ = [
     "StoredVectorBatch",
@@ -39,4 +41,7 @@ __all__ = [
     "read_parquet",
     "to_arrow_bytes",
     "from_arrow_bytes",
+    # Framework integrations
+    "LangChainVectorStore",
+    "LlamaIndexVectorStore",
 ]

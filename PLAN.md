@@ -1,7 +1,56 @@
 # Vectro — Plan
 
 > Last updated: 2026-04-28
-> Current version: **4.12.0** (Python) / **7.4.0** (Rust) — model-family-aware routing wired, Qwen2+DeBERTa families added, 807 Python tests passing
+> Current version: **4.13.0** (Python) / **7.4.0** (Rust) — LangChain + LlamaIndex VectorStore integrations, async compress API, 879+ Python tests passing
+
+---
+
+## v4.13.0 — LangChain + LlamaIndex Integrations + Async Compress ✅ COMPLETE (2026-04-28)
+
+### Summary
+Closes the most significant user-facing gap identified in market analysis: zero
+native presence in LangChain or LlamaIndex, the two dominant RAG frameworks.
+Every production RAG pipeline routes through one of these. Also adds async
+`compress_async` / `decompress_async` coroutines for FastAPI / asyncio services.
+
+### Deliverables
+| # | Deliverable | Status |
+|---|-------------|--------|
+| 1 | `python/integrations/langchain_integration.py` — `VectroVectorStore` (LangChain full protocol) | ✅ |
+| 2 | `python/integrations/llamaindex_integration.py` — `VectroVectorStore` (LlamaIndex protocol) | ✅ |
+| 3 | `python/vectro.py` — `compress_async()` + `decompress_async()` | ✅ |
+| 4 | `python/integrations/__init__.py` — `LangChainVectorStore` + `LlamaIndexVectorStore` exported | ✅ |
+| 5 | `python/__init__.py` — top-level exports + `__all__` updated | ✅ |
+| 6 | `tests/test_langchain_integration.py` — 34 tests, zero external deps | ✅ |
+| 7 | `tests/test_llamaindex_integration.py` — 26 tests, zero external deps | ✅ |
+| 8 | `tests/test_async_compress.py` — 12 tests, concurrent-safety verified | ✅ |
+| 9 | Version bump 4.12.0 → 4.13.0 | ✅ |
+
+### Architecture
+Both stores share the same compression strategy:
+- `add_texts` / `add(nodes)`: embed → compress (INT8/NF4 via profile) → store compressed
+- `query` / `similarity_search`: decompress (NEON/AVX2 SIMD) → cosine similarity → top-k
+- Memory footprint: 4× lower than float32 baseline (INT8), 8× lower (NF4)
+- Thread-safe: `threading.Lock` guards shared compressed store
+- Lazy imports: no hard dep on langchain-core / llama-index-core at module load
+
+### User impact
+```python
+# LangChain — drops into any existing RAG pipeline
+from python import LangChainVectorStore
+store = LangChainVectorStore.from_texts(texts, embedding=OpenAIEmbeddings())
+docs = store.similarity_search("semantic query", k=4)
+docs = await store.asimilarity_search("async query", k=4)  # FastAPI ready
+
+# LlamaIndex
+from python import LlamaIndexVectorStore
+vector_store = LlamaIndexVectorStore(compression_profile="quality")
+index = VectorStoreIndex(nodes=[], storage_context=StorageContext.from_defaults(
+    vector_store=vector_store))
+
+# Async compress for FastAPI endpoints
+result = await vectro.compress_async(vectors, profile="balanced")
+```
 
 ---
 
