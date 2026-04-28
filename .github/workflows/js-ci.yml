@@ -40,7 +40,7 @@ jobs:
       # ── Build ─────────────────────────────────────────────────────────────
       - name: Install npm dependencies
         working-directory: js
-        run: npm install --ignore-scripts
+        run: npm ci --ignore-scripts
 
       - name: Build native addon
         working-directory: js

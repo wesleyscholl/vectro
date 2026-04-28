@@ -8,22 +8,6 @@ name: Cross-Platform Benchmark Suite
 #   macos-latest   — macOS Apple Silicon (arm64 / NEON)
 #   macos-13       — macOS Intel x86_64  (AVX2; AVX-512 disabled on Mac)
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'python/**'
-      - 'rust/**'
-      - 'benchmarks/**'
-      - 'tests/test_cross_platform_benchmarks.py'
-      - 'tests/conftest.py'
-      - '.github/workflows/cross_platform_benchmark.yml'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'python/**'
-      - 'rust/**'
-      - 'benchmarks/**'
-      - 'tests/test_cross_platform_benchmarks.py'
   workflow_dispatch:
     inputs:
       mode:

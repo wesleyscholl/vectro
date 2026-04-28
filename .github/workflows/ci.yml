@@ -31,7 +31,7 @@ jobs:
           key: rust-${{ matrix.os }}-${{ hashFiles('**/Cargo.lock') }}
 
       - name: cargo test --workspace
-        run: cargo test --workspace --locked
+        run: cargo test --workspace
 
       - name: Bench smoke-test (--test flag, no timing)
         run: |

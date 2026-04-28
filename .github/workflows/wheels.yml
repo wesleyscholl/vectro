@@ -4,11 +4,7 @@ name: Wheels
 # On a version tag the wheels are uploaded to PyPI and a GitHub Release is created.
 
 on:
-  push:
-    branches: [main]
-    tags:
-      - "v*"
-  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: write   # needed to create a GitHub Release

@@ -20,6 +20,7 @@
 #include <napi.h>
 #include <zlib.h>
 #include <zstd.h>
+#include <zstd_errors.h>
 
 #ifdef __ARM_NEON
 #include <arm_neon.h>
