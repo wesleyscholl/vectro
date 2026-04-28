@@ -1,0 +1,6 @@
+{
+  "architectures": ["Qwen2Model"],
+  "model_type": "qwen2",
+  "hidden_size": 1536,
+  "num_hidden_layers": 28
+}

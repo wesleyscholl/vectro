@@ -1,0 +1,6 @@
+{
+  "architectures": ["DebertaV2Model"],
+  "model_type": "deberta-v2",
+  "hidden_size": 1536,
+  "num_hidden_layers": 24
+}

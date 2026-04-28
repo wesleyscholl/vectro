@@ -25,7 +25,8 @@ auto_quantize(embeddings, target_cosine, target_compression) -> dict
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from pathlib import Path
+from typing import Any, Optional, Union
 import numpy as np
 
 try:
@@ -230,8 +231,14 @@ def auto_quantize(
     embeddings: np.ndarray,
     target_cosine: float = 0.97,
     target_compression: float = 8.0,
+    model_dir: "Union[str, Path, None]" = None,
 ) -> dict:
     """Select and apply the best quantization strategy for ``embeddings``.
+
+    When *model_dir* is supplied, the function reads ``config.json`` from that
+    directory and uses the model-family registry (:func:`python.profiles.get_profile`)
+    to bypass the statistical heuristic with a deterministic method choice.
+    This is faster and more accurate for known embedding model families.
 
     Tries strategies in order (highest quality first) and returns the first
     result that satisfies both ``target_cosine`` and ``target_compression``.
@@ -244,6 +251,9 @@ def auto_quantize(
     embeddings         : np.ndarray, shape (n, d), float32
     target_cosine      : float, minimum acceptable mean cosine similarity
     target_compression : float, minimum acceptable compression ratio (× float32)
+    model_dir          : path to a HuggingFace model directory (optional).
+                         When provided, the family registry overrides the
+                         statistical heuristic for known families.
 
     Returns
     -------
@@ -252,12 +262,30 @@ def auto_quantize(
         cosine_sim        : float — achieved mean cosine similarity
         compression_ratio : float — achieved compression ratio
         result            : Any   — quantizer-specific output
-        kurtosis          : float — input distribution kurtosis
+        kurtosis          : float — input distribution kurtosis (0.0 when skipped)
         tried             : list  — all strategies attempted (with outcomes)
+        family            : str   — detected model family (present when model_dir given)
     """
     data = np.ascontiguousarray(embeddings, dtype=np.float32)
-    n, d = data.shape
 
+    # ── Fast path: model-family registry ──────────────────────────────────────
+    if model_dir is not None:
+        from .profiles import get_profile
+        profile = get_profile(model_dir)
+        if profile.method == "int8":
+            result = _try_int8_fallback(data)
+            result.update({"kurtosis": 0.0, "tried": [result], "family": profile.family})
+            return result
+        if profile.method == "nf4":
+            result = _try_nf4(data, mixed=False)
+            if not result.get("success"):
+                result = _try_int8_fallback(data)
+            result.update({"kurtosis": 0.0, "tried": [result], "family": profile.family})
+            return result
+        # profile.method == "auto" → fall through to statistical heuristic
+
+    # ── Statistical heuristic ─────────────────────────────────────────────────
+    n, d = data.shape
     kurt = _compute_kurtosis(data)
     heavy_tailed = kurt > 1.5      # excess kurtosis threshold (Laplace ≈ 3, Gaussian ≈ 0)
 

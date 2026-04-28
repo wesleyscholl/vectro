@@ -92,13 +92,14 @@ from .rq_api import ResidualQuantizer
 from .lora_api import compress_lora, decompress_lora, compress_lora_adapter, LoRAResult
 from .codebook_api import Codebook
 from .auto_quantize_api import auto_quantize
+from .profiles import get_profile, QuantProfile
 from .storage_v3 import save_vqz, load_vqz, save_compressed, load_compressed, VQZResult
 from .onnx_export import to_onnx_model, export_onnx
 from .retriever import VectroRetriever, RetrieverProtocol, RetrievalResult
 from .ivf_api import IVFIndex, IVFPQIndex
 from .bf16_api import Bf16Encoder
 
-__version__ = "4.11.2"
+__version__ = "4.12.0"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"
@@ -194,6 +195,9 @@ __all__ = [
     "compress_lora_adapter",
     "LoRAResult",
     "auto_quantize",
+    # Model-family profile registry
+    "get_profile",
+    "QuantProfile",
     # v3 storage
     "save_vqz",
     "load_vqz",

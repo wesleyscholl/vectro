@@ -5,6 +5,39 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.12.0] — 2026-04-28
+
+### Added
+- `python/profiles.py`: two new model families:
+  - `qwen2` (`Qwen2Model`, `Qwen2_5Model`) → INT8 (L2-normalized output)
+  - `deberta` (`DebertaModel`, `DebertaV2Model` and classifier variants) → NF4
+    (unnormalized contextual embeddings with heavy-tailed outliers)
+- `python/auto_quantize_api.py`: `model_dir` parameter on `auto_quantize()`.
+  When supplied, reads `config.json` via the family registry
+  (`python.profiles.get_profile`) and short-circuits the statistical kurtosis
+  heuristic with a deterministic, family-specific method. Result dict gains a
+  `family` key and `kurtosis: 0.0` on the fast path.
+- `python/vectro.py`: `model_dir` parameter on `Vectro.compress()`. Applies the
+  family registry to override `precision_mode` when the model directory is known
+  and `precision_mode` was not explicitly set by the caller.
+- `python/__init__.py`: `get_profile` and `QuantProfile` exported from the
+  top-level package and added to `__all__`.
+- `tests/fixtures/qwen2/config.json` + `tests/fixtures/deberta/config.json`:
+  fixtures for the two new families.
+- `tests/test_model_profile_routing.py`: 15 end-to-end tests verifying that
+  `auto_quantize(model_dir=...)` and `Vectro.compress(model_dir=...)` route to
+  the correct method, that explicit `precision_mode` overrides the registry,
+  that unknown model dirs fall back gracefully, and that `get_profile` /
+  `QuantProfile` are importable from the top-level package.
+- `tests/test_auto_quantize_profiles.py`: parametrized cases for `qwen2` and
+  `deberta` added to the existing family-detection test.
+
+### Changed
+- Version bumped `4.11.2 → 4.12.0` across `pyproject.toml`, `pixi.toml`,
+  `python/__init__.py`, `python/vectro.py`, `tests/test_release_candidate.py`.
+
+---
+
 ## [4.11.2] — 2026-04-27 (patch: cross-platform benchmarking)
 
 ### Added

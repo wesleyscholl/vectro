@@ -20,6 +20,8 @@ FIXTURE_DIR = Path(__file__).parent / "fixtures"
     ("e5",      "e5",      "int8"),
     ("bert",    "bert",    "nf4"),
     ("bge",     "bge",     "nf4"),
+    ("qwen2",   "qwen2",   "int8"),
+    ("deberta", "deberta", "nf4"),
     ("unknown", "generic", "auto"),
 ])
 def test_get_profile(fixture, expected_family, expected_method):

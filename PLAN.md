@@ -1,7 +1,41 @@
 # Vectro — Plan
 
-> Last updated: 2026-04-27
-> Current version: **4.11.2** (Python) / **7.4.0** (Rust) — cross-platform benchmark suite added, Intel x86 CI runner added, 792 Python tests passing
+> Last updated: 2026-04-28
+> Current version: **4.12.0** (Python) / **7.4.0** (Rust) — model-family-aware routing wired, Qwen2+DeBERTa families added, 807 Python tests passing
+
+---
+
+## v4.12.0 — Model-Family-Aware AutoQuantize Routing ✅ COMPLETE (2026-04-28)
+
+### Summary
+Completes ADR-002 Decision 3: the model-family profile registry (`python/profiles.py`)
+is now wired into both `auto_quantize()` and `Vectro.compress()`. Users can pass
+`model_dir="/path/to/gte-model"` and Vectro automatically selects the optimal
+quantization method for that embedding family — INT8 for L2-normalized outputs
+(GTE, E5, Qwen2), NF4 for heavy-tailed unnormalized outputs (BGE, BERT, DeBERTa).
+
+### Deliverables
+| # | Deliverable | Status |
+|---|-------------|--------|
+| 1 | `python/profiles.py`: Qwen2 family (INT8) + DeBERTa family (NF4) | ✅ |
+| 2 | `python/auto_quantize_api.py`: `model_dir` param, fast path with `family` key | ✅ |
+| 3 | `python/vectro.py`: `model_dir` param on `Vectro.compress()` | ✅ |
+| 4 | `python/__init__.py`: `get_profile`, `QuantProfile` exported + in `__all__` | ✅ |
+| 5 | `tests/fixtures/qwen2/` + `tests/fixtures/deberta/` | ✅ |
+| 6 | `tests/test_model_profile_routing.py` — 15 end-to-end routing tests | ✅ |
+| 7 | `tests/test_auto_quantize_profiles.py` — qwen2 + deberta cases added | ✅ |
+| 8 | Version bump 4.11.2 → 4.12.0 across all version files | ✅ |
+
+### Family registry (post v4.12.0)
+| Architecture(s) | Family | Method | Rationale |
+|---|---|---|---|
+| `NewModel`, `GteModel` | gte | INT8 | L2-normalized |
+| `BGEModel` | bge | NF4 | Unnormalized |
+| `XLMRobertaModel`, `RobertaModel`, `E5Model` | e5 | INT8 | L2-normalized |
+| `Qwen2Model`, `Qwen2_5Model` | qwen2 | INT8 | L2-normalized in embed mode |
+| `DebertaModel`, `DebertaV2Model` | deberta | NF4 | Heavy-tailed outliers |
+| `BertModel` | bert | NF4 | Unbounded contextual |
+| Unknown | generic | auto | Existing kurtosis heuristic |
 
 ---
 

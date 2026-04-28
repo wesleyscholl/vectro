@@ -47,7 +47,7 @@ from .profiles_api import (
     create_custom_profile
 )
 
-__version__ = "4.11.2"
+__version__ = "4.12.0"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"
@@ -97,15 +97,21 @@ class Vectro:
         vectors: Union[np.ndarray, List[np.ndarray]],
         profile: Optional[str] = None,
         precision_mode: Optional[str] = None,
-        return_quality_metrics: bool = False
+        return_quality_metrics: bool = False,
+        model_dir: Optional[str] = None,
     ) -> Union[QuantizationResult, BatchQuantizationResult, Tuple[Any, QualityMetrics]]:
         """Compress vectors using quantization.
-        
+
         Args:
             vectors: Input vectors to compress (single vector or batch)
             profile: Compression profile to use (None = use default)
+            precision_mode: Override quantization method (int8, nf4, binary, int4)
             return_quality_metrics: Return quality analysis alongside results
-            
+            model_dir: Path to a HuggingFace model directory.  When supplied,
+                the model-family registry selects the optimal precision_mode
+                for that embedding family (e.g. GTE → INT8, BGE → NF4).
+                Ignored when precision_mode is explicitly set.
+
         Returns:
             Quantization result(s) and optionally quality metrics
         """
@@ -114,6 +120,15 @@ class Vectro:
 
         selected_profile = get_compression_profile(profile)
         requested_precision = precision_mode or selected_profile.precision_mode
+
+        # Model-family registry: override precision when model_dir is given and
+        # precision_mode was not explicitly specified by the caller.
+        if model_dir is not None and precision_mode is None:
+            from .profiles import get_profile as _get_profile
+            _fp = _get_profile(model_dir)
+            if _fp.method != "auto":
+                requested_precision = _fp.method
+
         requested_precision = requested_precision.lower()
         group_size = 64
 
