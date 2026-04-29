@@ -36,6 +36,86 @@ from typing import Any, Dict, List, Optional, Sequence, cast
 
 import numpy as np
 
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+def _apply_meta_filters(
+    node_ids: List[str],
+    node_store: Dict[str, tuple],
+    filters: Any,
+) -> List[int]:
+    """Return row indices whose metadata satisfies *filters*.
+
+    *filters* is a LlamaIndex ``MetadataFilters`` (duck-typed).  Each child
+    ``MetadataFilter`` has ``.key``, ``.value``, and ``.operator`` (default
+    ``"=="`` / ``FilterOperator.EQ``).  We only handle equality; unknown
+    operators pass silently so the search degrades gracefully.
+    """
+    filter_list = getattr(filters, "filters", None) or []
+    if not filter_list:
+        return list(range(len(node_ids)))
+
+    keep = []
+    for i, nid in enumerate(node_ids):
+        meta = node_store.get(nid, ("", {}))[1]
+        match = True
+        for f in filter_list:
+            key = getattr(f, "key", None)
+            val = getattr(f, "value", None)
+            op = str(getattr(f, "operator", "==")).lower()
+            if key is None:
+                continue
+            mv = meta.get(key)
+            if op in ("eq", "==", "filteroperator.eq"):
+                if mv != val:
+                    match = False
+                    break
+            elif op in ("ne", "!=", "filteroperator.ne"):
+                if mv == val:
+                    match = False
+                    break
+            # Unsupported operators: pass (don't filter out)
+        if match:
+            keep.append(i)
+    return keep
+
+
+def _mmr_select_li(
+    mat: "np.ndarray",
+    query_vec: "np.ndarray",
+    k: int,
+    fetch_k: int,
+    lambda_mult: float,
+) -> "np.ndarray":
+    """Greedy MMR selection over *fetch_k* candidates — returns local indices."""
+    n = mat.shape[0]
+    fetch_k = min(fetch_k, n)
+    k = min(k, fetch_k)
+
+    norms = np.linalg.norm(mat, axis=1, keepdims=True) + 1e-10
+    normed = mat / norms
+    q_norm = query_vec / (np.linalg.norm(query_vec) + 1e-10)
+
+    rel_scores = normed @ q_norm
+    cand_idx = np.argsort(rel_scores)[::-1][:fetch_k]
+
+    selected: List[int] = []
+    while len(selected) < k and len(cand_idx) > 0:
+        if not selected:
+            best = int(cand_idx[0])
+        else:
+            sel_emb = normed[selected]
+            cand_emb = normed[cand_idx]
+            rel = rel_scores[cand_idx]
+            red = (cand_emb @ sel_emb.T).max(axis=1)
+            mmr = lambda_mult * rel - (1.0 - lambda_mult) * red
+            best = int(cand_idx[int(np.argmax(mmr))])
+        selected.append(best)
+        cand_idx = cand_idx[cand_idx != best]
+
+    return np.array(selected, dtype=np.intp)
+
 _LLAMAINDEX_ERROR = (
     "llama-index-core is required for VectroVectorStore (LlamaIndex). "
     "Install with: pip install llama-index-core"
@@ -180,6 +260,10 @@ class VectroVectorStore:
     ) -> Any:
         """Run ANN search against stored compressed vectors.
 
+        Supports metadata filtering via ``VectorStoreQuery.filters``
+        (``MetadataFilters``) and diversity-promoting retrieval via
+        ``VectorStoreQuery.query_mode = VectorStoreQueryMode.MMR``.
+
         Args:
             query: A ``VectorStoreQuery`` object (from llama-index-core).
 
@@ -188,7 +272,7 @@ class VectroVectorStore:
         """
         try:
             from llama_index.core.vector_stores.types import VectorStoreQueryResult
-            from llama_index.core.schema import TextNode, NodeWithScore
+            from llama_index.core.schema import TextNode
         except ImportError as exc:
             raise ImportError(_LLAMAINDEX_ERROR) from exc
 
@@ -196,30 +280,57 @@ class VectroVectorStore:
         if q_emb is None:
             raise ValueError("VectorStoreQuery.query_embedding must be set.")
         k = getattr(query, "similarity_top_k", 4)
+        filters = getattr(query, "filters", None)
+        query_mode = str(getattr(query, "query_mode", "")).lower()
+        is_mmr = "mmr" in query_mode
 
         q_arr = np.asarray(q_emb, dtype=np.float32)
 
         with self._lock:
             if self._compressed is None or not self._node_ids:
                 return VectorStoreQueryResult(nodes=[], similarities=[], ids=[])
-            scores = self._cosine_scores(q_arr)
+            mat = self._compressed.reconstruct_batch()
             node_ids = list(self._node_ids)
             node_store = dict(self._node_store)
 
-        k = min(k, len(scores))
-        top_idx = np.argpartition(scores, -k)[-k:]
-        top_idx = top_idx[np.argsort(scores[top_idx])[::-1]]
+        # Apply metadata filters to get a candidate pool
+        filtered_idx = _apply_meta_filters(node_ids, node_store, filters)
+        if not filtered_idx:
+            return VectorStoreQueryResult(nodes=[], similarities=[], ids=[])
+
+        filtered_arr = np.array(filtered_idx, dtype=np.intp)
+        sub_mat = mat[filtered_arr]
+
+        q_norm = q_arr / (np.linalg.norm(q_arr) + 1e-10)
+        norms = np.linalg.norm(sub_mat, axis=1, keepdims=True) + 1e-10
+        sub_scores = (sub_mat / norms) @ q_norm
+
+        k_eff = min(k, len(filtered_idx))
+
+        if is_mmr:
+            fetch_k = getattr(query, "mmr_prefetch_k", None)
+            if fetch_k is None:
+                fetch_k = min(k_eff * 5, len(filtered_idx))
+            lambda_mult = getattr(query, "mmr_threshold", 0.5)
+            local_idx = _mmr_select_li(sub_mat, q_arr, k_eff, fetch_k, lambda_mult)
+            top_idx = filtered_arr[local_idx]
+            result_scores = sub_scores[local_idx]
+        else:
+            local_top = np.argpartition(sub_scores, -k_eff)[-k_eff:]
+            local_top = local_top[np.argsort(sub_scores[local_top])[::-1]]
+            top_idx = filtered_arr[local_top]
+            result_scores = sub_scores[local_top]
 
         result_nodes = []
         result_sims = []
         result_ids = []
 
-        for i in top_idx:
-            nid = node_ids[i]
+        for idx_pos, global_i in enumerate(top_idx):
+            nid = node_ids[global_i]
             text, meta = node_store.get(nid, ("", {}))
             node = TextNode(text=text, id_=nid, metadata=meta)
             result_nodes.append(node)
-            result_sims.append(float(scores[i]))
+            result_sims.append(float(result_scores[idx_pos]))
             result_ids.append(nid)
 
         return VectorStoreQueryResult(

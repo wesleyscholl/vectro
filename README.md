@@ -7,8 +7,8 @@
 ### Ultra-High-Performance LLM Embedding Compressor
 
 ![Mojo](https://img.shields.io/badge/Mojo-first-orange?logo=fire&style=for-the-badge)
-![Version](https://img.shields.io/badge/version-4.15.0-blue?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-885_passing-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-4.16.0-blue?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-936_passing-green?style=for-the-badge)
 ![Python-Only](https://img.shields.io/badge/mode-Python--only-blue?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 
@@ -16,7 +16,7 @@
 ╦  ╦╔═╗╔═╗╔╦╗╦═╗╔═╗
 ╚╗╔╝║╣ ║   ║ ╠╦╝║ ║
  ╚╝ ╚═╝╚═╝ ╩ ╩╚═╚═╝
-    v4.15.0 — Mojo-Accelerated Vector Quantization
+    v4.16.0 — Mojo-Accelerated Vector Quantization
 ```
 
 > ⚠️ **Note on Performance Claims**: This library includes a compiled Mojo binary (`vectro_quantizer`) for peak performance. Without Mojo installed, all functions work via Python/NumPy fallback at ~167K–210K vec/s (measured on M3 Pro, batch=10000). With the Mojo binary built, throughput reaches 12M+ vec/s — **4.85× faster than FAISS C++**. See [Requirements](#-requirements) below.
@@ -741,6 +741,35 @@ results = retriever.retrieve("production query")
 # → [{"id": "...", "text": "...", "score": 0.031}, ...]
 ```
 
+### Re-ranking
+
+```python
+from python.retrieval import VectroReranker, LangChainReranker
+
+# After initial retrieval, re-rank using the store's compressed embeddings
+store = LangChainVectorStore.from_texts(texts, embedding=embeddings)
+initial = store.similarity_search_with_score("initial query", k=20)
+
+# Build candidates: (doc_id, document, original_score)
+candidates = [(doc.metadata.get("id", str(i)), doc, score)
+              for i, (doc, score) in enumerate(initial)]
+
+# Cosine re-rank against a refined query
+reranker = VectroReranker(store, strategy="cosine")
+refined_emb = embeddings.embed_query("more specific query")
+results = reranker.rerank(refined_emb, candidates, top_k=5)
+# → [(doc_id, doc, new_score), ...]  sorted descending
+
+# RRF fusion of original + cosine scores
+reranker_rrf = VectroReranker(store, strategy="rrf", rrf_k=60)
+results = reranker_rrf.rerank(refined_emb, candidates, top_k=5)
+
+# LangChain BaseDocumentCompressor duck-type (ContextualCompressionRetriever)
+lc_reranker = LangChainReranker(store, embedding=embeddings, top_k=5)
+compressed = lc_reranker.compress_documents(initial_docs, "refined query")
+compressed = await lc_reranker.acompress_documents(initial_docs, "async refined")
+```
+
 ### Memory comparison (768-dim, 1M documents)
 | Store backend | Memory | Compression |
 |---------------|--------|-------------|
@@ -780,7 +809,8 @@ Test categories:
 - ✅ **RQ / Codebook / AutoQuantize** — learned compression quality gates
 - ✅ **VQZ Storage** — magic, checksum, compression round-trips, cloud stubs
 - ✅ **Vector DB** — Qdrant, Weaviate, in-memory round-trip
-- ✅ **RAG Frameworks** — LangChain (MMR + async + save/load), LlamaIndex (save/load), Haystack 2.x
+- ✅ **RAG Frameworks** — LangChain (full protocol), LlamaIndex (filter + MMR + async), Haystack 2.x (async)
+- ✅ **Re-ranking** — `VectroReranker` (cosine/RRF), `LangChainReranker` (`BaseDocumentCompressor`)
 - ✅ **Arrow / Parquet** — table export, IPC bytes
 - ✅ **Migration** — v1/v2 upgrade, dry-run, validation
 - ✅ **RC Hardening** — 7 verification gates for release launch

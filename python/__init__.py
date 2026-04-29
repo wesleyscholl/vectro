@@ -104,11 +104,13 @@ from .retrieval import (
     rrf_top_k,
     RRFRetriever,
     LangChainRRFRetriever,
+    VectroReranker,
+    LangChainReranker,
 )
 from .ivf_api import IVFIndex, IVFPQIndex
 from .bf16_api import Bf16Encoder
 
-__version__ = "4.15.0"
+__version__ = "4.16.0"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"
@@ -225,11 +227,13 @@ __all__ = [
     "VectroRetriever",
     "RetrieverProtocol",
     "RetrievalResult",
-    # RRF hybrid fusion
+    # RRF hybrid fusion + re-ranking
     "reciprocal_rank_fusion",
     "rrf_top_k",
     "RRFRetriever",
     "LangChainRRFRetriever",
+    "VectroReranker",
+    "LangChainReranker",
     # IVF approximate nearest-neighbour indices
     "IVFIndex",
     "IVFPQIndex",

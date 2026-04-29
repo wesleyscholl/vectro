@@ -1,7 +1,42 @@
 # Vectro — Plan
 
 > Last updated: 2026-04-28
-> Current version: **4.15.0** (Python) / **7.4.0** (Rust) — Framework protocol completeness + RRF hybrid retrieval, 885 Python tests passing
+> Current version: **4.16.0** (Python) / **7.4.0** (Rust) — Re-ranking layer + framework parity, 936 Python tests passing
+
+---
+
+## v4.16.0 — Re-ranking Layer + Framework Protocol Parity ✅ COMPLETE (2026-04-28)
+
+### Summary
+Closes the last framework protocol gaps: LlamaIndex `query()` now supports
+`MetadataFilters` (equality + NE) and `VectorStoreQueryMode.MMR`. Haystack gets
+non-blocking `async_embedding_retrieval` and `async_write_documents`. Introduces
+the re-ranking layer — `VectroReranker` (cosine / RRF strategies) and
+`LangChainReranker` (`BaseDocumentCompressor` duck-type) — completing the
+retrieve → compress → rerank pipeline. Six `.pyi` type stubs shipped for
+all integration and retrieval modules.
+
+### Deliverables
+| # | Deliverable | Status |
+|---|-------------|--------|
+| 1 | `llamaindex_integration.py` — `query()` + `MetadataFilters` support | ✅ |
+| 2 | `llamaindex_integration.py` — `query()` + `VectorStoreQueryMode.MMR` | ✅ |
+| 3 | `haystack_integration.py` — `async_embedding_retrieval` + `async_write_documents` | ✅ |
+| 4 | `python/retrieval/reranker.py` — `VectroReranker`, `LangChainReranker` | ✅ |
+| 5 | `python/retrieval/__init__.py` — reranker symbols exported | ✅ |
+| 6 | `python/__init__.py` — `VectroReranker`, `LangChainReranker` in top-level `__all__` | ✅ |
+| 7 | 6 type stubs: `langchain_integration.pyi`, `llamaindex_integration.pyi`, `haystack_integration.pyi`, `retrieval/__init__.pyi`, `retrieval/rrf_retriever.pyi`, `retrieval/reranker.pyi` | ✅ |
+| 8 | `tests/test_llamaindex_filter_mmr.py` — 14 tests | ✅ |
+| 9 | `tests/test_haystack_async.py` — 10 tests | ✅ |
+| 10 | `tests/test_reranker.py` — 27 tests | ✅ |
+| 11 | Version bump 4.15.0 → 4.16.0 | ✅ |
+
+### RAG Framework Coverage (Post v4.16.0)
+| Framework | search | filter= | MMR | async write | async search | save/load |
+|-----------|--------|---------|-----|-------------|--------------|-----------|
+| LangChain | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| LlamaIndex | ✅ | ✅ | ✅ | ✅ (add+query) | ✅ | ✅ |
+| Haystack 2.x | ✅ | ✅ | — | ✅ | ✅ | ✅ |
 
 ---
 

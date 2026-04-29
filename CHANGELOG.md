@@ -5,6 +5,67 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.16.0] — 2026-04-28
+
+### Added
+- `python/retrieval/reranker.py` (new module): score-based re-ranking layer.
+  - `VectroReranker(store, strategy, rrf_k)` — re-ranks retrieved
+    `(doc_id, document, score)` tuples using the store's compressed
+    embeddings.  Two strategies: `"cosine"` (pure cosine re-score) and
+    `"rrf"` (RRF fusion of original ranks + cosine re-scores).
+    Async `arerank()` via thread-pool executor.
+  - `LangChainReranker(store, embedding, top_k, strategy)` — duck-typed
+    `BaseDocumentCompressor`: `compress_documents(documents, query)`,
+    `acompress_documents`, `invoke`, `ainvoke`.  Zero hard LangChain dep.
+- `python/integrations/llamaindex_integration.py`: protocol completions:
+  - `query()` now respects `VectorStoreQuery.filters` (`MetadataFilters`) —
+    equality and NE operators applied to node metadata before ranking.
+  - `query()` supports `VectorStoreQuery.query_mode = VectorStoreQueryMode.MMR`
+    with `mmr_threshold` (lambda_mult, default 0.5) and `mmr_prefetch_k`
+    (candidate pool size, default `5×k`).
+  - Module-level `_apply_meta_filters` and `_mmr_select_li` helpers.
+- `python/integrations/haystack_integration.py`: async variants:
+  - `async_embedding_retrieval(query_embedding, top_k, filters, return_embedding)`
+    — non-blocking ANN search via thread-pool executor.
+  - `async_write_documents(documents, policy)` — non-blocking write.
+- `python/retrieval/__init__.py`: `VectroReranker` and `LangChainReranker`
+  added to subpackage exports.
+- `python/__init__.py`: `VectroReranker`, `LangChainReranker` added to
+  top-level imports and `__all__`.
+- **Type stubs** (5 new `.pyi` files):
+  - `python/integrations/langchain_integration.pyi`
+  - `python/integrations/llamaindex_integration.pyi`
+  - `python/integrations/haystack_integration.pyi`
+  - `python/retrieval/__init__.pyi`
+  - `python/retrieval/rrf_retriever.pyi`
+  - `python/retrieval/reranker.pyi`
+- `tests/test_llamaindex_filter_mmr.py` (new): 14 tests — metadata filter
+  (single-field, multi-field, NE operator, no-match, top-k, ordering),
+  MMR (k results, valid nodes, no duplicates, filter+MMR compose, lambda_mult),
+  async filter and async MMR propagation.
+- `tests/test_haystack_async.py` (new): 10 tests — `async_embedding_retrieval`
+  (top-k, score ordering, metadata filter, return_embedding flag, empty store,
+  filter no-match), `async_write_documents` (count, visibility, overwrite
+  policy), concurrent async gather.
+- `tests/test_reranker.py` (new): 27 tests — `_cosine_rerank` unit (top-k,
+  descending, cosine range, unknown-id skip), `_rrf_rerank` unit (top-k,
+  descending, positive scores, no duplicates), `VectroReranker` (cosine +
+  rrf, empty candidates, invalid strategy, repr, top-k cap, doc preservation,
+  async), `LangChainReranker` (compress_documents, acompress_documents, RRF
+  strategy, empty input, invoke, ainvoke, repr, top-k cap).
+
+### Changed
+- Version bumped `4.15.0 → 4.16.0` across all version files.
+
+### Protocol Coverage (Post v4.16.0)
+| Framework | search | filter= | MMR | async write | async search | save/load |
+|-----------|--------|---------|-----|-------------|--------------|-----------|
+| LangChain | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| LlamaIndex | ✅ | ✅ | ✅ | ✅ (add+query) | ✅ | ✅ |
+| Haystack 2.x | ✅ | ✅ | — | ✅ | ✅ | ✅ |
+
+---
+
 ## [4.15.0] — 2026-04-28
 
 ### Added

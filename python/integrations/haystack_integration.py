@@ -392,6 +392,47 @@ class VectroDocumentStore:
         return store
 
     # ------------------------------------------------------------------
+    # Async variants
+    # ------------------------------------------------------------------
+
+    async def async_embedding_retrieval(
+        self,
+        query_embedding: List[float],
+        top_k: int = 10,
+        filters: Optional[Dict[str, Any]] = None,
+        return_embedding: bool = False,
+    ) -> List[Any]:
+        """Non-blocking variant of :meth:`embedding_retrieval`.
+
+        Delegates to a thread-pool executor so this method never blocks the
+        asyncio event loop — safe for use in FastAPI / AIOHTTP handlers.
+        """
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.embedding_retrieval(
+                query_embedding, top_k, filters, return_embedding
+            ),
+        )
+
+    async def async_write_documents(
+        self,
+        documents: List[Any],
+        policy: str = "none",
+    ) -> int:
+        """Non-blocking variant of :meth:`write_documents`.
+
+        Returns:
+            Number of documents successfully written.
+        """
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, lambda: self.write_documents(documents, policy)
+        )
+
+    # ------------------------------------------------------------------
     # Vectro-specific helpers
     # ------------------------------------------------------------------
 
