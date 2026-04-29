@@ -42,7 +42,7 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
-from python.retrieval.mmr import mmr_select as _mmr_select
+from python.retrieval.mmr import cosine_scores as _cosine_scores_fn, mmr_select as _mmr_select
 
 _HAYSTACK_ERROR = (
     "haystack-ai is required for VectroDocumentStore. "
@@ -115,10 +115,7 @@ class VectroDocumentStore:
             )
 
     def _cosine_scores(self, query_emb: np.ndarray) -> np.ndarray:
-        mat = self._compressed.reconstruct_batch()
-        q = query_emb / (np.linalg.norm(query_emb) + 1e-10)
-        norms = np.linalg.norm(mat, axis=1, keepdims=True) + 1e-10
-        return (mat / norms) @ q
+        return _cosine_scores_fn(query_emb, self._compressed.reconstruct_batch())
 
     # ------------------------------------------------------------------
     # Haystack DocumentStore protocol

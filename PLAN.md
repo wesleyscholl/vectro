@@ -1,7 +1,34 @@
 # Vectro — Plan
 
 > Last updated: 2026-04-29
-> Current version: **4.17.0** (Python) / **7.4.0** (Rust) — Haystack MMR + HaystackReranker + shared MMR utility, 971 Python tests passing
+> Current version: **4.17.1** (Python) / **7.4.0** (Rust) — DRY pass: shared cosine_scores + LlamaIndex MMR consolidated, 982 Python tests passing
+
+---
+
+## v4.17.1 — DRY pass: cosine_scores + LlamaIndex MMR consolidation ✅ COMPLETE (2026-04-29)
+
+### Summary
+Pure refactor sprint completing the consolidation work begun in v4.17.0.
+Removes the LlamaIndex-local `_mmr_select_li` (33 lines, character-equivalent
+algorithm to the shared `mmr_select`) and the three character-identical
+`_cosine_scores` methods duplicated across LangChain, LlamaIndex, and
+Haystack adapters.  No API change, no behavior change — less code, single
+source of truth, asymptotically faster MMR (O(n) vs O(n log n) candidate selection).
+
+### Deliverables
+| # | Deliverable | Status |
+|---|-------------|--------|
+| 1 | `python/retrieval/mmr.py` — shared `cosine_scores(query_vec, mat)` added | ✅ |
+| 2 | `python/retrieval/mmr.pyi` — `cosine_scores` stub | ✅ |
+| 3 | `python/integrations/llamaindex_integration.py` — removed `_mmr_select_li`, uses shared `mmr_select` | ✅ |
+| 4 | `python/integrations/llamaindex_integration.pyi` — `_mmr_select_li` stub removed | ✅ |
+| 5 | `python/integrations/{langchain,llamaindex,haystack}_integration.py` — `_cosine_scores` collapsed to 1 line, inline cosine patterns also consolidated | ✅ |
+| 6 | `tests/test_retrieval_mmr.py` (new) — 11 unit tests for shared utility | ✅ |
+| 7 | Version bump 4.17.0 → 4.17.1 | ✅ |
+
+### Validation
+- 982 tests passing (up from 971; 11 new shared-utility tests, no regressions)
+- All 94 framework MMR/integration tests pass unchanged
 
 ---
 

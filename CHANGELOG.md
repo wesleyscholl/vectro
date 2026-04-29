@@ -5,6 +5,35 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.17.1] — 2026-04-29
+
+### Changed
+- `python/retrieval/mmr.py`: added shared `cosine_scores(query_vec, mat)` —
+  the canonical cosine-similarity computation used across all framework adapters.
+  No behavior change; pure consolidation of three character-identical
+  `_cosine_scores` methods previously duplicated in LangChain, LlamaIndex, and
+  Haystack adapters, plus an inline copy inside the LangChain MMR scorer.
+- `python/integrations/llamaindex_integration.py`: removed local
+  `_mmr_select_li` (33 lines) — now delegates to the shared `mmr_select`
+  from `python.retrieval.mmr`.  Algorithm and return semantics are identical;
+  the shared version uses `argpartition` for an O(n) candidate selection
+  (vs. O(n log n) full sort) so behavior is asymptotically faster on large stores.
+- `python/integrations/{langchain,llamaindex,haystack}_integration.py`:
+  `_cosine_scores` methods reduced from 4 lines to 1, all delegating to the
+  shared `cosine_scores`.  Inline cosine-norm patterns inside MMR/score paths
+  also collapsed to single shared calls.
+- `python/integrations/llamaindex_integration.pyi`: removed `_mmr_select_li` stub.
+- `python/retrieval/mmr.pyi`: added `cosine_scores` stub.
+- `tests/test_retrieval_mmr.py` (new): 11 tests for the shared utility —
+  cosine on unit/orthogonal/zero-query vectors, MMR k/fetch_k clamping,
+  `lambda_mult=1.0` agreeing with `argmax(cosine)` of the full matrix.
+
+### Validation
+- 982 tests passing (up from 971; 11 new shared-utility tests, no regressions).
+- All 94 framework MMR/integration tests pass unchanged.
+
+---
+
 ## [4.17.0] — 2026-04-29
 
 ### Added

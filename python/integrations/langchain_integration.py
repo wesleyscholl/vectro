@@ -41,7 +41,7 @@ from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from python.retrieval.mmr import mmr_select as _mmr_select
+from python.retrieval.mmr import cosine_scores as _cosine_scores_fn, mmr_select as _mmr_select
 
 _LANGCHAIN_ERROR = (
     "langchain-core is required for VectroVectorStore. "
@@ -130,10 +130,7 @@ class VectroVectorStore:
 
     def _cosine_scores(self, query_vec: np.ndarray) -> np.ndarray:
         """Return cosine similarity of *query_vec* against all stored vectors."""
-        mat = self._compressed.reconstruct_batch()          # (n, d) float32
-        q = query_vec / (np.linalg.norm(query_vec) + 1e-10)
-        norms = np.linalg.norm(mat, axis=1, keepdims=True) + 1e-10
-        return (mat / norms) @ q                            # (n,) float32
+        return _cosine_scores_fn(query_vec, self._compressed.reconstruct_batch())
 
     def _top_k(self, scores: np.ndarray, k: int) -> np.ndarray:
         k = min(k, len(scores))
@@ -499,9 +496,7 @@ class VectroVectorStore:
         mmr_local = _mmr_select(filtered_mat, q_emb, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult)
         mmr_idx = filtered_arr[mmr_local]
 
-        q_norm = q_emb / (np.linalg.norm(q_emb) + 1e-10)
-        norms = np.linalg.norm(mat, axis=1, keepdims=True) + 1e-10
-        all_scores = (mat / norms) @ q_norm
+        all_scores = _cosine_scores_fn(q_emb, mat)
 
         return [
             (

@@ -1,9 +1,24 @@
-"""Maximal Marginal Relevance selection — shared across all framework adapters."""
+"""Cosine scoring + Maximal Marginal Relevance — shared across framework adapters."""
 from __future__ import annotations
 
 from typing import List
 
 import numpy as np
+
+
+def cosine_scores(query_vec: np.ndarray, mat: np.ndarray) -> np.ndarray:
+    """Cosine similarity of *query_vec* against each row of *mat*.
+
+    Args:
+        query_vec: 1-D query vector, shape (d,).
+        mat: 2-D matrix of stored vectors, shape (n, d).
+
+    Returns:
+        1-D array of cosine similarities, shape (n,).
+    """
+    q = query_vec / (np.linalg.norm(query_vec) + 1e-10)
+    norms = np.linalg.norm(mat, axis=1, keepdims=True) + 1e-10
+    return (mat / norms) @ q
 
 
 def mmr_select(

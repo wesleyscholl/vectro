@@ -2,6 +2,8 @@
 from __future__ import annotations
 import numpy as np
 
+def cosine_scores(query_vec: np.ndarray, mat: np.ndarray) -> np.ndarray: ...
+
 def mmr_select(
     embeddings: np.ndarray,
     query_vec: np.ndarray,

@@ -9,14 +9,6 @@ def _apply_meta_filters(
     node_store: Dict[str, tuple],
     filters: Any,
 ) -> List[int]: ...
-def _mmr_select_li(
-    mat: np.ndarray,
-    query_vec: np.ndarray,
-    k: int,
-    fetch_k: int,
-    lambda_mult: float,
-) -> np.ndarray: ...
-
 class VectroVectorStore:
     stores_text: bool
     is_embedding_query: bool

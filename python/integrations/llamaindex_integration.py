@@ -36,6 +36,8 @@ from typing import Any, Dict, List, Optional, Sequence, cast
 
 import numpy as np
 
+from python.retrieval.mmr import cosine_scores as _cosine_scores_fn, mmr_select
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -80,41 +82,6 @@ def _apply_meta_filters(
             keep.append(i)
     return keep
 
-
-def _mmr_select_li(
-    mat: "np.ndarray",
-    query_vec: "np.ndarray",
-    k: int,
-    fetch_k: int,
-    lambda_mult: float,
-) -> "np.ndarray":
-    """Greedy MMR selection over *fetch_k* candidates — returns local indices."""
-    n = mat.shape[0]
-    fetch_k = min(fetch_k, n)
-    k = min(k, fetch_k)
-
-    norms = np.linalg.norm(mat, axis=1, keepdims=True) + 1e-10
-    normed = mat / norms
-    q_norm = query_vec / (np.linalg.norm(query_vec) + 1e-10)
-
-    rel_scores = normed @ q_norm
-    cand_idx = np.argsort(rel_scores)[::-1][:fetch_k]
-
-    selected: List[int] = []
-    while len(selected) < k and len(cand_idx) > 0:
-        if not selected:
-            best = int(cand_idx[0])
-        else:
-            sel_emb = normed[selected]
-            cand_emb = normed[cand_idx]
-            rel = rel_scores[cand_idx]
-            red = (cand_emb @ sel_emb.T).max(axis=1)
-            mmr = lambda_mult * rel - (1.0 - lambda_mult) * red
-            best = int(cand_idx[int(np.argmax(mmr))])
-        selected.append(best)
-        cand_idx = cand_idx[cand_idx != best]
-
-    return np.array(selected, dtype=np.intp)
 
 _LLAMAINDEX_ERROR = (
     "llama-index-core is required for VectroVectorStore (LlamaIndex). "
@@ -179,10 +146,7 @@ class VectroVectorStore:
             )
 
     def _cosine_scores(self, query_emb: np.ndarray) -> np.ndarray:
-        mat = self._compressed.reconstruct_batch()
-        q = query_emb / (np.linalg.norm(query_emb) + 1e-10)
-        norms = np.linalg.norm(mat, axis=1, keepdims=True) + 1e-10
-        return (mat / norms) @ q
+        return _cosine_scores_fn(query_emb, self._compressed.reconstruct_batch())
 
     # ------------------------------------------------------------------
     # LlamaIndex VectorStore protocol
@@ -301,9 +265,7 @@ class VectroVectorStore:
         filtered_arr = np.array(filtered_idx, dtype=np.intp)
         sub_mat = mat[filtered_arr]
 
-        q_norm = q_arr / (np.linalg.norm(q_arr) + 1e-10)
-        norms = np.linalg.norm(sub_mat, axis=1, keepdims=True) + 1e-10
-        sub_scores = (sub_mat / norms) @ q_norm
+        sub_scores = _cosine_scores_fn(q_arr, sub_mat)
 
         k_eff = min(k, len(filtered_idx))
 
@@ -312,7 +274,7 @@ class VectroVectorStore:
             if fetch_k is None:
                 fetch_k = min(k_eff * 5, len(filtered_idx))
             lambda_mult = getattr(query, "mmr_threshold", 0.5)
-            local_idx = _mmr_select_li(sub_mat, q_arr, k_eff, fetch_k, lambda_mult)
+            local_idx = mmr_select(sub_mat, q_arr, k_eff, fetch_k, lambda_mult)
             top_idx = filtered_arr[local_idx]
             result_scores = sub_scores[local_idx]
         else:
