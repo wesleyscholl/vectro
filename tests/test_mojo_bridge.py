@@ -36,6 +36,8 @@ def _rand_vecs(n: int, d: int) -> np.ndarray:
 
 def _supports_pq_pipe() -> bool:
     """Return True when the current binary exposes pipe pq encode/decode."""
+    if not mb.is_available():
+        return False
     try:
         vecs = _rand_vecs(1, 4)
         centroids = _rand_vecs(2, 4).reshape(1, 2, 4)

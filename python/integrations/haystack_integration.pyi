@@ -37,6 +37,24 @@ class VectroDocumentStore:
         return_embedding: bool = ...,
     ) -> List[Any]: ...
 
+    # ----- MMR retrieval -----
+    def max_marginal_relevance_search(
+        self,
+        query_embedding: List[float],
+        k: int = ...,
+        fetch_k: int = ...,
+        lambda_mult: float = ...,
+        filters: Optional[Dict[str, Any]] = ...,
+    ) -> List[Any]: ...
+    async def async_max_marginal_relevance_search(
+        self,
+        query_embedding: List[float],
+        k: int = ...,
+        fetch_k: int = ...,
+        lambda_mult: float = ...,
+        filters: Optional[Dict[str, Any]] = ...,
+    ) -> List[Any]: ...
+
     # ----- async -----
     async def async_embedding_retrieval(
         self,

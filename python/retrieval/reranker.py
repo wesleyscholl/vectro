@@ -317,11 +317,87 @@ class LangChainReranker:
 
 
 # ---------------------------------------------------------------------------
+# HaystackReranker — duck-typed Haystack 2.x component
+# ---------------------------------------------------------------------------
+
+class HaystackReranker:
+    """Haystack 2.x component duck-type for re-ranking retrieved Documents.
+
+    Implements the ``run()`` interface expected by Haystack pipelines.
+    Returns ``{"documents": [...]}`` so it wires directly into any
+    ``Pipeline.add_component`` chain.
+
+    Args:
+        store: A ``VectroDocumentStore`` instance.
+        top_k: Number of documents to keep after re-ranking (default 5).
+        strategy: ``"cosine"`` (default) or ``"rrf"``.
+        rrf_k: RRF denominator constant (default 60).
+    """
+
+    def __init__(
+        self,
+        store: Any,
+        top_k: int = 5,
+        strategy: str = "cosine",
+        rrf_k: int = 60,
+    ) -> None:
+        self._store = store
+        self._top_k = top_k
+        self._reranker = VectroReranker(store, strategy=strategy, rrf_k=rrf_k)
+
+    def run(
+        self,
+        query_embedding: Any,
+        documents: List[Any],
+        top_k: Optional[int] = None,
+    ) -> Dict[str, List[Any]]:
+        """Re-rank *documents* against *query_embedding*.
+
+        Args:
+            query_embedding: 1-D float32 array or list representing the query vector.
+            documents: List of Haystack ``Document`` objects from an initial
+                retrieval stage.
+            top_k: Override the instance-level top_k for this call.
+
+        Returns:
+            ``{"documents": [re-ranked Document list]}``.
+        """
+        k = top_k if top_k is not None else self._top_k
+        if not documents:
+            return {"documents": []}
+
+        q_vec = np.asarray(query_embedding, dtype=np.float32)
+        ids = _extract_haystack_ids(self._store, documents)
+        candidates = [(ids[i], documents[i], 0.0) for i in range(len(documents))]
+        results = self._reranker.rerank(q_vec, candidates, top_k=k)
+        return {"documents": [doc for _did, doc, _score in results]}
+
+    async def async_run(
+        self,
+        query_embedding: Any,
+        documents: List[Any],
+        top_k: Optional[int] = None,
+    ) -> Dict[str, List[Any]]:
+        """Async variant of :meth:`run`."""
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, lambda: self.run(query_embedding, documents, top_k)
+        )
+
+    def __repr__(self) -> str:
+        return (
+            f"HaystackReranker(top_k={self._top_k}, "
+            f"strategy={self._reranker._strategy!r})"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 def _extract_ids(store: Any, documents: List[Any]) -> List[str]:
-    """Map *documents* to store-internal ids, falling back to a positional key."""
+    """Map LangChain *documents* to store-internal ids, falling back to positional."""
     ids: List[str] = (
         getattr(store, "_ids", None)
         or getattr(store, "_node_ids", None)
@@ -336,6 +412,20 @@ def _extract_ids(store: Any, documents: List[Any]) -> List[str]:
         if candidate and candidate in id_set:
             result.append(str(candidate))
         else:
-            # Fall back: use the i-th store id if available, else a sentinel
             result.append(ids[i] if i < len(ids) else f"__pos_{i}__")
+    return result
+
+
+def _extract_haystack_ids(store: Any, documents: List[Any]) -> List[str]:
+    """Map Haystack *documents* to store-internal ids, falling back to positional."""
+    store_ids: List[str] = getattr(store, "_doc_ids", None) or []
+    id_set = set(store_ids)
+    result = []
+    for i, doc in enumerate(documents):
+        # Haystack Document exposes .id directly
+        candidate = getattr(doc, "id", None)
+        if candidate and str(candidate) in id_set:
+            result.append(str(candidate))
+        else:
+            result.append(store_ids[i] if i < len(store_ids) else f"__pos_{i}__")
     return result

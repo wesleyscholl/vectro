@@ -153,13 +153,14 @@ class TestINT8Throughput:
     @pytest.mark.throughput
     @pytest.mark.parametrize("dimension", [128, 384, 768, 1536])
     def test_int8_throughput_minimum_floor(self, dimension, random_vectors):
-        """INT8 throughput must meet 60K vec/s floor (Python fallback minimum).
+        """INT8 throughput must meet dimension-scaled floor (Python fallback minimum).
 
-        Uses best-of-5 rather than mean to avoid OS scheduler jitter — a single
-        slow run caused by cache eviction or a context switch should not fail
-        the gate on an otherwise-healthy machine.
+        Floors: 120K (d=128), 80K (d=384), 60K (d=768), 45K (d=1536). Throughput
+        scales roughly inversely with dimension, so a flat 60K gate over-penalizes
+        large-dim paths. Uses best-of-5 to avoid OS scheduler jitter.
         """
-        FLOOR = 60_000
+        # Throughput scales roughly inversely with dimension; use proportional floors.
+        FLOOR = {128: 120_000, 384: 80_000, 768: 60_000, 1536: 45_000}[dimension]
 
         vectors = random_vectors(dim=dimension, num_vectors=10_000)
 

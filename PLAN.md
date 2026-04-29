@@ -1,7 +1,44 @@
 # Vectro — Plan
 
-> Last updated: 2026-04-28
-> Current version: **4.16.0** (Python) / **7.4.0** (Rust) — Re-ranking layer + framework parity, 936 Python tests passing
+> Last updated: 2026-04-29
+> Current version: **4.17.0** (Python) / **7.4.0** (Rust) — Haystack MMR + HaystackReranker + shared MMR utility, 971 Python tests passing
+
+---
+
+## v4.17.0 — Haystack MMR + HaystackReranker ✅ COMPLETE (2026-04-29)
+
+### Summary
+Closes the last cross-framework feature gap: Haystack 2.x now has full parity with
+LangChain and LlamaIndex on MMR and re-ranking. Extracts `mmr_select` into a shared
+`python/retrieval/mmr.py` utility, eliminating duplication. Adds `HaystackReranker`
+— a Haystack 2.x `run()`-protocol component — alongside `async_run`. Also fixes two
+pre-existing test infrastructure bugs: `_supports_pq_pipe()` collection error when
+the Mojo binary is absent, and a flat throughput floor that over-penalised d=1536.
+
+### Deliverables
+| # | Deliverable | Status |
+|---|-------------|--------|
+| 1 | `python/retrieval/mmr.py` — shared `mmr_select()` extracted from `langchain_integration.py` | ✅ |
+| 2 | `python/retrieval/mmr.pyi` — type stub | ✅ |
+| 3 | `python/integrations/haystack_integration.py` — `max_marginal_relevance_search()` + `async_max_marginal_relevance_search()` | ✅ |
+| 4 | `python/integrations/haystack_integration.pyi` — MMR stubs added | ✅ |
+| 5 | `python/retrieval/reranker.py` — `HaystackReranker` + `async_run()` + `_extract_haystack_ids()` | ✅ |
+| 6 | `python/retrieval/reranker.pyi` — `HaystackReranker` stub added | ✅ |
+| 7 | `python/retrieval/__init__.py` — `HaystackReranker`, `mmr_select` exported | ✅ |
+| 8 | `python/retrieval/__init__.pyi` — updated | ✅ |
+| 9 | `python/__init__.py` — `HaystackReranker` in top-level `__all__` | ✅ |
+| 10 | `tests/test_haystack_mmr.py` — 18 tests: basic, diversity, fetch_k, filters, async | ✅ |
+| 11 | `tests/test_haystack_reranker.py` — 17 tests: init, run, strategies, async | ✅ |
+| 12 | `tests/test_mojo_bridge.py` — fix `_supports_pq_pipe()` collection error when binary absent | ✅ |
+| 13 | `tests/test_cross_platform_benchmarks.py` — dimension-aware throughput floors (120K/80K/60K/45K) | ✅ |
+| 14 | Version bump 4.16.0 → 4.17.0 | ✅ |
+
+### RAG Framework Coverage (Post v4.17.0)
+| Framework | search | filter= | MMR | async MMR | re-rank | async re-rank | save/load |
+|-----------|--------|---------|-----|-----------|---------|---------------|-----------|
+| LangChain | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| LlamaIndex | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Haystack 2.x | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 ---
 

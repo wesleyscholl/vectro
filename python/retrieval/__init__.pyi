@@ -8,7 +8,9 @@ from .rrf_retriever import (
 from .reranker import (
     VectroReranker as VectroReranker,
     LangChainReranker as LangChainReranker,
+    HaystackReranker as HaystackReranker,
 )
+from .mmr import mmr_select as mmr_select
 
 __all__ = [
     "reciprocal_rank_fusion",
@@ -17,4 +19,6 @@ __all__ = [
     "LangChainRRFRetriever",
     "VectroReranker",
     "LangChainReranker",
+    "HaystackReranker",
+    "mmr_select",
 ]

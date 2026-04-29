@@ -42,6 +42,28 @@ class VectroReranker:
     ) -> List[Tuple[str, Any, float]]: ...
     def __repr__(self) -> str: ...
 
+class HaystackReranker:
+    def __init__(
+        self,
+        store: Any,
+        top_k: int = ...,
+        strategy: str = ...,
+        rrf_k: int = ...,
+    ) -> None: ...
+    def run(
+        self,
+        query_embedding: Any,
+        documents: List[Any],
+        top_k: int | None = ...,
+    ) -> Dict[str, List[Any]]: ...
+    async def async_run(
+        self,
+        query_embedding: Any,
+        documents: List[Any],
+        top_k: int | None = ...,
+    ) -> Dict[str, List[Any]]: ...
+    def __repr__(self) -> str: ...
+
 class LangChainReranker:
     def __init__(
         self,

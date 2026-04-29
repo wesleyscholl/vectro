@@ -5,6 +5,47 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.17.0] — 2026-04-29
+
+### Added
+- `python/retrieval/mmr.py` (new module): shared `mmr_select()` extracted from
+  `langchain_integration.py` — eliminates duplication, now used by both LangChain
+  and Haystack adapters.
+- `python/retrieval/mmr.pyi`: type stub for `mmr_select`.
+- `python/integrations/haystack_integration.py`:
+  - `VectroDocumentStore.max_marginal_relevance_search(query_embedding, k, fetch_k,
+    lambda_mult, filters)` — diversity-promoting retrieval via greedy MMR.
+  - `VectroDocumentStore.async_max_marginal_relevance_search(...)` — non-blocking
+    async variant via thread-pool executor.
+- `python/retrieval/reranker.py`:
+  - `HaystackReranker(store, top_k, strategy, rrf_k)` — Haystack 2.x `run()`-protocol
+    component: `run(query_embedding, documents, top_k)` → `{"documents": [...]}`.
+    Async `async_run()` via thread-pool executor.
+  - `_extract_haystack_ids()` — maps Haystack `Document.id` to store-internal ids.
+- `python/retrieval/__init__.py` / `.pyi` / `python/__init__.py`: `HaystackReranker`
+  and `mmr_select` added to all export surfaces.
+- `tests/test_haystack_mmr.py` — 18 tests: basic, diversity (`lambda_mult` 0.0/1.0),
+  `fetch_k` edge cases, metadata filters, async variants.
+- `tests/test_haystack_reranker.py` — 17 tests: init, `run()`, `top_k` override,
+  cosine/RRF strategies, empty candidates, async variants.
+
+### Fixed
+- `tests/test_mojo_bridge.py`: `_supports_pq_pipe()` now guards with
+  `mb.is_available()` before calling into the bridge, preventing a
+  `RuntimeError` collection error when the Mojo binary is not built.
+- `tests/test_cross_platform_benchmarks.py`: throughput floor is now
+  dimension-aware (120K d=128 / 80K d=384 / 60K d=768 / 45K d=1536) so the
+  gate catches broken implementations without over-penalising large-dim paths.
+
+### RAG Framework Coverage (Post v4.17.0)
+| Framework | search | filter= | MMR | async MMR | re-rank | async re-rank | save/load |
+|-----------|--------|---------|-----|-----------|---------|---------------|-----------|
+| LangChain | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| LlamaIndex | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Haystack 2.x | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+---
+
 ## [4.16.0] — 2026-04-28
 
 ### Added

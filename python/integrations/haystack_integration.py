@@ -42,6 +42,8 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 
+from python.retrieval.mmr import mmr_select as _mmr_select
+
 _HAYSTACK_ERROR = (
     "haystack-ai is required for VectroDocumentStore. "
     "Install with: pip install haystack-ai"
@@ -308,6 +310,81 @@ class VectroDocumentStore:
             results.append(doc)
 
         return results
+
+    # ------------------------------------------------------------------
+    # MMR retrieval
+    # ------------------------------------------------------------------
+
+    def max_marginal_relevance_search(
+        self,
+        query_embedding: List[float],
+        k: int = 4,
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> List[Any]:
+        """Diversity-promoting retrieval using Maximal Marginal Relevance.
+
+        Selects *k* documents that balance relevance to *query_embedding*
+        with dissimilarity to each other.  Useful when a plain top-k returns
+        near-duplicate results.
+
+        Args:
+            query_embedding: Query vector as list or numpy array.
+            k: Number of documents to return.
+            fetch_k: Candidate pool size (≥ k).  More candidates → better
+                coverage at the cost of extra compute.
+            lambda_mult: Trade-off weight.  1.0 = pure relevance (same as
+                top-k); 0.0 = pure diversity.  Default 0.5.
+            filters: Optional metadata equality filters applied before MMR.
+
+        Returns:
+            List of Documents in MMR selection order.
+        """
+        _require_haystack()
+        q_arr = np.asarray(query_embedding, dtype=np.float32)
+
+        with self._lock:
+            if self._compressed is None or not self._doc_ids:
+                return []
+            mat = self._compressed.reconstruct_batch()
+            doc_ids = list(self._doc_ids)
+            doc_store = dict(self._doc_store)
+
+        filtered_idx = [
+            i for i, did in enumerate(doc_ids)
+            if _matches_filters(doc_store.get(did), filters)
+        ]
+        if not filtered_idx:
+            return []
+
+        filtered_arr = np.array(filtered_idx)
+        filtered_mat = mat[filtered_arr]
+
+        mmr_local = _mmr_select(
+            filtered_mat, q_arr, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult
+        )
+        mmr_global = filtered_arr[mmr_local]
+        return [doc_store[doc_ids[i]] for i in mmr_global]
+
+    async def async_max_marginal_relevance_search(
+        self,
+        query_embedding: List[float],
+        k: int = 4,
+        fetch_k: int = 20,
+        lambda_mult: float = 0.5,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> List[Any]:
+        """Non-blocking variant of :meth:`max_marginal_relevance_search`."""
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self.max_marginal_relevance_search(
+                query_embedding, k=k, fetch_k=fetch_k,
+                lambda_mult=lambda_mult, filters=filters,
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Persistence
