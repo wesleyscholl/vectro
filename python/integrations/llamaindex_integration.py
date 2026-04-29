@@ -249,6 +249,30 @@ class VectroVectorStore:
         return nodes
 
     # ------------------------------------------------------------------
+    # Async variants
+    # ------------------------------------------------------------------
+
+    async def async_add(
+        self,
+        nodes: List[Any],
+        **add_kwargs: Any,
+    ) -> List[str]:
+        """Non-blocking variant of :meth:`add` — delegates to a thread-pool."""
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: self.add(nodes))
+
+    async def aquery(
+        self,
+        query: Any,
+        **kwargs: Any,
+    ) -> Any:
+        """Non-blocking variant of :meth:`query` — delegates to a thread-pool."""
+        import asyncio
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: self.query(query))
+
+    # ------------------------------------------------------------------
     # Persistence (save / load)
     # ------------------------------------------------------------------
 

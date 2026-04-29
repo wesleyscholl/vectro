@@ -1,7 +1,33 @@
 # Vectro — Plan
 
-> Last updated: 2026-04-27
-> Current version: **4.14.0** (Python) / **7.4.0** (Rust) — Haystack DocumentStore + LangChain MMR + VectorStore persistence, 834 Python tests passing
+> Last updated: 2026-04-28
+> Current version: **4.15.0** (Python) / **7.4.0** (Rust) — Framework protocol completeness + RRF hybrid retrieval, 885 Python tests passing
+
+---
+
+## v4.15.0 — Framework Protocol Completeness + RRF Hybrid Retrieval ✅ COMPLETE (2026-04-28)
+
+### Summary
+Closes the remaining LangChain and LlamaIndex protocol gaps: LangChain now matches
+the full FAISS/Chroma interface (`add_documents`, `from_documents`,
+`similarity_search_by_vector`, metadata `filter=` on all search methods).
+LlamaIndex gains `async_add` and `aquery` for async parity with LangChain.
+New pure-Python `RRFRetriever` and `LangChainRRFRetriever` deliver hybrid
+Reciprocal Rank Fusion search with zero extra dependencies — ready for
+production RAG pipelines that combine dense + sparse sources.
+
+### Deliverables
+| # | Deliverable | Status |
+|---|-------------|--------|
+| 1 | `python/retrieval/rrf_retriever.py` — `reciprocal_rank_fusion`, `rrf_top_k`, `RRFRetriever`, `LangChainRRFRetriever` | ✅ |
+| 2 | `python/retrieval/__init__.py` — subpackage | ✅ |
+| 3 | `langchain_integration.py` — `add_documents`, `from_documents`, `similarity_search_by_vector`, `filter=` on all search methods | ✅ |
+| 4 | `llamaindex_integration.py` — `async_add`, `aquery` | ✅ |
+| 5 | `python/__init__.py` — RRF symbols exported + `__all__` | ✅ |
+| 6 | `tests/test_langchain_protocol.py` — 20 tests | ✅ |
+| 7 | `tests/test_llamaindex_async.py` — 7 tests | ✅ |
+| 8 | `tests/test_rrf_retriever.py` — 24 tests | ✅ |
+| 9 | Version bump 4.14.0 → 4.15.0 | ✅ |
 
 ---
 

@@ -5,6 +5,63 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.15.0] — 2026-04-28
+
+### Added
+- `python/retrieval/rrf_retriever.py` (new module): pure-Python Reciprocal Rank
+  Fusion hybrid retriever — zero external dependencies.
+  - `reciprocal_rank_fusion(rankings, k=60)` — core RRF algorithm (Cormack 2009).
+  - `rrf_top_k(rankings, k, rrf_k)` — fuse lists and return top-k `(id, score)` pairs.
+  - `RRFRetriever(retrievers, k, fetch_k, rrf_k)` — framework-agnostic: accepts any
+    list of callables returning `(doc_id, text, score)` tuples. Fault-tolerant:
+    individual source failures are silently skipped.  `retrieve(query)` + async
+    `aretrieve(query)`.
+  - `LangChainRRFRetriever(stores, k, fetch_k, rrf_k)` — duck-typed LangChain
+    `BaseRetriever`: `get_relevant_documents`, `aget_relevant_documents`, `invoke`,
+    `ainvoke`.  Works with any `VectroVectorStore` (or any object with
+    `similarity_search_with_score`).
+- `python/retrieval/__init__.py` — `python.retrieval` subpackage, all four symbols
+  exported.
+- `python/integrations/langchain_integration.py`: LangChain protocol completions:
+  - `add_documents(documents)` — accepts `List[Document]` with `.page_content` /
+    `.metadata` / optional `.id` (mirrors FAISS/Chroma interface).
+  - `from_documents(cls, documents, embedding, ...)` — classmethod.
+  - `similarity_search_by_vector(embedding, k, filter=None)` — pre-computed query.
+  - `similarity_search_by_vector_with_score(embedding, k, filter=None)`.
+  - `asimilarity_search_by_vector(embedding, k, filter=None)` — async variant.
+  - `aadd_documents(documents)` — async variant of `add_documents`.
+  - `filter=` kwarg added to `similarity_search`, `similarity_search_with_score`,
+    `_similarity_search_with_relevance_scores`, `asimilarity_search`,
+    `asimilarity_search_with_score`, `max_marginal_relevance_search`,
+    `max_marginal_relevance_search_with_score`, and `amax_marginal_relevance_search`.
+    Supports equality filters on document metadata: `filter={"source": "wiki"}`.
+  - `_filtered_indices(metas, filter)` internal helper.
+- `python/integrations/llamaindex_integration.py`: async protocol completions:
+  - `async_add(nodes)` — non-blocking `add` via thread-pool executor.
+  - `aquery(query)` — non-blocking `query` via thread-pool executor.
+- `python/__init__.py`: `reciprocal_rank_fusion`, `rrf_top_k`, `RRFRetriever`,
+  `LangChainRRFRetriever` added to top-level imports and `__all__`.
+- `tests/test_langchain_protocol.py` (new): 20 tests — `add_documents`,
+  `from_documents`, `similarity_search_by_vector` (sync + async), and the
+  `filter=` kwarg across all seven search methods.
+- `tests/test_llamaindex_async.py` (new): 7 tests — `async_add`, `aquery`,
+  concurrent async adds, empty store async safety.
+- `tests/test_rrf_retriever.py` (new): 24 tests — RRF algorithm unit tests,
+  `rrf_top_k`, `RRFRetriever` (fault tolerance, async), `LangChainRRFRetriever`
+  (deduplication, async, `invoke`).
+
+### Changed
+- Version bumped `4.14.0 → 4.15.0` across all version files.
+
+### Protocol Coverage (Post v4.15.0)
+| Framework | add / add_texts | add_documents | from_documents | search | search_by_vector | MMR | async | filter= | save/load |
+|-----------|----------------|---------------|----------------|--------|------------------|-----|-------|---------|-----------|
+| LangChain | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| LlamaIndex | ✅ | — | — | ✅ | — | — | ✅ | — | ✅ |
+| Haystack 2.x | ✅ | — | — | ✅ | — | — | — | ✅ | ✅ |
+
+---
+
 ## [4.14.0] — 2026-04-27
 
 ### Added

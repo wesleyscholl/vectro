@@ -138,6 +138,16 @@ class VectroVectorStore:
         idx = np.argpartition(scores, -k)[-k:]
         return idx[np.argsort(scores[idx])[::-1]]
 
+    def _filtered_indices(
+        self,
+        metas: List[dict],
+        filter: Optional[dict],
+    ) -> List[int]:
+        """Return row indices that pass *filter* (equality on metadata fields)."""
+        if filter is None:
+            return list(range(len(metas)))
+        return [i for i, m in enumerate(metas) if all(m.get(k) == v for k, v in filter.items())]
+
     # ------------------------------------------------------------------
     # LangChain VectorStore protocol
     # ------------------------------------------------------------------
@@ -168,22 +178,54 @@ class VectroVectorStore:
 
         return ids
 
+    def add_documents(
+        self,
+        documents: List[Any],
+        **kwargs: Any,
+    ) -> List[str]:
+        """Embed, compress, and store LangChain :class:`Document` objects.
+
+        Extracts ``.page_content`` and ``.metadata`` from each document —
+        identical to ``FAISS.add_documents``, ``Chroma.add_documents``, etc.
+        """
+        texts = [getattr(doc, "page_content", "") for doc in documents]
+        metadatas = [dict(getattr(doc, "metadata", {}) or {}) for doc in documents]
+        # Respect explicit doc ids when present (LangChain 0.2+ sets doc.id)
+        ids = [getattr(doc, "id", None) for doc in documents]
+        ids = ids if any(i is not None for i in ids) else None
+        return self.add_texts(texts, metadatas=metadatas, ids=ids, **kwargs)
+
     def similarity_search(
         self,
         query: str,
         k: int = 4,
+        filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Any]:
-        """Return *k* most similar :class:`Document` objects."""
-        return [doc for doc, _ in self.similarity_search_with_score(query, k=k)]
+        """Return *k* most similar :class:`Document` objects.
+
+        Args:
+            query: Search query string.
+            k: Number of results to return.
+            filter: Optional ``{metadata_field: value}`` equality filter applied
+                before ranking (same semantics as FAISS / Chroma filters).
+        """
+        return [doc for doc, _ in self.similarity_search_with_score(query, k=k, filter=filter)]
 
     def similarity_search_with_score(
         self,
         query: str,
         k: int = 4,
+        filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Tuple[Any, float]]:
-        """Return *(Document, cosine_score)* pairs for the top-k matches."""
+        """Return *(Document, cosine_score)* pairs for the top-k matches.
+
+        Args:
+            query: Search query string.
+            k: Number of results to return.
+            filter: Optional metadata equality filter (see :meth:`similarity_search`).
+        """
         try:
             from langchain_core.documents import Document
         except ImportError as exc:
@@ -198,7 +240,14 @@ class VectroVectorStore:
             texts = list(self._texts)
             metas = list(self._metadatas)
 
-        top_idx = self._top_k(scores, k)
+        filtered = self._filtered_indices(metas, filter)
+        if not filtered:
+            return []
+        filtered_arr = np.array(filtered)
+        sub_scores = scores[filtered_arr]
+        sub_top = self._top_k(sub_scores, k)
+        global_top = filtered_arr[sub_top]
+
         return [
             (
                 Document(
@@ -207,16 +256,80 @@ class VectroVectorStore:
                 ),
                 float(scores[i]),
             )
-            for i in top_idx
+            for i in global_top
+        ]
+
+    def similarity_search_by_vector(
+        self,
+        embedding: List[float],
+        k: int = 4,
+        filter: Optional[dict] = None,
+        **kwargs: Any,
+    ) -> List[Any]:
+        """Return *k* most similar documents for a pre-computed *embedding*.
+
+        Useful when you already have a query embedding and want to skip the
+        embedding step (e.g., when reusing embeddings across multiple queries).
+
+        Args:
+            embedding: Pre-computed query vector as list or numpy array.
+            k: Number of results to return.
+            filter: Optional metadata equality filter.
+        """
+        return [doc for doc, _ in self.similarity_search_by_vector_with_score(
+            embedding, k=k, filter=filter
+        )]
+
+    def similarity_search_by_vector_with_score(
+        self,
+        embedding: List[float],
+        k: int = 4,
+        filter: Optional[dict] = None,
+        **kwargs: Any,
+    ) -> List[Tuple[Any, float]]:
+        """Return *(Document, cosine_score)* pairs for a pre-computed *embedding*."""
+        try:
+            from langchain_core.documents import Document
+        except ImportError as exc:
+            raise ImportError(_LANGCHAIN_ERROR) from exc
+
+        q_emb = np.asarray(embedding, dtype=np.float32)
+
+        with self._lock:
+            if self._compressed is None:
+                return []
+            scores = self._cosine_scores(q_emb)
+            ids = list(self._ids)
+            texts = list(self._texts)
+            metas = list(self._metadatas)
+
+        filtered = self._filtered_indices(metas, filter)
+        if not filtered:
+            return []
+        filtered_arr = np.array(filtered)
+        sub_scores = scores[filtered_arr]
+        sub_top = self._top_k(sub_scores, k)
+        global_top = filtered_arr[sub_top]
+
+        return [
+            (
+                Document(
+                    page_content=texts[i],
+                    metadata={**metas[i], "_vectro_id": ids[i]},
+                ),
+                float(scores[i]),
+            )
+            for i in global_top
         ]
 
     def _similarity_search_with_relevance_scores(
         self,
         query: str,
         k: int = 4,
+        filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Tuple[Any, float]]:
-        return self.similarity_search_with_score(query, k=k, **kwargs)
+        return self.similarity_search_with_score(query, k=k, filter=filter, **kwargs)
 
     def delete(
         self,
@@ -268,26 +381,50 @@ class VectroVectorStore:
             None, lambda: self.add_texts(list(texts), metadatas=metadatas, ids=ids)
         )
 
+    async def aadd_documents(
+        self,
+        documents: List[Any],
+        **kwargs: Any,
+    ) -> List[str]:
+        """Async variant of :meth:`add_documents`."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: self.add_documents(documents))
+
     async def asimilarity_search(
         self,
         query: str,
         k: int = 4,
+        filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Any]:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            None, lambda: self.similarity_search(query, k=k)
+            None, lambda: self.similarity_search(query, k=k, filter=filter)
         )
 
     async def asimilarity_search_with_score(
         self,
         query: str,
         k: int = 4,
+        filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Tuple[Any, float]]:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            None, lambda: self.similarity_search_with_score(query, k=k)
+            None, lambda: self.similarity_search_with_score(query, k=k, filter=filter)
+        )
+
+    async def asimilarity_search_by_vector(
+        self,
+        embedding: List[float],
+        k: int = 4,
+        filter: Optional[dict] = None,
+        **kwargs: Any,
+    ) -> List[Any]:
+        """Async similarity search by pre-computed embedding."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None, lambda: self.similarity_search_by_vector(embedding, k=k, filter=filter)
         )
 
     # ------------------------------------------------------------------
@@ -300,6 +437,7 @@ class VectroVectorStore:
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
+        filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Any]:
         """Diversity-promoting retrieval using Maximal Marginal Relevance.
@@ -312,16 +450,16 @@ class VectroVectorStore:
         Args:
             query: Search query string.
             k: Number of documents to return.
-            fetch_k: Candidate pool size.  Larger values trade speed for
-                better diversity coverage (default: 20).
+            fetch_k: Candidate pool size (default: 20).
             lambda_mult: Relevance–diversity trade-off in [0, 1].
+            filter: Optional metadata equality filter applied before MMR.
 
         Returns:
             List of :class:`Document` objects in MMR-selected order.
         """
         return [
             doc for doc, _ in self.max_marginal_relevance_search_with_score(
-                query, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult
+                query, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult, filter=filter
             )
         ]
 
@@ -331,6 +469,7 @@ class VectroVectorStore:
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
+        filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Tuple[Any, float]]:
         """MMR search returning *(Document, relevance_score)* pairs."""
@@ -348,7 +487,15 @@ class VectroVectorStore:
             texts = list(self._texts)
             metas = list(self._metadatas)
 
-        mmr_idx = _mmr_select(mat, q_emb, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult)
+        # Apply metadata filter: only MMR over matching rows
+        filtered = self._filtered_indices(metas, filter)
+        if not filtered:
+            return []
+        filtered_arr = np.array(filtered)
+        filtered_mat = mat[filtered_arr]
+
+        mmr_local = _mmr_select(filtered_mat, q_emb, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult)
+        mmr_idx = filtered_arr[mmr_local]
 
         q_norm = q_emb / (np.linalg.norm(q_emb) + 1e-10)
         norms = np.linalg.norm(mat, axis=1, keepdims=True) + 1e-10
@@ -371,6 +518,7 @@ class VectroVectorStore:
         k: int = 4,
         fetch_k: int = 20,
         lambda_mult: float = 0.5,
+        filter: Optional[dict] = None,
         **kwargs: Any,
     ) -> List[Any]:
         """Async MMR search."""
@@ -378,7 +526,7 @@ class VectroVectorStore:
         return await loop.run_in_executor(
             None,
             lambda: self.max_marginal_relevance_search(
-                query, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult
+                query, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult, filter=filter
             ),
         )
 
@@ -497,6 +645,28 @@ class VectroVectorStore:
             model_dir=model_dir,
         )
         store.add_texts(texts, metadatas=metadatas, ids=ids)
+        return store
+
+    @classmethod
+    def from_documents(
+        cls,
+        documents: List[Any],
+        embedding: Any,
+        compression_profile: str = "balanced",
+        model_dir: Optional[str] = None,
+        **kwargs: Any,
+    ) -> "VectroVectorStore":
+        """Build a store from LangChain :class:`Document` objects.
+
+        Identical interface to ``FAISS.from_documents``, ``Chroma.from_documents``,
+        etc.  Extracts ``.page_content`` and ``.metadata`` from each document.
+        """
+        store = cls(
+            embedding=embedding,
+            compression_profile=compression_profile,
+            model_dir=model_dir,
+        )
+        store.add_documents(documents)
         return store
 
     # ------------------------------------------------------------------

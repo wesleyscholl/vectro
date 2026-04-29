@@ -7,8 +7,8 @@
 ### Ultra-High-Performance LLM Embedding Compressor
 
 ![Mojo](https://img.shields.io/badge/Mojo-first-orange?logo=fire&style=for-the-badge)
-![Version](https://img.shields.io/badge/version-4.14.0-blue?style=for-the-badge)
-![Tests](https://img.shields.io/badge/tests-834_passing-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-4.15.0-blue?style=for-the-badge)
+![Tests](https://img.shields.io/badge/tests-885_passing-green?style=for-the-badge)
 ![Python-Only](https://img.shields.io/badge/mode-Python--only-blue?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=for-the-badge)
 
@@ -16,7 +16,7 @@
 ╦  ╦╔═╗╔═╗╔╦╗╦═╗╔═╗
 ╚╗╔╝║╣ ║   ║ ╠╦╝║ ║
  ╚╝ ╚═╝╚═╝ ╩ ╩╚═╚═╝
-    v4.14.0 — Mojo-Accelerated Vector Quantization
+    v4.15.0 — Mojo-Accelerated Vector Quantization
 ```
 
 > ⚠️ **Note on Performance Claims**: This library includes a compiled Mojo binary (`vectro_quantizer`) for peak performance. Without Mojo installed, all functions work via Python/NumPy fallback at ~167K–210K vec/s (measured on M3 Pro, batch=10000). With the Mojo binary built, throughput reaches 12M+ vec/s — **4.85× faster than FAISS C++**. See [Requirements](#-requirements) below.
@@ -715,6 +715,30 @@ store.delete_documents(["doc-id-1"])
 # Persist and reload
 store.save("/path/to/store")
 store = HaystackDocumentStore.load("/path/to/store")
+```
+
+### Hybrid Retrieval (RRF)
+
+```python
+from python.retrieval import LangChainRRFRetriever, RRFRetriever
+
+# Combine two dense stores via Reciprocal Rank Fusion (no BM25 required)
+dense_store = LangChainVectorStore.from_texts(texts, embedding=embeddings)
+retriever = LangChainRRFRetriever([dense_store], k=5)
+
+docs = retriever.get_relevant_documents("hybrid query")
+docs = await retriever.aget_relevant_documents("async hybrid query")
+
+# Mix any callable sources (dense + keyword, multiple indexes, etc.)
+from python.retrieval import RRFRetriever
+
+def keyword_fn(query, fetch_k):
+    # your BM25 / keyword search returning [(id, text, score), ...]
+    ...
+
+retriever = RRFRetriever([dense_fn, keyword_fn], k=5, fetch_k=20)
+results = retriever.retrieve("production query")
+# → [{"id": "...", "text": "...", "score": 0.031}, ...]
 ```
 
 ### Memory comparison (768-dim, 1M documents)

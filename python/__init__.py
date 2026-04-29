@@ -99,10 +99,16 @@ from .profiles import get_profile, QuantProfile
 from .storage_v3 import save_vqz, load_vqz, save_compressed, load_compressed, VQZResult
 from .onnx_export import to_onnx_model, export_onnx
 from .retriever import VectroRetriever, RetrieverProtocol, RetrievalResult
+from .retrieval import (
+    reciprocal_rank_fusion,
+    rrf_top_k,
+    RRFRetriever,
+    LangChainRRFRetriever,
+)
 from .ivf_api import IVFIndex, IVFPQIndex
 from .bf16_api import Bf16Encoder
 
-__version__ = "4.14.0"
+__version__ = "4.15.0"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"
@@ -219,6 +225,11 @@ __all__ = [
     "VectroRetriever",
     "RetrieverProtocol",
     "RetrievalResult",
+    # RRF hybrid fusion
+    "reciprocal_rank_fusion",
+    "rrf_top_k",
+    "RRFRetriever",
+    "LangChainRRFRetriever",
     # IVF approximate nearest-neighbour indices
     "IVFIndex",
     "IVFPQIndex",
