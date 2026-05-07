@@ -206,6 +206,43 @@ def _cosine_fidelity(original: np.ndarray, reconstructed: np.ndarray) -> Optiona
     return float(np.mean(np.clip(cosines, -1.0, 1.0)))
 
 
+def _decode_stage_output(stage_output: Any, vectro: Any) -> np.ndarray:
+    """Decode a compress() result back to a float32 ndarray.
+
+    Vectro.compress() returns BatchQuantizationResult or QuantizationResult
+    rather than a plain numpy array.  This helper reconstructs the float32
+    vectors so they can be used for cosine-fidelity comparison and as input
+    to the next pipeline stage.
+    """
+    # BatchQuantizationResult — has reconstruct_batch()
+    if hasattr(stage_output, 'reconstruct_batch') and callable(stage_output.reconstruct_batch):
+        try:
+            decoded = stage_output.reconstruct_batch()
+            return np.asarray(decoded, dtype=np.float32)
+        except Exception:
+            pass
+
+    # QuantizationResult — use vectro.decompress()
+    if hasattr(stage_output, 'quantized') and hasattr(stage_output, 'scales') and hasattr(vectro, 'decompress'):
+        try:
+            decoded = vectro.decompress(stage_output)
+            arr = np.asarray(decoded, dtype=np.float32)
+            if arr.ndim == 1:
+                arr = arr[np.newaxis, :]
+            return arr
+        except Exception:
+            pass
+
+    # Plain numpy array — just ensure float32
+    if hasattr(stage_output, 'astype'):
+        try:
+            return stage_output.astype(np.float32)
+        except (ValueError, TypeError):
+            pass
+
+    return stage_output
+
+
 # ---------------------------------------------------------------------------
 # attach_telemetry()
 # ---------------------------------------------------------------------------
@@ -285,14 +322,9 @@ def attach_telemetry(
             else:
                 stage_output = raw_result
 
-            # Decode to float32 for the next stage
-            if hasattr(stage_output, 'astype') and stage_output.dtype != np.float32:
-                try:
-                    decoded = stage_output.astype(np.float32)
-                except (ValueError, TypeError):
-                    decoded = stage_output
-            else:
-                decoded = stage_output
+            # Decode the quantization result back to a float32 ndarray so we
+            # can compute cosine fidelity and feed the next stage correctly.
+            decoded = _decode_stage_output(stage_output, vectro)
 
             output_shape = decoded.shape if hasattr(decoded, 'shape') else (0,)
             output_bytes = decoded.nbytes if hasattr(decoded, 'nbytes') else input_bytes
@@ -300,7 +332,11 @@ def attach_telemetry(
 
             # Cosine fidelity
             fidelity: Optional[float] = None
-            if measure_cosine_fidelity and hasattr(decoded, 'shape') and decoded.shape == stage_input.shape:
+            if (
+                measure_cosine_fidelity
+                and hasattr(decoded, 'shape')
+                and decoded.shape == stage_input.shape
+            ):
                 fidelity = _cosine_fidelity(stage_input, decoded)
 
             # Throughput
@@ -339,6 +375,5 @@ def attach_telemetry(
         return pr, current
 
     # Monkey-patch the pipeline instance (not the class)
-    import types
-    pipeline.run = types.MethodType(_instrumented_run, pipeline) if False else _instrumented_run
+    pipeline.run = _instrumented_run
     return collector
