@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vectro"
-version = "5.2.0"
-description = "Mojo + Rust ultra-high-performance LLM embedding compressor with vector DB integrations, IVF/PQ/RQ/NF4/Binary quantization, JS bindings, cloud I/O, and a CLI — v5.2.0: async compression pipeline, CompressionPipeline, PipelineStage, PipelineResult, compress_async"
+version = "5.3.0"
+description = "Mojo + Rust ultra-high-performance LLM embedding compressor with vector DB integrations, IVF/PQ/RQ/NF4/Binary quantization, JS bindings, cloud I/O, and a CLI — v5.3.0: pipeline telemetry & observability, TelemetryCollector, TelemetryEvent, attach_telemetry"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [

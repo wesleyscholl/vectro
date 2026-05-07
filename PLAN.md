@@ -1,7 +1,64 @@
 # Vectro — Plan
 
-> Last updated: 2026-05-06
-> Current version: **5.2.0** (Python) / **8.0.0** (Rust) — async compression pipeline, CompressionPipeline, PipelineStage, PipelineResult, compress_async.
+> Last updated: 2026-05-07
+> Current version: **5.3.0** (Python) / **8.0.0** (Rust) — pipeline telemetry & observability, TelemetryCollector, TelemetryEvent, InMemoryTelemetryCollector, attach_telemetry.
+
+---
+
+## v5.3.0 — Pipeline Telemetry & Observability (2026-05-07)
+
+### Summary
+
+Adds a structured, pluggable telemetry layer on top of v5.2.0's
+`CompressionPipeline`, giving users per-stage metrics (throughput,
+cosine fidelity, compression ratio, latency) emitted as
+JSON-serialisable `TelemetryEvent` objects through pluggable
+`TelemetryHook` callbacks.
+
+**`python/telemetry.py` — new module.**
+`TelemetryEvent` is a frozen dataclass capturing `stage_name`,
+`stage_index`, `latency_ms`, `input_shape`, `output_shape`,
+`input_dtype`, `output_dtype`, `compression_ratio`,
+`throughput_vecs_per_sec`, `cosine_fidelity`, and an open-ended `extra`
+dict for application metadata.  `TelemetryCollector` manages a list of
+`TelemetryHook` callables and fans events out to all of them via
+`emit()`.  `InMemoryTelemetryCollector` subclasses the base collector
+and stores every event in a list; `export_json()` returns a JSON array
+string.  `attach_telemetry()` monkey-patches a `CompressionPipeline`
+instance's `run()` method to emit one event per stage, measuring
+per-stage latency, throughput, compression ratio, and cosine fidelity
+(computed in FP32 via `np.einsum` — accumulation-accurate) — all
+transparent to the caller.
+
+**`tests/test_telemetry.py` — 17 new tests.** Covers `TelemetryEvent`
+construction and immutability, `to_dict()` key set and type coercions,
+`to_json()` validity, `TelemetryCollector` attach/detach/clear/count,
+duplicate-attach idempotency, `InMemoryTelemetryCollector` storage and
+`export_json()`, and the `attach_telemetry()` pipeline integration:
+event count per stage, stage-name/index correctness, throughput
+positivity, compression-ratio positivity, the SIMD cosine-fidelity
+property test (INT8 cosine similarity ≥ 0.9999 on L2-normalised
+unit-vector inputs), multi-stage event ordering, latency non-negativity,
+and `run()` return type unchanged.
+
+**`python/__init__.py`** — exports `TelemetryEvent`, `TelemetryCollector`,
+`TelemetryHook`, `InMemoryTelemetryCollector`, `attach_telemetry`;
+version bumped to `5.3.0`.
+
+**Version bump in all 4 version files:** `python/vectro.py`,
+`python/__init__.py`, `pyproject.toml`, `pixi.toml`.
+
+### Deliverables
+
+| # | Deliverable | Status |
+|---|-------------|--------|
+| 1 | `python/telemetry.py` — `TelemetryEvent`, `TelemetryCollector`, `TelemetryHook`, `InMemoryTelemetryCollector`, `attach_telemetry` | ✅ |
+| 2 | `tests/test_telemetry.py` — 17 tests | ✅ |
+| 3 | `python/__init__.py` — new exports + version `5.3.0` | ✅ |
+| 4 | `python/__init__.pyi` — stubs for 5 new telemetry symbols | ✅ |
+| 5 | `python/vectro.py` — `__version__ = "5.3.0"` | ✅ |
+| 6 | `pyproject.toml` — version `5.3.0` | ✅ |
+| 7 | `pixi.toml` — version `5.3.0` | ✅ |
 
 ---
 

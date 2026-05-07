@@ -128,7 +128,16 @@ from .async_pipeline import (
     compress_async,
 )
 
-__version__ = "5.2.0"
+# v5.3.0 telemetry & observability
+from .telemetry import (
+    TelemetryEvent,
+    TelemetryCollector,
+    TelemetryHook,
+    InMemoryTelemetryCollector,
+    attach_telemetry,
+)
+
+__version__ = "5.3.0"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"
@@ -272,6 +281,13 @@ __all__ = [
     "PipelineStage",
     "PipelineResult",
     "compress_async",
+
+    # v5.3.0 telemetry & observability
+    "TelemetryEvent",
+    "TelemetryCollector",
+    "TelemetryHook",
+    "InMemoryTelemetryCollector",
+    "attach_telemetry",
 
     # Utilities
     "get_version_info"
