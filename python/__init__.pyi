@@ -131,6 +131,19 @@ from .vectro import (
     generate_compression_report as generate_compression_report,
     get_version_info as get_version_info,
 )
+from .async_pipeline import (
+    CompressionPipeline as CompressionPipeline,
+    PipelineResult as PipelineResult,
+    PipelineStage as PipelineStage,
+    compress_async as compress_async,
+)
+from .telemetry import (
+    TelemetryCollector as TelemetryCollector,
+    TelemetryEvent as TelemetryEvent,
+    TelemetryHook as TelemetryHook,
+    InMemoryTelemetryCollector as InMemoryTelemetryCollector,
+    attach_telemetry as attach_telemetry,
+)
 
 __version__: str
 __author__: str
@@ -263,6 +276,17 @@ __all__ = [
     "IVFPQIndex",
     # BFloat16 vector store
     "Bf16Encoder",
+    # v5.2.0 async pipeline
+    "CompressionPipeline",
+    "PipelineStage",
+    "PipelineResult",
+    "compress_async",
+    # v5.3.0 telemetry
+    "TelemetryEvent",
+    "TelemetryCollector",
+    "TelemetryHook",
+    "InMemoryTelemetryCollector",
+    "attach_telemetry",
     # Utilities
     "get_version_info",
 ]
