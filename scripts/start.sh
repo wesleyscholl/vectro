@@ -16,7 +16,7 @@ sleep 1
 # Start demo server
 echo "📦 Starting demo server on :$DEMO_PORT..."
 cd "$REPO_DIR"
-python demo/server.py --port "$DEMO_PORT" > /tmp/vectro_demo.log 2>&1 &
+python3 demo/server.py --port "$DEMO_PORT" > /tmp/vectro_demo.log 2>&1 &
 DEMO_PID=$!
 
 # Wait for demo server to be ready
