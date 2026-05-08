@@ -1,0 +1,15 @@
+@import "@konjoai/ui/styles";
+
+@source "../node_modules/@konjoai/ui/src";
+
+@theme {
+  /* mode-specific tints — accent → hot as bits get shorter */
+  --color-mode-fp32:   var(--color-konjo-fg);
+  --color-mode-int8:   var(--color-konjo-cool);
+  --color-mode-nf4:    var(--color-konjo-violet);
+  --color-mode-pq:     var(--color-konjo-warm);
+  --color-mode-binary: var(--color-konjo-hot);
+}
+
+:root { color-scheme: dark; }
+html, body, #root { height: 100%; margin: 0; }
