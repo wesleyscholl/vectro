@@ -1,164 +1,256 @@
-"""api/main.py — FastAPI endpoints for vector visualization (V7).
+"""Vectro REST API — FastAPI wrapper around vectro.HNSWIndex.
 
-Two endpoints back the demo/viz.html scatter plot:
+Exposes a small, language-agnostic HTTP surface for creating named
+indices, adding vectors, running kNN search, and inspecting stats.
 
-* ``POST /index/{name}/add``     — seed an in-memory index with vectors
-* ``POST /index/{name}/project`` — PCA(2) projection via numpy SVD
-* ``POST /index/{name}/cluster`` — k-means assignments (k param, default 3)
+The index store is in-process and not persisted across restarts —
+intended for embedding-as-a-service deployments behind a stateful
+worker (Render, Fly.io, ECS task with EBS, etc.) where the lifetime
+of the indices matches the lifetime of the process.
 
-In-memory store is intentional: the visualization is exploratory and the
-demo server has no persistence story. All numerics use float64 internally
-and round-trip to plain Python floats at the JSON boundary so clients
-never see numpy scalars.
+Threading model: FastAPI runs handlers in a threadpool by default.
+A single ``asyncio.Lock``-equivalent ``threading.RLock`` per index
+serialises mutating operations; reads (search, stats) take the same
+lock to keep the underlying ``HNSWIndex`` state consistent.
+
+V7 visualization endpoints (``/viz/index/{name}/{add,project,cluster}``)
+live in :mod:`api.viz` and are mounted via :func:`include_router` so
+both feature sets share one ASGI app without path collisions.
 """
 from __future__ import annotations
 
-from typing import List
+import threading
+from typing import Dict, List, Literal, Optional
 
 import numpy as np
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import FastAPI, HTTPException, status
+from pydantic import BaseModel, Field, field_validator
 
-app = FastAPI(title="vectro-viz", version="0.1.0")
+# vectro ships as a top-level package named ``python`` (see project pyproject.toml,
+# ``packages = ["python"]``).  Support both that import path and a future
+# ``vectro`` rename without forcing the API to know which one is live.
+try:
+    from vectro import HNSWIndex  # type: ignore[import-not-found]
+except ImportError:
+    from python import HNSWIndex  # type: ignore[no-redef]
 
-INDICES: dict[str, np.ndarray] = {}
+from api.viz import router as viz_router
+
+__version__ = "0.1.0"
+
+Metric = Literal["cosine", "l2"]
+
+
+class _IndexEntry:
+    """Per-index state: the HNSW backend plus a counter for auto-ids."""
+
+    __slots__ = ("name", "dim", "metric", "index", "count", "lock")
+
+    def __init__(self, name: str, dim: int, metric: Metric) -> None:
+        self.name = name
+        self.dim = dim
+        self.metric = metric
+        self.index = HNSWIndex(dim=dim, space=metric)
+        self.count = 0
+        self.lock = threading.RLock()
+
+
+# ---------------------------------------------------------------------------
+# Process-wide registry
+# ---------------------------------------------------------------------------
+
+_REGISTRY: Dict[str, _IndexEntry] = {}
+_REGISTRY_LOCK = threading.RLock()
+
+
+def _get(name: str) -> _IndexEntry:
+    with _REGISTRY_LOCK:
+        entry = _REGISTRY.get(name)
+    if entry is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"index '{name}' not found",
+        )
+    return entry
+
+
+# ---------------------------------------------------------------------------
+# Request / response models
+# ---------------------------------------------------------------------------
+
+class CreateIndexRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=128)
+    dim: int = Field(..., gt=0, le=65536)
+    metric: Metric = "cosine"
+
+
+class CreateIndexResponse(BaseModel):
+    name: str
+    dim: int
+    metric: Metric
 
 
 class AddRequest(BaseModel):
-    vectors: List[List[float]] = Field(..., description="Row-major 2D float array")
+    vectors: List[List[float]] = Field(..., min_length=1)
+    ids: Optional[List[str]] = None
+
+    @field_validator("vectors")
+    @classmethod
+    def _vectors_nonempty_rows(cls, v: List[List[float]]) -> List[List[float]]:
+        if any(len(row) == 0 for row in v):
+            raise ValueError("each vector must be non-empty")
+        return v
 
 
-class ClusterRequest(BaseModel):
-    k: int = Field(default=3, ge=1, le=64)
-    max_iter: int = Field(default=50, ge=1, le=500)
-    seed: int = Field(default=42)
+class AddResponse(BaseModel):
+    added: int
+    total: int
 
 
-class ProjectedPoint(BaseModel):
-    id: int
-    x: float
-    y: float
-    label: str
+class SearchRequest(BaseModel):
+    query: List[float] = Field(..., min_length=1)
+    k: int = Field(10, gt=0, le=1000)
+    ef: Optional[int] = Field(None, gt=0, le=4096)
 
 
-class ClusterAssignment(BaseModel):
-    id: int
-    cluster: int
+class SearchHit(BaseModel):
+    id: str
+    distance: float
+
+
+class SearchResponse(BaseModel):
+    hits: List[SearchHit]
+
+
+class StatsResponse(BaseModel):
+    name: str
+    dim: int
+    metric: Metric
+    count: int
+
+
+# ---------------------------------------------------------------------------
+# App
+# ---------------------------------------------------------------------------
+
+app = FastAPI(
+    title="Vectro REST API",
+    version=__version__,
+    description="HTTP wrapper around the vectro embedding-compression library.",
+)
+app.include_router(viz_router)
+
+
+@app.get("/", include_in_schema=False)
+def root() -> dict:
+    return {"service": "vectro", "version": __version__}
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "n_indices": len(INDICES)}
+    with _REGISTRY_LOCK:
+        n = len(_REGISTRY)
+    return {"status": "ok", "indices": n}
 
 
-@app.post("/index/{name}/add")
-def add_vectors(name: str, req: AddRequest) -> dict:
-    if not req.vectors:
-        raise HTTPException(400, "vectors must be non-empty")
-    arr = np.asarray(req.vectors, dtype=np.float32)
-    if arr.ndim != 2:
-        raise HTTPException(400, "vectors must be 2D")
-    if name in INDICES:
-        existing = INDICES[name]
-        if existing.shape[1] != arr.shape[1]:
+@app.post(
+    "/index",
+    response_model=CreateIndexResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_index(req: CreateIndexRequest) -> CreateIndexResponse:
+    with _REGISTRY_LOCK:
+        if req.name in _REGISTRY:
             raise HTTPException(
-                400, f"dim mismatch: existing={existing.shape[1]} new={arr.shape[1]}"
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"index '{req.name}' already exists",
             )
-        INDICES[name] = np.vstack([existing, arr])
-    else:
-        INDICES[name] = arr
-    return {"name": name, "n": int(INDICES[name].shape[0]), "dim": int(arr.shape[1])}
+        _REGISTRY[req.name] = _IndexEntry(req.name, req.dim, req.metric)
+    return CreateIndexResponse(name=req.name, dim=req.dim, metric=req.metric)
 
 
-@app.delete("/index/{name}")
-def drop_index(name: str) -> dict:
-    INDICES.pop(name, None)
-    return {"name": name, "dropped": True}
+@app.post("/index/{name}/add", response_model=AddResponse)
+def add_vectors(name: str, req: AddRequest) -> AddResponse:
+    entry = _get(name)
 
-
-@app.post("/index/{name}/project", response_model=List[ProjectedPoint])
-def project(name: str) -> List[ProjectedPoint]:
-    if name not in INDICES:
-        raise HTTPException(404, f"index not found: {name}")
-    X = INDICES[name].astype(np.float64)
-    n, d = X.shape
-    Xc = X - X.mean(axis=0, keepdims=True)
-    if n == 1 or d == 0:
-        coords = np.zeros((n, 2), dtype=np.float64)
-    elif d == 1:
-        coords = np.column_stack([Xc[:, 0], np.zeros(n)])
-    else:
-        # SVD-based PCA: Xc = U S Vt; principal axes are rows of Vt.
-        # Project onto the first two axes => U[:, :2] * S[:2].
-        _, S, Vt = np.linalg.svd(Xc, full_matrices=False)
-        k = min(2, Vt.shape[0])
-        proj = Xc @ Vt[:k].T
-        if k == 1:
-            proj = np.column_stack([proj[:, 0], np.zeros(n)])
-        coords = proj
-    return [
-        ProjectedPoint(id=i, x=float(coords[i, 0]), y=float(coords[i, 1]), label=str(i))
-        for i in range(n)
-    ]
-
-
-def _kmeans_pp_init(X: np.ndarray, k: int, rng: np.random.Generator) -> np.ndarray:
-    """k-means++ seeding: pick the first center uniformly, then each
-    subsequent center with probability proportional to squared distance
-    from the nearest already-chosen center. This dramatically reduces
-    the chance of degenerate inits where two centers land in one blob.
-    """
-    n = X.shape[0]
-    centers = np.empty((k, X.shape[1]), dtype=X.dtype)
-    centers[0] = X[rng.integers(n)]
-    closest_sq = ((X - centers[0]) ** 2).sum(axis=1)
-    for i in range(1, k):
-        total = float(closest_sq.sum())
-        if total <= 0.0:
-            centers[i] = X[rng.integers(n)]
-        else:
-            probs = closest_sq / total
-            idx = int(rng.choice(n, p=probs))
-            centers[i] = X[idx]
-        new_sq = ((X - centers[i]) ** 2).sum(axis=1)
-        closest_sq = np.minimum(closest_sq, new_sq)
-    return centers
-
-
-def _kmeans(X: np.ndarray, k: int, max_iter: int, seed: int) -> np.ndarray:
-    n = X.shape[0]
-    k = max(1, min(k, n))
-    rng = np.random.default_rng(seed)
-    centers = _kmeans_pp_init(X, k, rng)
-    labels = np.zeros(n, dtype=np.int64)
-    for _ in range(max_iter):
-        # squared euclidean: ||x - c||^2 = ||x||^2 - 2 x·c + ||c||^2
-        d = (
-            (X * X).sum(axis=1, keepdims=True)
-            - 2.0 * (X @ centers.T)
-            + (centers * centers).sum(axis=1)[None, :]
+    if req.ids is not None and len(req.ids) != len(req.vectors):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="len(ids) must equal len(vectors) when ids are provided",
         )
-        new_labels = d.argmin(axis=1)
-        if np.array_equal(new_labels, labels):
-            labels = new_labels
-            break
-        labels = new_labels
-        new_centers = centers.copy()
-        for c in range(k):
-            mask = labels == c
-            if mask.any():
-                new_centers[c] = X[mask].mean(axis=0)
-        if np.allclose(new_centers, centers):
-            break
-        centers = new_centers
-    return labels
+
+    arr = np.asarray(req.vectors, dtype=np.float32)
+    if arr.ndim != 2 or arr.shape[1] != entry.dim:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"vectors must be 2-D with dim={entry.dim}, "
+                f"got shape={list(arr.shape)}"
+            ),
+        )
+    if not np.isfinite(arr).all():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="vectors contain NaN or Inf",
+        )
+
+    with entry.lock:
+        if req.ids is None:
+            ids = [str(entry.count + i) for i in range(arr.shape[0])]
+        else:
+            ids = list(req.ids)
+        entry.index.add_batch(arr, ids=ids)
+        entry.count += arr.shape[0]
+        total = entry.count
+
+    return AddResponse(added=arr.shape[0], total=total)
 
 
-@app.post("/index/{name}/cluster", response_model=List[ClusterAssignment])
-def cluster(name: str, req: ClusterRequest | None = None) -> List[ClusterAssignment]:
-    if name not in INDICES:
-        raise HTTPException(404, f"index not found: {name}")
-    req = req or ClusterRequest()
-    X = INDICES[name].astype(np.float64)
-    labels = _kmeans(X, k=req.k, max_iter=req.max_iter, seed=req.seed)
-    return [ClusterAssignment(id=i, cluster=int(labels[i])) for i in range(X.shape[0])]
+@app.post("/index/{name}/search", response_model=SearchResponse)
+def search(name: str, req: SearchRequest) -> SearchResponse:
+    entry = _get(name)
+
+    q = np.asarray(req.query, dtype=np.float32)
+    if q.ndim != 1 or q.shape[0] != entry.dim:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"query must be 1-D with dim={entry.dim}, got shape={list(q.shape)}",
+        )
+    if not np.isfinite(q).all():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="query contains NaN or Inf",
+        )
+
+    ef = req.ef if req.ef is not None else max(req.k * 4, 64)
+
+    with entry.lock:
+        if entry.count == 0:
+            return SearchResponse(hits=[])
+        user_ids, distances = entry.index.search(q, top_k=req.k, ef=ef)
+        hits = [
+            SearchHit(id=str(uid), distance=float(d))
+            for uid, d in zip(user_ids, distances.tolist())
+        ]
+
+    return SearchResponse(hits=hits)
+
+
+@app.get("/index/{name}/stats", response_model=StatsResponse)
+def stats(name: str) -> StatsResponse:
+    entry = _get(name)
+    with entry.lock:
+        count = entry.count
+    return StatsResponse(name=entry.name, dim=entry.dim, metric=entry.metric, count=count)
+
+
+@app.delete("/index/{name}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_index(name: str) -> None:
+    with _REGISTRY_LOCK:
+        if name not in _REGISTRY:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"index '{name}' not found",
+            )
+        del _REGISTRY[name]
+    return None
