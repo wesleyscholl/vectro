@@ -5,6 +5,23 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [V6 — REST API] — 2026-05-09
+
+### Added
+- `api/main.py` — FastAPI service wrapping `vectro.HNSWIndex`. Endpoints:
+  `POST /index`, `POST /index/{name}/add`, `POST /index/{name}/search`,
+  `GET /index/{name}/stats`, `DELETE /index/{name}`, plus `GET /health`.
+  Per-index `RLock` serialises mutating + reading ops; dim/NaN/Inf
+  validation at the boundary; user-supplied IDs flow through
+  `HNSWIndex.add_batch(ids=...)`.
+- `api/test_api.py` — 17 happy-path tests via `fastapi.testclient.TestClient`
+  covering create / duplicate / add / id-count mismatch / dim mismatch /
+  search nearest / search empty / stats / delete / unknown-index 404 /
+  raw-body NaN guard / full 50-vector round-trip.
+- `api/requirements.txt`, `api/Dockerfile` (slim Python 3.11 base, port 8000,
+  `/health` HEALTHCHECK), `api/README.md` (curl quick-start), and
+  `render.yaml` (Render Blueprint pointing at the Dockerfile).
+
 ## [5.1.0] — 2026-05-05
 
 ### Added
