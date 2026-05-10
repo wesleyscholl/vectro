@@ -28,6 +28,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import socketserver
 import sys
 import threading
@@ -35,13 +36,18 @@ import time
 import types
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
+
+# V7 viz — share the numpy PCA + k-means + cosine helpers with the
+# FastAPI app in ``api/app.py`` so behaviour is identical regardless of
+# which entrypoint the user is running.
+from api.store import IndexStore, cosine_topk, kmeans, pca_2d  # noqa: E402
 
 # DSPy isn't required to be installed — the retriever falls back to a
 # plain object when it's missing.  Install a tiny stub so the demo
@@ -356,10 +362,159 @@ ROUTES_GET: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# V7 viz — live in-memory index for demo/viz.html
+# ─────────────────────────────────────────────────────────────────────────
+#
+# The viz page POSTs to /index/{name}/{add,search,project,cluster}.  We
+# keep its store separate from the main demo retriever (CORPUS) so the
+# user can build, reset, and re-cluster vectors without touching the
+# search demo above.
+#
+# Identical math to api/app.py — both share api.store.
+
+VIZ_STORE = IndexStore()
+_VIZ_PATH_RE = re.compile(
+    r"^/index/(?P<name>[A-Za-z0-9_.\-]{1,64})(?:/(?P<action>[a-z]+))?$"
+)
+
+
+def _viz_summary(name: str) -> Dict[str, Any]:
+    idx = VIZ_STORE.get(name)
+    return {"name": idx.name, "dim": idx.dim, "n": len(idx)}
+
+
+def _viz_create(name: str, body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    dim = int(body.get("dim", 0))
+    if dim < 1:
+        return 400, {"error": "dim must be a positive integer"}
+    try:
+        VIZ_STORE.create(name, dim)
+    except ValueError as exc:
+        return 409, {"error": str(exc)}
+    return 200, _viz_summary(name)
+
+
+def _viz_add(name: str, body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    vectors = body.get("vectors")
+    if not vectors:
+        return 400, {"error": "vectors must be non-empty"}
+    arr = np.asarray(vectors, dtype=np.float32)
+    if arr.ndim != 2:
+        return 400, {"error": "vectors must be a 2-D list"}
+    n_new, dim_new = arr.shape
+    try:
+        idx = VIZ_STORE.get(name)
+    except KeyError:
+        idx = VIZ_STORE.create(name, dim_new)
+    if dim_new != idx.dim:
+        return 400, {
+            "error": f"dim mismatch: payload {dim_new} vs index {idx.dim}"
+        }
+    ids = body.get("ids") or []
+    metadata = body.get("metadata") or []
+    base = len(idx)
+    for i in range(n_new):
+        idx.vectors.append(arr[i].copy())
+        idx.ids.append(str(ids[i]) if i < len(ids) else f"{name}:{base + i}")
+        idx.metadata.append(dict(metadata[i]) if i < len(metadata) else {})
+    return 200, {"name": name, "added": n_new, "total": len(idx)}
+
+
+def _viz_search(name: str, body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    try:
+        idx = VIZ_STORE.get(name)
+    except KeyError:
+        return 404, {"error": f"no such index: {name}"}
+    k = max(1, int(body.get("k", 5)))
+    if len(idx) == 0:
+        return 200, {"name": name, "k": k, "results": []}
+    try:
+        top = cosine_topk(
+            idx.matrix(), np.asarray(body.get("query", []), dtype=np.float32), k
+        )
+    except ValueError as exc:
+        return 400, {"error": str(exc)}
+    return 200, {
+        "name": name,
+        "k": k,
+        "results": [
+            {"id": idx.ids[h["index"]], "score": h["score"], "index": h["index"]}
+            for h in top
+        ],
+    }
+
+
+def _viz_project(name: str, _body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    try:
+        idx = VIZ_STORE.get(name)
+    except KeyError:
+        return 404, {"error": f"no such index: {name}"}
+    coords = pca_2d(idx.matrix()).tolist()
+    return 200, {"name": name, "n": len(idx), "coords": coords, "ids": list(idx.ids)}
+
+
+def _viz_cluster(name: str, body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
+    try:
+        idx = VIZ_STORE.get(name)
+    except KeyError:
+        return 404, {"error": f"no such index: {name}"}
+    k = int(body.get("k", 3))
+    seed = int(body.get("seed", 0))
+    labels = kmeans(idx.matrix(), k, seed=seed).tolist()
+    clamped = int(min(max(k, 1), max(len(idx), 1)))
+    return 200, {"name": name, "k": clamped, "labels": labels, "ids": list(idx.ids)}
+
+
+def _viz_delete(name: str) -> Tuple[int, Dict[str, Any]]:
+    return 200, {"deleted": VIZ_STORE.delete(name), "name": name}
+
+
+_VIZ_POST: Dict[str, Callable[[str, Dict[str, Any]], Tuple[int, Dict[str, Any]]]] = {
+    "":         _viz_create,   # POST /index/{name}
+    "add":      _viz_add,
+    "search":   _viz_search,
+    "project":  _viz_project,
+    "cluster":  _viz_cluster,
+}
+
+
+def _viz_dispatch(
+    method: str, path: str, body: Dict[str, Any]
+) -> Optional[Tuple[int, Dict[str, Any]]]:
+    """Handle /index/{name}/... routes.  Returns ``None`` if the path
+    does not match — caller falls through to the legacy demo routes."""
+    m = _VIZ_PATH_RE.match(path)
+    if not m:
+        return None
+    name = m.group("name")
+    action = m.group("action") or ""
+
+    if method == "GET" and action == "":
+        try:
+            return 200, _viz_summary(name)
+        except KeyError:
+            return 404, {"error": f"no such index: {name}"}
+    if method == "DELETE" and action == "":
+        return _viz_delete(name)
+    if method == "POST":
+        handler = _VIZ_POST.get(action)
+        if handler is not None:
+            return handler(name, body)
+        return 404, {"error": f"unknown action: {action!r}"}
+    return 405, {"error": f"method not allowed: {method}"}
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # HTTP handler
 # ─────────────────────────────────────────────────────────────────────────
 
-INDEX_HTML = (Path(__file__).resolve().parent / "index.html").read_bytes()
+_DEMO_DIR = Path(__file__).resolve().parent
+INDEX_HTML = (_DEMO_DIR / "index.html").read_bytes()
+
+
+def _viz_html_bytes() -> bytes:
+    """Read viz.html on every request — keeps dev iteration tight."""
+    return (_DEMO_DIR / "viz.html").read_bytes()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -400,10 +555,24 @@ class Handler(BaseHTTPRequestHandler):
         self._send_cors()
         self.end_headers()
 
+    def _read_body(self) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        try:
+            n = int(self.headers.get("Content-Length") or "0")
+            raw = self.rfile.read(n) if n > 0 else b""
+            return (json.loads(raw.decode("utf-8")) if raw else {}), None
+        except Exception as exc:
+            return None, f"bad json: {exc}"
+
     def do_GET(self) -> None:            # noqa: N802
         path = self.path.split("?", 1)[0]
         if path == "/" or path == "/index.html":
             self._send_html(INDEX_HTML)
+            return
+        if path == "/viz" or path == "/viz.html":
+            try:
+                self._send_html(_viz_html_bytes())
+            except FileNotFoundError:
+                self._send_json({"error": "viz.html not found"}, status=404)
             return
         if path in ROUTES_GET:
             try:
@@ -411,26 +580,44 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self._send_json({"error": str(exc)}, status=500)
             return
+        viz = _viz_dispatch("GET", path, {})
+        if viz is not None:
+            status, payload = viz
+            self._send_json(payload, status=status)
+            return
         self._send_json({"error": f"not found: {path}"}, status=404)
 
     def do_POST(self) -> None:           # noqa: N802
         path = self.path.split("?", 1)[0]
-        handler = ROUTES_POST.get(path)
-        if handler is None:
-            self._send_json({"error": f"not found: {path}"}, status=404)
-            return
-        try:
-            n = int(self.headers.get("Content-Length") or "0")
-            raw = self.rfile.read(n) if n > 0 else b""
-            body = json.loads(raw.decode("utf-8")) if raw else {}
-        except Exception as exc:
-            self._send_json({"error": f"bad json: {exc}"}, status=400)
+        body, err = self._read_body()
+        if err is not None:
+            self._send_json({"error": err}, status=400)
             return
 
-        try:
-            self._send_json(handler(body))
-        except Exception as exc:
-            self._send_json({"error": str(exc)}, status=500)
+        handler = ROUTES_POST.get(path)
+        if handler is not None:
+            try:
+                self._send_json(handler(body or {}))
+            except Exception as exc:
+                self._send_json({"error": str(exc)}, status=500)
+            return
+
+        viz = _viz_dispatch("POST", path, body or {})
+        if viz is not None:
+            status, payload = viz
+            self._send_json(payload, status=status)
+            return
+
+        self._send_json({"error": f"not found: {path}"}, status=404)
+
+    def do_DELETE(self) -> None:         # noqa: N802
+        path = self.path.split("?", 1)[0]
+        viz = _viz_dispatch("DELETE", path, {})
+        if viz is not None:
+            status, payload = viz
+            self._send_json(payload, status=status)
+            return
+        self._send_json({"error": f"not found: {path}"}, status=404)
 
 
 class ThreadingServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -451,6 +638,7 @@ def main() -> int:
     print(f"  ║  Vectro live demo — v{vectro.__version__:<8}                      ║")
     print(f"  ║                                                    ║")
     print(f"  ║  open: {url:<43}║")
+    print(f"  ║  viz:  {url + 'viz':<43}║")
     print(f"  ║  api:  {url + 'api/health':<43}║")
     print(f"  ║                                                    ║")
     print(f"  ║  every number on the page is measured here, now    ║")

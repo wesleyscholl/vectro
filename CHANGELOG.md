@@ -5,6 +5,41 @@ All notable changes to Vectro will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [V7] — 2026-05-09 — Live vector visualization
+
+### Added
+- `api/` — new FastAPI surface (`api.app:app`) hosting an in-memory vector
+  index with full CRUD plus two visualization endpoints: `POST
+  /index/{name}/project` (PCA-2D coordinates for every vector) and `POST
+  /index/{name}/cluster` (k-means labels, k clamped to `[1, N]`).  Backed
+  by `api/store.py`, which contains a thread-safe `IndexStore`, a
+  textbook SVD-based `pca_2d` (`coords = U[:, :2] * S[:2]` on centred
+  data), and `kmeans` with k-means++ initialisation and Lloyd
+  iterations — pure numpy, no sklearn dependency.  Edge cases (empty
+  index, single vector, `dim < 2`, `k > N`) all return cleanly.
+- `api/test_viz.py` — 10 tests against `fastapi.testclient.TestClient`:
+  `project` returns 2-D coords matching index size, 404s on missing
+  index, handles single-vector and empty-index cases, centres the data
+  on a balanced pair; `cluster` recovers three well-separated synthetic
+  Gaussian blobs (≥ 8/10 dominant label per block, three distinct
+  dominants), clamps `k > N` to `N`, 404s on missing index, defaults
+  `k=3`; `project` and `cluster` agree on id ordering so the frontend
+  can join coords and labels by position.
+- `demo/viz.html` — single-file interactive 2-D scatter (vanilla JS +
+  Canvas, no framework).  Add random Gaussian-blob vectors or paste
+  comma-separated vectors manually; auto re-projects and clusters on
+  every add; "Random query" injects an fp32 query into the index, runs
+  cosine top-k, and draws gradient lines from the query star to each
+  hit; "Pick from index" reuses a hovered point as the next query;
+  hover tooltip shows id, cluster, and cosine score; legend tracks
+  active clusters; status bar surfaces project/cluster latencies.
+- `demo/server.py` — `/viz` and `/viz.html` GET routes serve the new
+  page; `POST /index/{name}/{add,search,project,cluster}`, `GET
+  /index/{name}`, `DELETE /index/{name}` mirror the FastAPI surface
+  using the same `api.store` helpers, so behaviour is identical
+  regardless of which entrypoint a user is running.  Banner advertises
+  the new `viz:` URL alongside the existing `open:` and `api:` lines.
+
 ## [V6 — REST API] — 2026-05-09
 
 ### Added
