@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>vectro · viz</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #14181d;
+    --ink: #d6dde6;
+    --mute: #6b7785;
+    --accent: #7cd3ff;
+    --warn: #ffb86b;
+    --c0: #7cd3ff;
+    --c1: #ff7c9d;
+    --c2: #b48cff;
+    --c3: #5dd49a;
+    --c4: #ffd66b;
+    --query: #fff;
+    --hit: #ffd66b;
+    --line: #4a5563;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 13px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    grid-template-rows: 100vh;
+  }
+  aside {
+    background: var(--panel);
+    border-right: 1px solid #1f262d;
+    padding: 14px;
+    overflow-y: auto;
+  }
+  main {
+    position: relative;
+    overflow: hidden;
+  }
+  h1 { font-size: 14px; margin: 0 0 12px; letter-spacing: 0.5px; }
+  h2 { font-size: 11px; margin: 18px 0 6px; color: var(--mute); text-transform: uppercase; letter-spacing: 1px; }
+  fieldset { border: 1px solid #232a32; border-radius: 6px; padding: 10px; margin: 0 0 10px; }
+  legend { color: var(--mute); padding: 0 6px; font-size: 11px; }
+  label { display: block; font-size: 11px; color: var(--mute); margin: 6px 0 2px; }
+  input, textarea, select, button {
+    background: #0e1216;
+    color: var(--ink);
+    border: 1px solid #232a32;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font: inherit;
+    width: 100%;
+  }
+  textarea { resize: vertical; min-height: 56px; font-size: 12px; }
+  button {
+    cursor: pointer;
+    background: #1a232c;
+    border-color: #2a3742;
+    margin-top: 6px;
+  }
+  button:hover { background: #233040; border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #06121b; border-color: var(--accent); font-weight: 600; }
+  button.danger  { color: var(--warn); border-color: #3a2a1a; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .stats { font-size: 11px; color: var(--mute); }
+  .stats b { color: var(--ink); font-weight: 600; }
+  ul.list {
+    margin: 4px 0 0; padding: 0; list-style: none;
+    max-height: 180px; overflow-y: auto;
+    border: 1px solid #1c232a; border-radius: 4px;
+    font-size: 11px;
+  }
+  ul.list li {
+    padding: 4px 8px;
+    border-bottom: 1px solid #181e24;
+    display: flex; justify-content: space-between; gap: 6px;
+  }
+  ul.list li:last-child { border-bottom: 0; }
+  ul.list li button { width: auto; padding: 1px 6px; font-size: 10px; margin: 0; }
+  svg { width: 100%; height: 100%; display: block; }
+  .node { cursor: pointer; transition: r 120ms ease; }
+  .node:hover { stroke: #fff; stroke-width: 2; }
+  .node.query { stroke: #fff; stroke-width: 2.5; }
+  .node.hit { stroke: var(--hit); stroke-width: 2.5; }
+  .axis { stroke: #2a323a; stroke-dasharray: 2 4; }
+  .conn { stroke: var(--line); stroke-opacity: 0.7; stroke-width: 1.2; }
+  #tip {
+    position: absolute;
+    pointer-events: none;
+    background: rgba(20, 24, 29, 0.96);
+    border: 1px solid #2a3742;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 11px;
+    color: var(--ink);
+    transform: translate(-50%, calc(-100% - 8px));
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 80ms ease;
+  }
+  #tip.show { opacity: 1; }
+  .legend {
+    position: absolute; right: 12px; top: 12px;
+    background: rgba(20, 24, 29, 0.85);
+    border: 1px solid #232a32;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 11px;
+  }
+  .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+  .err { color: var(--warn); font-size: 11px; min-height: 14px; }
+</style>
+</head>
+<body>
+<aside>
+  <h1>vectro · viz</h1>
+
+  <fieldset>
+    <legend>index</legend>
+    <label>name</label>
+    <input id="indexName" value="viz" />
+    <label>dim</label>
+    <input id="dim" type="number" value="16" min="2" max="2048" />
+    <div class="row">
+      <button id="btnSeed">seed 24 random</button>
+      <button id="btnDrop" class="danger">drop index</button>
+    </div>
+    <div class="stats" style="margin-top:8px">
+      <span><b id="stN">0</b> vectors</span>
+      &nbsp;·&nbsp;
+      <span>dim <b id="stD">—</b></span>
+    </div>
+    <div class="err" id="err"></div>
+  </fieldset>
+
+  <fieldset>
+    <legend>add vector</legend>
+    <button id="btnAddRandom">+ random</button>
+    <label>or paste comma-separated floats (length = dim)</label>
+    <textarea id="manualVec" placeholder="0.1, 0.2, -0.3, ..."></textarea>
+    <button id="btnAddManual">+ manual</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>search</legend>
+    <label>query (comma floats, or blank = random)</label>
+    <textarea id="queryVec" placeholder="leave blank for random query"></textarea>
+    <label>top-k</label>
+    <input id="topK" type="number" value="5" min="1" max="20" />
+    <button id="btnSearch" class="primary">search</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>visualization</legend>
+    <label>k (clusters)</label>
+    <input id="kClusters" type="number" value="3" min="1" max="8" />
+    <button id="btnRender">re-render</button>
+  </fieldset>
+
+  <h2>vectors</h2>
+  <ul class="list" id="vecList"></ul>
+</aside>
+
+<main>
+  <svg id="plot" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet"></svg>
+  <div class="legend" id="legend"></div>
+  <div id="tip"></div>
+</main>
+
+<script>
+"use strict";
+
+// ─── client state (single source of truth) ──────────────────────────────
+const API = "";  // same-origin; override if hosted separately
+const state = {
+  indexName: "viz",
+  dim: 16,
+  vectors: [],          // float[][]   — kept client-side so we don't need a /list endpoint
+  query: null,          // float[] | null
+  hits: [],             // { id, score }[]
+  k: 3,
+};
+
+// ─── tiny DOM helper ────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+
+// ─── numerics: PCA via power iteration on covariance matrix ─────────────
+// Avoids implementing full SVD in JS; we only need the top-2 eigenvectors
+// of X^T X. Two rounds of power iteration with Gram-Schmidt deflation
+// converge fast for the small d we deal with in the demo (dim ≤ ~256).
+function center(X) {
+  const n = X.length, d = X[0].length;
+  const mean = new Float64Array(d);
+  for (let i = 0; i < n; i++) for (let j = 0; j < d; j++) mean[j] += X[i][j];
+  for (let j = 0; j < d; j++) mean[j] /= n;
+  return X.map(row => row.map((v, j) => v - mean[j]));
+}
+function matVecXtX(X, v) {
+  // returns (X^T X) v without materializing the d×d covariance
+  const n = X.length, d = X[0].length;
+  const Xv = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = 0;
+    const row = X[i];
+    for (let j = 0; j < d; j++) s += row[j] * v[j];
+    Xv[i] = s;
+  }
+  const out = new Float64Array(d);
+  for (let i = 0; i < n; i++) {
+    const s = Xv[i], row = X[i];
+    for (let j = 0; j < d; j++) out[j] += row[j] * s;
+  }
+  return out;
+}
+function norm(v) { let s = 0; for (let i = 0; i < v.length; i++) s += v[i]*v[i]; return Math.sqrt(s); }
+function normalize(v) { const n = norm(v) || 1; return v.map(x => x / n); }
+function dot(a, b) { let s = 0; for (let i = 0; i < a.length; i++) s += a[i]*b[i]; return s; }
+function powerIter(X, iters = 80) {
+  const d = X[0].length;
+  let v = normalize(Float64Array.from({length: d}, () => Math.random() - 0.5));
+  for (let t = 0; t < iters; t++) v = normalize(matVecXtX(X, v));
+  return v;
+}
+function pca2D(X) {
+  const Xc = center(X);
+  if (Xc.length === 0) return [];
+  if (Xc.length === 1 || Xc[0].length === 0) return Xc.map(() => [0, 0]);
+  const v1 = powerIter(Xc);
+  // deflate: project rows onto orthogonal complement of v1, then power-iter again
+  const Xc2 = Xc.map(row => {
+    const c = dot(row, v1);
+    return row.map((x, j) => x - c * v1[j]);
+  });
+  const v2 = powerIter(Xc2);
+  return Xc.map(row => [dot(row, v1), dot(row, v2)]);
+}
+
+// ─── k-means (k=3 by default) ───────────────────────────────────────────
+function sqdist(a, b) {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) { const d = a[i] - b[i]; s += d*d; }
+  return s;
+}
+function kmeansPlusPlusInit(X, k) {
+  const n = X.length;
+  const centers = [X[Math.floor(Math.random() * n)].slice()];
+  const closest = X.map(x => sqdist(x, centers[0]));
+  for (let i = 1; i < k; i++) {
+    const total = closest.reduce((a, b) => a + b, 0);
+    let pick = 0;
+    if (total > 0) {
+      let r = Math.random() * total;
+      for (let j = 0; j < n; j++) { r -= closest[j]; if (r <= 0) { pick = j; break; } }
+    } else {
+      pick = Math.floor(Math.random() * n);
+    }
+    centers.push(X[pick].slice());
+    for (let j = 0; j < n; j++) closest[j] = Math.min(closest[j], sqdist(X[j], centers[i]));
+  }
+  return centers;
+}
+function kmeans(X, k, maxIter = 40) {
+  const n = X.length, d = X[0].length;
+  if (n === 0) return [];
+  k = Math.max(1, Math.min(k, n));
+  let centers = kmeansPlusPlusInit(X, k);
+  let labels = new Int32Array(n);
+  for (let it = 0; it < maxIter; it++) {
+    let changed = false;
+    for (let i = 0; i < n; i++) {
+      let best = 0, bestD = Infinity;
+      for (let c = 0; c < k; c++) {
+        const dst = sqdist(X[i], centers[c]);
+        if (dst < bestD) { bestD = dst; best = c; }
+      }
+      if (labels[i] !== best) { labels[i] = best; changed = true; }
+    }
+    const sums = Array.from({length: k}, () => new Float64Array(d));
+    const counts = new Int32Array(k);
+    for (let i = 0; i < n; i++) {
+      counts[labels[i]]++;
+      for (let j = 0; j < d; j++) sums[labels[i]][j] += X[i][j];
+    }
+    for (let c = 0; c < k; c++) {
+      if (counts[c] > 0) for (let j = 0; j < d; j++) centers[c][j] = sums[c][j] / counts[c];
+    }
+    if (!changed) break;
+  }
+  return Array.from(labels);
+}
+
+// ─── distance for search (cosine similarity, higher = closer) ───────────
+function cosine(a, b) {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) { dot += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i]; }
+  const den = Math.sqrt(na * nb);
+  return den > 0 ? dot / den : 0;
+}
+
+// ─── server I/O ─────────────────────────────────────────────────────────
+async function api(path, method = "POST", body = null) {
+  const init = { method, headers: { "Content-Type": "application/json" } };
+  if (body !== null) init.body = JSON.stringify(body);
+  const r = await fetch(API + path, init);
+  if (!r.ok) {
+    let msg = r.statusText;
+    try { msg = (await r.json()).detail || msg; } catch {}
+    throw new Error(`${r.status} ${msg}`);
+  }
+  return r.json();
+}
+
+async function pushToServer() {
+  // Replace the server-side index with the local truth. drop-then-add
+  // avoids divergence if a vector was removed locally.
+  await api(`/index/${state.indexName}`, "DELETE").catch(() => {});
+  if (state.vectors.length > 0) {
+    await api(`/index/${state.indexName}/add`, "POST", { vectors: state.vectors });
+  }
+}
+
+// ─── rendering ──────────────────────────────────────────────────────────
+const PALETTE = ["var(--c0)", "var(--c1)", "var(--c2)", "var(--c3)", "var(--c4)"];
+const tip = $("tip");
+
+function fitTransform(points, w, h, pad = 60) {
+  if (points.length === 0) return () => [w/2, h/2];
+  let xmin = +Infinity, xmax = -Infinity, ymin = +Infinity, ymax = -Infinity;
+  for (const [x, y] of points) {
+    if (x < xmin) xmin = x; if (x > xmax) xmax = x;
+    if (y < ymin) ymin = y; if (y > ymax) ymax = y;
+  }
+  const dx = xmax - xmin || 1, dy = ymax - ymin || 1;
+  return ([x, y]) => [
+    pad + (x - xmin) / dx * (w - 2*pad),
+    h - pad - (y - ymin) / dy * (h - 2*pad),
+  ];
+}
+
+function showTip(html, ev) {
+  tip.innerHTML = html;
+  tip.style.left = ev.clientX + "px";
+  tip.style.top  = ev.clientY + "px";
+  tip.classList.add("show");
+}
+function hideTip() { tip.classList.remove("show"); }
+
+async function render() {
+  const svg = $("plot");
+  svg.innerHTML = "";
+  const legend = $("legend");
+  legend.innerHTML = "";
+  $("stN").textContent = state.vectors.length;
+  $("stD").textContent = state.vectors[0]?.length ?? "—";
+  renderList();
+
+  if (state.vectors.length === 0) return;
+
+  // PCA(2) and k-means run client-side so the visualization reacts
+  // instantly to add/remove. The server endpoints exist for clients
+  // (notebooks, other UIs) that don't want to ship the JS math.
+  const proj = pca2D(state.vectors);
+  const k = Math.max(1, Math.min(state.k, state.vectors.length));
+  const labels = kmeans(state.vectors, k);
+
+  // Project query into the same 2D space if present.
+  let queryXY = null;
+  if (state.query) {
+    // Recompute by stacking: re-run PCA with query appended so it lives
+    // in the same axes. Cheap for demo-scale n.
+    const stacked = state.vectors.concat([state.query]);
+    const projAll = pca2D(stacked);
+    queryXY = projAll[projAll.length - 1];
+    // overwrite proj from the joint fit so axes are consistent
+    for (let i = 0; i < state.vectors.length; i++) proj[i] = projAll[i];
+  }
+
+  const pts = queryXY ? proj.concat([queryXY]) : proj;
+  const W = 1000, H = 700;
+  const tfm = fitTransform(pts, W, H);
+
+  // axes (origin in the joint space)
+  const [ox, oy] = tfm([0, 0]);
+  const ns = "http://www.w3.org/2000/svg";
+  const axH = document.createElementNS(ns, "line");
+  axH.setAttribute("x1", 40); axH.setAttribute("x2", W - 40);
+  axH.setAttribute("y1", oy); axH.setAttribute("y2", oy);
+  axH.setAttribute("class", "axis");
+  svg.appendChild(axH);
+  const axV = document.createElementNS(ns, "line");
+  axV.setAttribute("y1", 40); axV.setAttribute("y2", H - 40);
+  axV.setAttribute("x1", ox); axV.setAttribute("x2", ox);
+  axV.setAttribute("class", "axis");
+  svg.appendChild(axV);
+
+  const hitSet = new Map(state.hits.map(h => [h.id, h.score]));
+
+  // connecting lines from query to hits (drawn first, behind nodes)
+  if (queryXY && state.hits.length > 0) {
+    const [qx, qy] = tfm(queryXY);
+    for (const h of state.hits) {
+      const [hx, hy] = tfm(proj[h.id]);
+      const ln = document.createElementNS(ns, "line");
+      ln.setAttribute("x1", qx); ln.setAttribute("y1", qy);
+      ln.setAttribute("x2", hx); ln.setAttribute("y2", hy);
+      ln.setAttribute("class", "conn");
+      svg.appendChild(ln);
+    }
+  }
+
+  // nodes
+  for (let i = 0; i < state.vectors.length; i++) {
+    const [px, py] = tfm(proj[i]);
+    const c = document.createElementNS(ns, "circle");
+    c.setAttribute("cx", px); c.setAttribute("cy", py);
+    c.setAttribute("r", hitSet.has(i) ? 8 : 5);
+    c.setAttribute("fill", PALETTE[labels[i] % PALETTE.length]);
+    c.setAttribute("class", "node" + (hitSet.has(i) ? " hit" : ""));
+    c.addEventListener("mousemove", (ev) => {
+      const score = hitSet.get(i);
+      const lines = [
+        `id <b>${i}</b>`,
+        `cluster <b>${labels[i]}</b>`,
+        score !== undefined ? `score <b>${score.toFixed(4)}</b>` : null,
+      ].filter(Boolean);
+      showTip(lines.join("<br>"), ev);
+    });
+    c.addEventListener("mouseleave", hideTip);
+    svg.appendChild(c);
+  }
+
+  // query marker
+  if (queryXY) {
+    const [qx, qy] = tfm(queryXY);
+    const star = document.createElementNS(ns, "circle");
+    star.setAttribute("cx", qx); star.setAttribute("cy", qy);
+    star.setAttribute("r", 9);
+    star.setAttribute("fill", "var(--query)");
+    star.setAttribute("class", "node query");
+    star.addEventListener("mousemove", (ev) => showTip(`<b>query</b>`, ev));
+    star.addEventListener("mouseleave", hideTip);
+    svg.appendChild(star);
+  }
+
+  // legend
+  for (let c = 0; c < k; c++) {
+    const row = document.createElement("div");
+    row.innerHTML = `<span class="sw" style="background:${PALETTE[c % PALETTE.length]}"></span>cluster ${c}`;
+    legend.appendChild(row);
+  }
+  if (queryXY) {
+    const row = document.createElement("div");
+    row.innerHTML = `<span class="sw" style="background:var(--query)"></span>query`;
+    legend.appendChild(row);
+  }
+}
+
+function renderList() {
+  const ul = $("vecList");
+  ul.innerHTML = "";
+  state.vectors.forEach((_, i) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span>id ${i}</span>`;
+    const btn = document.createElement("button");
+    btn.textContent = "remove";
+    btn.onclick = () => removeVec(i);
+    li.appendChild(btn);
+    ul.appendChild(li);
+  });
+}
+
+// ─── actions ────────────────────────────────────────────────────────────
+function err(msg) { $("err").textContent = msg || ""; }
+
+function randomVec(d) {
+  const v = Array.from({length: d}, () => (Math.random() * 2 - 1));
+  const n = Math.sqrt(v.reduce((s, x) => s + x*x, 0)) || 1;
+  return v.map(x => x / n);
+}
+
+function parseManual(s, d) {
+  const parts = s.split(/[\s,]+/).filter(Boolean).map(Number);
+  if (parts.some(Number.isNaN)) throw new Error("non-numeric input");
+  if (parts.length !== d) throw new Error(`expected ${d} floats, got ${parts.length}`);
+  return parts;
+}
+
+async function seed24() {
+  err("");
+  const d = state.dim = parseInt($("dim").value) || 16;
+  state.vectors = Array.from({length: 24}, () => randomVec(d));
+  state.query = null; state.hits = [];
+  try { await pushToServer(); await render(); } catch (e) { err(e.message); }
+}
+
+async function dropIndex() {
+  state.vectors = []; state.query = null; state.hits = [];
+  try { await api(`/index/${state.indexName}`, "DELETE"); } catch {}
+  await render();
+}
+
+async function addRandom() {
+  err("");
+  const d = state.vectors[0]?.length ?? (state.dim = parseInt($("dim").value) || 16);
+  state.vectors.push(randomVec(d));
+  try { await pushToServer(); await render(); } catch (e) { err(e.message); }
+}
+
+async function addManual() {
+  err("");
+  const d = state.vectors[0]?.length ?? (state.dim = parseInt($("dim").value) || 16);
+  try {
+    const v = parseManual($("manualVec").value, d);
+    state.vectors.push(v);
+    $("manualVec").value = "";
+    await pushToServer();
+    await render();
+  } catch (e) { err(e.message); }
+}
+
+async function removeVec(i) {
+  state.vectors.splice(i, 1);
+  state.hits = state.hits.filter(h => h.id !== i).map(h => ({...h, id: h.id > i ? h.id - 1 : h.id}));
+  if (state.vectors.length === 0) state.query = null;
+  try { await pushToServer(); await render(); } catch (e) { err(e.message); }
+}
+
+async function search() {
+  err("");
+  if (state.vectors.length === 0) { err("seed an index first"); return; }
+  const d = state.vectors[0].length;
+  const raw = $("queryVec").value.trim();
+  let q;
+  try { q = raw ? parseManual(raw, d) : randomVec(d); }
+  catch (e) { err(e.message); return; }
+  state.query = q;
+  const k = Math.max(1, Math.min(parseInt($("topK").value) || 5, state.vectors.length));
+  const scored = state.vectors.map((v, i) => ({ id: i, score: cosine(q, v) }));
+  scored.sort((a, b) => b.score - a.score);
+  state.hits = scored.slice(0, k);
+  await render();
+}
+
+// ─── wire-up ────────────────────────────────────────────────────────────
+$("btnSeed").onclick      = seed24;
+$("btnDrop").onclick      = dropIndex;
+$("btnAddRandom").onclick = addRandom;
+$("btnAddManual").onclick = addManual;
+$("btnSearch").onclick    = search;
+$("btnRender").onclick    = async () => {
+  state.k = parseInt($("kClusters").value) || 3;
+  await render();
+};
+$("indexName").onchange = (e) => { state.indexName = e.target.value || "viz"; };
+
+// initial paint
+render();
+</script>
+</body>
+</html>
