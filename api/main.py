@@ -20,6 +20,7 @@ both feature sets share one ASGI app without path collisions.
 from __future__ import annotations
 
 import threading
+import time
 from typing import Dict, List, Literal, Optional
 
 import numpy as np
@@ -127,6 +128,31 @@ class StatsResponse(BaseModel):
     dim: int
     metric: Metric
     count: int
+
+
+class BenchmarkResponse(BaseModel):
+    """Timing report for a self-contained insert + search workload.
+
+    All latencies are wall-clock milliseconds.  Throughput is whole-batch
+    operations divided by total wall time, so insert throughput accounts
+    for graph-construction overhead and search throughput accounts for
+    the inner-loop cost of beam search at the configured ``ef``.
+    """
+    name: str
+    dim: int
+    metric: Metric
+    insert_count: int
+    search_count: int
+    k: int
+    ef: int
+    seed: int
+    insert_ms_total: float
+    insert_throughput_vps: float
+    search_ms_total: float
+    search_throughput_qps: float
+    search_p50_ms: float
+    search_p95_ms: float
+    search_p99_ms: float
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +268,80 @@ def stats(name: str) -> StatsResponse:
     with entry.lock:
         count = entry.count
     return StatsResponse(name=entry.name, dim=entry.dim, metric=entry.metric, count=count)
+
+
+@app.get("/index/{name}/benchmark", response_model=BenchmarkResponse)
+def benchmark(
+    name: str,
+    insert_count: int = 1000,
+    search_count: int = 100,
+    k: int = 10,
+    ef: int = 64,
+    seed: int = 42,
+) -> BenchmarkResponse:
+    """Run an in-process throughput + latency benchmark against the index.
+
+    Inserts ``insert_count`` random unit-norm vectors (drawn from a
+    deterministic ``np.random.default_rng(seed)``), then runs
+    ``search_count`` kNN queries from independent random vectors.
+
+    Bounded for safety: ``insert_count`` ≤ 100_000, ``search_count`` ≤ 10_000.
+    The work is appended to the existing index — call against a fresh
+    index for clean numbers.
+    """
+    if not 1 <= insert_count <= 100_000:
+        raise HTTPException(400, "insert_count must be in [1, 100000]")
+    if not 1 <= search_count <= 10_000:
+        raise HTTPException(400, "search_count must be in [1, 10000]")
+    if not 1 <= k <= 1000:
+        raise HTTPException(400, "k must be in [1, 1000]")
+    if not 1 <= ef <= 4096:
+        raise HTTPException(400, "ef must be in [1, 4096]")
+
+    entry = _get(name)
+    rng = np.random.default_rng(seed)
+    insert_vecs = rng.standard_normal((insert_count, entry.dim)).astype(np.float32)
+    query_vecs = rng.standard_normal((search_count, entry.dim)).astype(np.float32)
+
+    with entry.lock:
+        ids = [f"bench-{entry.count + i}" for i in range(insert_count)]
+        t_insert_start = time.perf_counter()
+        entry.index.add_batch(insert_vecs, ids=ids)
+        insert_ms_total = (time.perf_counter() - t_insert_start) * 1000.0
+        entry.count += insert_count
+
+        per_query_ms: list[float] = []
+        t_search_start = time.perf_counter()
+        for q in query_vecs:
+            t0 = time.perf_counter()
+            entry.index.search(q, top_k=k, ef=ef)
+            per_query_ms.append((time.perf_counter() - t0) * 1000.0)
+        search_ms_total = (time.perf_counter() - t_search_start) * 1000.0
+
+    sorted_lat = sorted(per_query_ms)
+
+    def _percentile(p: float) -> float:
+        # Nearest-rank percentile: index = ceil(p/100 * N) - 1, clamped.
+        idx = max(0, min(len(sorted_lat) - 1, int(np.ceil(p / 100.0 * len(sorted_lat))) - 1))
+        return float(sorted_lat[idx])
+
+    return BenchmarkResponse(
+        name=entry.name,
+        dim=entry.dim,
+        metric=entry.metric,
+        insert_count=insert_count,
+        search_count=search_count,
+        k=k,
+        ef=ef,
+        seed=seed,
+        insert_ms_total=round(insert_ms_total, 3),
+        insert_throughput_vps=round(insert_count / (insert_ms_total / 1000.0), 1),
+        search_ms_total=round(search_ms_total, 3),
+        search_throughput_qps=round(search_count / (search_ms_total / 1000.0), 1),
+        search_p50_ms=round(_percentile(50), 3),
+        search_p95_ms=round(_percentile(95), 3),
+        search_p99_ms=round(_percentile(99), 3),
+    )
 
 
 @app.delete("/index/{name}", status_code=status.HTTP_204_NO_CONTENT)

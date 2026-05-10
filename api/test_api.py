@@ -172,6 +172,41 @@ def test_nan_rejected(client):
     assert r.status_code == 400
 
 
+def test_benchmark_returns_timings(client):
+    client.post("/index", json={"name": "b", "dim": 32, "metric": "cosine"})
+    # Tiny load — the test asserts shape and ordering, not raw speed.
+    r = client.get(
+        "/index/b/benchmark",
+        params={"insert_count": 50, "search_count": 20, "k": 5, "ef": 32, "seed": 7},
+    )
+    assert r.status_code == 200
+    body = r.json()
+
+    assert body["insert_count"] == 50
+    assert body["search_count"] == 20
+    assert body["k"] == 5
+    assert body["ef"] == 32
+    assert body["seed"] == 7
+    assert body["insert_ms_total"] > 0
+    assert body["search_ms_total"] > 0
+    assert body["insert_throughput_vps"] > 0
+    assert body["search_throughput_qps"] > 0
+    # Percentiles must be ordered.
+    assert body["search_p50_ms"] <= body["search_p95_ms"] <= body["search_p99_ms"]
+    # The index should now contain those 50 vectors.
+    assert client.get("/index/b/stats").json()["count"] == 50
+
+
+def test_benchmark_rejects_out_of_range(client):
+    client.post("/index", json={"name": "b", "dim": 8, "metric": "cosine"})
+    assert client.get("/index/b/benchmark", params={"insert_count": 0}).status_code == 400
+    assert client.get("/index/b/benchmark", params={"search_count": 999_999}).status_code == 400
+
+
+def test_benchmark_unknown_index_404(client):
+    assert client.get("/index/nope/benchmark").status_code == 404
+
+
 def test_full_roundtrip(client):
     rng = np.random.default_rng(42)
     vecs = rng.standard_normal((50, 16)).astype(np.float32)
