@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vectro — Vector Cosmos</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #020208; }
+
+  canvas {
+    display: block;
+    position: fixed; inset: 0;
+    will-change: transform;
+  }
+
+  /* ── HUD ── */
+  #hud {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 28px;
+    z-index: 20;
+    pointer-events: none;
+  }
+  .wordmark {
+    font-family: -apple-system, "SF Pro Display", system-ui, sans-serif;
+    font-size: 15px; font-weight: 800; letter-spacing: 0.22em;
+    color: rgba(255,255,255,0.85);
+  }
+  .wordmark span { color: #a78bfa; }
+
+  /* ── controls ── */
+  #controls {
+    position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 10px; z-index: 20;
+  }
+  .btn {
+    font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+    font-size: 12px; font-weight: 600; letter-spacing: 0.06em;
+    color: rgba(255,255,255,0.8);
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 999px; padding: 9px 18px;
+    cursor: pointer; outline: none;
+    transition: background 0.2s, border-color 0.2s, transform 0.15s;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .btn:hover {
+    background: rgba(167,139,250,0.18);
+    border-color: rgba(167,139,250,0.55);
+    transform: translateY(-2px);
+  }
+  .btn:active { transform: translateY(0px); }
+  .btn.active { background: rgba(167,139,250,0.3); border-color: #a78bfa; }
+
+  #hint {
+    position: fixed; bottom: 82px; left: 50%; transform: translateX(-50%);
+    font-family: -apple-system, system-ui, sans-serif;
+    font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: rgba(255,255,255,0.28);
+    pointer-events: none; z-index: 20;
+    transition: opacity 0.5s;
+  }
+
+  #stats {
+    position: fixed; top: 20px; right: 28px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px; color: rgba(255,255,255,0.25);
+    z-index: 20; pointer-events: none; text-align: right;
+    line-height: 1.7;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div class="wordmark">V<span>E</span>CTRO</div>
+</div>
+
+<div id="stats">
+  <div id="s-fps">60 fps</div>
+  <div id="s-stars">0 vectors</div>
+  <div id="s-thermal">hold ⇧ for constellations</div>
+</div>
+
+<p id="hint">shift · drag · interact</p>
+
+<div id="controls">
+  <button class="btn" id="btn-add">+ Add Vector</button>
+  <button class="btn" id="btn-search">⊙ Run Search</button>
+  <button class="btn" id="btn-shoot">☄ Shooting Star</button>
+  <button class="btn" id="btn-nebula">◎ Nebula</button>
+</div>
+
+<script>
+/* =========================================================
+   VECTRO VECTOR COSMOS — demo/viz.html
+   Seven effects, one canvas, one RAF loop.
+
+   Effects
+   -------
+   1. True 3D perspective star field (z-drift camera forward)
+   2. Multi-layer mouse parallax (near/mid/far bands + nebula)
+   3. Shooting stars (random every 8–15s + on-demand)
+   4. Comet birth for new vectors (+ nova pulse at landing)
+   5. Search cone (translucent spotlight, 0°→full over 400ms)
+   6. Constellation hover (shift key, gold lines, 4s fade)
+   7. Star glow bloom (shadowBlur + repeat draw at 3× radius)
+   ========================================================= */
+
+const canvas = document.getElementById("c");
+const ctx    = canvas.getContext("2d");
+
+// ── sizing ────────────────────────────────────────────────
+let W, H, DPR, CX, CY;
+function resize() {
+  DPR = window.devicePixelRatio || 1;
+  W   = window.innerWidth;
+  H   = window.innerHeight;
+  canvas.width  = W * DPR;
+  canvas.height = H * DPR;
+  canvas.style.width  = W + "px";
+  canvas.style.height = H + "px";
+  ctx.scale(DPR, DPR);
+  CX = W / 2;
+  CY = H / 2;
+  rebuildNebula();
+}
+window.addEventListener("resize", resize);
+
+// ── math helpers ──────────────────────────────────────────
+const TAU    = Math.PI * 2;
+const lerp   = (a, b, t) => a + (b - a) * t;
+const rand   = (lo, hi) => lo + Math.random() * (hi - lo);
+const randI  = (lo, hi) => lo + (Math.random() * (hi - lo + 1)) | 0;
+// cubic-bezier(0.23, 1, 0.32, 1) — Quint ease-out, used for all transitions.
+// Approximated as 1-(1-t)^3 for the RAF loop (matches the curve closely at
+// the speeds we animate; a true bezier solver would cost more per frame).
+const ease   = t => 1 - Math.pow(1 - t, 3);
+const easeIO = t => t < 0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+// Alias used by nova + comet calls explicitly referencing the bezier spec:
+const cubicBezier023_1_032_1 = ease;
+
+// ── 3D star config ────────────────────────────────────────
+const N_STARS  = 520;
+const FOCAL    = 500;
+const MAX_Z    = 900;
+const DRIFT_Z  = 0.22;   // camera advance per frame
+
+// Depth bands: index 0 = far, 1 = mid, 2 = near
+const BANDS = [
+  { from: MAX_Z * 0.55, to: MAX_Z,      parallax: 0.004 },
+  { from: MAX_Z * 0.25, to: MAX_Z*0.55, parallax: 0.014 },
+  { from: 1,            to: MAX_Z*0.25, parallax: 0.035 },
+];
+const BAND_BLOOM = [0.05, 0.12, 0.25];
+
+// ── star state ────────────────────────────────────────────
+let stars = [];
+
+function makeStar(opts = {}) {
+  const z    = opts.z    ?? rand(2, MAX_Z);
+  const band = z > BANDS[1].from ? 0 : z > BANDS[2].from ? 1 : 2;
+  return {
+    x    : rand(-W * 2.5, W * 2.5),
+    y    : rand(-H * 2.5, H * 2.5),
+    z,
+    band,
+    hue  : opts.hue  ?? randI(200, 300),
+    sat  : opts.sat  ?? randI(40, 80),
+    baseR: opts.baseR ?? rand(0.5, 1.6),
+    born : performance.now(),
+    novaDur: opts.nova ? 700 : 0,
+    novaStart: opts.nova ? performance.now() : 0,
+    // projected — filled each frame
+    sx: 0, sy: 0, r: 0, alpha: 0,
+  };
+}
+
+function initStars() {
+  stars = [];
+  for (let i = 0; i < N_STARS; i++) stars.push(makeStar());
+}
+
+// ── parallax ──────────────────────────────────────────────
+const PARALLAX = { x: [0, 0, 0], y: [0, 0, 0], tx: [0, 0, 0], ty: [0, 0, 0] };
+const NEBULA_PX = 0.008;   // 30% of near band's 0.035 ≈ 0.008
+
+let mouseX = 0, mouseY = 0;
+window.addEventListener("mousemove", e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+  for (let b = 0; b < 3; b++) {
+    PARALLAX.tx[b] = (mouseX - CX) * BANDS[b].parallax;
+    PARALLAX.ty[b] = (mouseY - CY) * BANDS[b].parallax;
+  }
+});
+
+// ── nebula layer ──────────────────────────────────────────
+let nebulae = [];
+function rebuildNebula() {
+  nebulae = [];
+  const n = 9;
+  for (let i = 0; i < n; i++) {
+    nebulae.push({
+      x  : rand(W * 0.05, W * 0.95),
+      y  : rand(H * 0.05, H * 0.95),
+      r  : rand(W * 0.12, W * 0.28),
+      hue: randI(220, 310),
+      a  : rand(0.018, 0.05),
+      ox : 0, oy : 0,   // parallax offset
+    });
+  }
+}
+
+// ── shooting stars ────────────────────────────────────────
+let shooters = [];
+let nextShootTime = performance.now() + rand(8000, 15000);
+
+function spawnShooter() {
+  const angle = rand(TAU * 0.05, TAU * 0.45);  // top-right trending
+  const len   = rand(120, 260);
+  const edge  = pickEdge();
+  shooters.push({
+    x0   : edge.x, y0: edge.y,
+    angle,
+    len,
+    hue  : randI(180, 270),
+    t    : 0,   // 0→1 draw phase, 1→2 fade phase
+    speed: rand(0.012, 0.022),
+  });
+  nextShootTime = performance.now() + rand(8000, 15000);
+}
+
+function pickEdge() {
+  const side = randI(0, 3);
+  if (side === 0) return { x: rand(0, W),   y: -20 };         // top
+  if (side === 1) return { x: W + 20,       y: rand(0, H) };  // right
+  if (side === 2) return { x: rand(0, W),   y: H + 20 };      // bottom
+  return              { x: -20,             y: rand(0, H) };   // left
+}
+
+// ── comets ────────────────────────────────────────────────
+let comets = [];
+
+function spawnComet(targetStar) {
+  const edge = pickEdge();
+  // project the target star to get screen destination
+  const tsx = targetStar.sx;
+  const tsy = targetStar.sy;
+  comets.push({
+    x0: edge.x, y0: edge.y,
+    x1: tsx,    y1: tsy,
+    hue: targetStar.hue,
+    t  : 0,
+    speed: 0.008,
+    done : false,
+    target: targetStar,
+  });
+}
+
+// ── search cone ───────────────────────────────────────────
+let cone = null;
+
+function spawnCone() {
+  // pick 3-6 random stars as "matches"
+  const pool = stars.filter(s => s.alpha > 0.4 && s.band <= 1);
+  const n    = Math.min(pool.length, randI(4, 7));
+  const matches = [];
+  const used    = new Set();
+  while (matches.length < n && used.size < pool.length) {
+    const i = randI(0, pool.length - 1);
+    if (!used.has(i)) { used.add(i); matches.push(pool[i]); }
+  }
+  if (!matches.length) return;
+  // find a spread angle to encompass all matches
+  const angles = matches.map(s => Math.atan2(s.sy - CY, s.sx - CX));
+  const meanA  = angles.reduce((a, b) => a + b, 0) / angles.length;
+  const spread = Math.max(...angles.map(a => Math.abs(a - meanA))) + 0.35;
+
+  cone = {
+    qx: CX, qy: CY,
+    angle  : meanA,
+    spread : 0,            // animates to `spreadTarget`
+    spreadT: spread,
+    matches,
+    maxR   : Math.max(...matches.map(s => Math.hypot(s.sx - CX, s.sy - CY))) + 60,
+    t      : 0,            // 0→1 open, 1→2 hold, 2→3 fade
+    speed  : 1 / 400,      // 1/ms
+    alpha  : 0.0,
+  };
+}
+
+// ── constellation ─────────────────────────────────────────
+let shiftHeld        = false;
+let constellation    = null;   // { lines, glyphs, alpha, startedAt }
+const CONST_NEAR_PX  = 110;
+const GLYPHS = ["✦", "✧", "⊕", "⊗", "◈", "⬡", "⬢", "⬟", "⟁", "⊙"];
+
+window.addEventListener("keydown", e => {
+  if (e.key === "Shift" && !shiftHeld) {
+    shiftHeld = true;
+    buildConstellation();
+  }
+});
+window.addEventListener("keyup", e => {
+  if (e.key === "Shift") { shiftHeld = false; }
+});
+
+function buildConstellation() {
+  const visible = stars.filter(s => s.alpha > 0.35);
+  const lines   = [];
+  for (let i = 0; i < visible.length; i++) {
+    for (let j = i + 1; j < visible.length; j++) {
+      const dx = visible[i].sx - visible[j].sx;
+      const dy = visible[i].sy - visible[j].sy;
+      if (Math.hypot(dx, dy) < CONST_NEAR_PX) {
+        lines.push({ x1: visible[i].sx, y1: visible[i].sy,
+                     x2: visible[j].sx, y2: visible[j].sy });
+      }
+    }
+  }
+  // Cluster centroids for glyph placement (simple grouping)
+  const glyphs = [];
+  if (visible.length > 3) {
+    for (let g = 0; g < Math.min(visible.length / 8 | 0, 5); g++) {
+      const seed = visible[randI(0, visible.length - 1)];
+      glyphs.push({ x: seed.sx, y: seed.sy - 18,
+                    ch: GLYPHS[randI(0, GLYPHS.length - 1)] });
+    }
+  }
+  constellation = { lines, glyphs, alpha: 1.0, startedAt: performance.now() };
+}
+
+// ── frame state ───────────────────────────────────────────
+let lastT    = 0;
+let fps      = 60;
+let frameN   = 0;
+
+// UI refs
+const sFps   = document.getElementById("s-fps");
+const sStars = document.getElementById("s-stars");
+
+// ── DRAW ──────────────────────────────────────────────────
+function draw(now) {
+  const dt = Math.min(now - lastT, 50);
+  lastT    = now;
+  frameN++;
+
+  // fps rolling average
+  fps = fps * 0.92 + (1000 / dt) * 0.08;
+  if (frameN % 30 === 0) {
+    sFps.textContent   = fps.toFixed(0) + " fps";
+    sStars.textContent = stars.length + " vectors";
+  }
+
+  // lerp parallax
+  for (let b = 0; b < 3; b++) {
+    PARALLAX.x[b] = lerp(PARALLAX.x[b], PARALLAX.tx[b], 0.055);
+    PARALLAX.y[b] = lerp(PARALLAX.y[b], PARALLAX.ty[b], 0.055);
+  }
+
+  // ── clear ─────────────────────────────────────────────
+  ctx.clearRect(0, 0, W, H);
+
+  // Vignette gradient background
+  const vg = ctx.createRadialGradient(CX, CY, 0, CX, CY, Math.hypot(CX, CY));
+  vg.addColorStop(0, "rgba(8,6,22,0.0)");
+  vg.addColorStop(1, "rgba(2,2,10,1.0)");
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+
+  // ── nebula layer ──────────────────────────────────────
+  // Nebula parallax: 30% of near band
+  const nebX = lerp(0, PARALLAX.tx[2] * 0.3, 0.04) || nebulae[0]?.ox || 0;
+  const nebY = lerp(0, PARALLAX.ty[2] * 0.3, 0.04) || 0;
+  ctx.save();
+  ctx.filter = "blur(44px)";
+  for (const n of nebulae) {
+    n.ox = lerp(n.ox, (mouseX - CX) * NEBULA_PX, 0.03);
+    n.oy = lerp(n.oy, (mouseY - CY) * NEBULA_PX, 0.03);
+    const ng = ctx.createRadialGradient(
+      n.x + n.ox, n.y + n.oy, 0,
+      n.x + n.ox, n.y + n.oy, n.r
+    );
+    ng.addColorStop(0, `hsla(${n.hue},70%,40%,${n.a})`);
+    ng.addColorStop(1, "hsla(0,0%,0%,0)");
+    ctx.fillStyle = ng;
+    ctx.beginPath();
+    ctx.arc(n.x + n.ox, n.y + n.oy, n.r, 0, TAU);
+    ctx.fill();
+  }
+  ctx.filter = "none";
+  ctx.restore();
+
+  // ── project + advance stars ───────────────────────────
+  for (const s of stars) {
+    s.z -= DRIFT_Z;
+    if (s.z < 1) {
+      // wrap to far end, randomise position
+      s.z     = MAX_Z;
+      s.x     = rand(-W * 2.5, W * 2.5);
+      s.y     = rand(-H * 2.5, H * 2.5);
+      s.hue   = randI(200, 300);
+      s.baseR = rand(0.5, 1.6);
+      s.band  = 0;
+    }
+    // Update band
+    s.band = s.z > BANDS[1].from ? 0 : s.z > BANDS[2].from ? 1 : 2;
+
+    // Perspective projection
+    const px = PARALLAX.x[s.band];
+    const py = PARALLAX.y[s.band];
+    s.sx = (s.x) * FOCAL / s.z + CX + px;
+    s.sy = (s.y) * FOCAL / s.z + CY + py;
+    s.r  = s.baseR * FOCAL / s.z;
+
+    // Alpha: dim far, bright near; clamp
+    s.alpha = Math.min(1, (1 - s.z / MAX_Z) * 1.4 + 0.1);
+  }
+
+  // ── draw stars (far → near for painter's sort) ────────
+  for (let band = 0; band < 3; band++) {
+    for (const s of stars) {
+      if (s.band !== band) continue;
+      if (s.sx < -20 || s.sx > W + 20 || s.sy < -20 || s.sy > H + 20) continue;
+
+      const r   = Math.max(0.4, s.r);
+      const hsl = `hsl(${s.hue},${s.sat}%,${band === 2 ? 90 : 80}%)`;
+
+      // bloom: draw large soft halo first
+      const bloomA  = s.alpha * BAND_BLOOM[band];
+      if (bloomA > 0.01) {
+        ctx.save();
+        ctx.shadowBlur  = band === 2 ? 22 : 10;
+        ctx.shadowColor = hsl;
+        ctx.globalAlpha = bloomA;
+        ctx.fillStyle   = hsl;
+        ctx.beginPath();
+        ctx.arc(s.sx, s.sy, r * 3.2, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // core star
+      ctx.save();
+      ctx.globalAlpha = s.alpha;
+      ctx.fillStyle   = hsl;
+      ctx.shadowBlur  = band === 2 ? 14 : 6;
+      ctx.shadowColor = hsl;
+      ctx.beginPath();
+      ctx.arc(s.sx, s.sy, r, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+
+      // nova pulse (new-star ignition)
+      if (s.novaDur > 0) {
+        const novaProg = (now - s.novaStart) / s.novaDur;
+        if (novaProg < 1) {
+          const ne = ease(novaProg);
+          ctx.save();
+          ctx.globalAlpha = (1 - novaProg) * 0.85;
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth   = 1.5;
+          ctx.shadowBlur  = 30;
+          ctx.shadowColor = "#ffffff";
+          ctx.beginPath();
+          ctx.arc(s.sx, s.sy, r * (1 + ne * 8), 0, TAU);
+          ctx.stroke();
+          ctx.restore();
+        } else {
+          s.novaDur = 0;
+        }
+      }
+    }
+  }
+
+  // ── search cone ───────────────────────────────────────
+  if (cone) {
+    cone.t += cone.speed * dt;
+    const phase = cone.t;
+
+    let coneAlpha, spreadNow;
+    if (phase < 1) {
+      // opening
+      const e = ease(phase);
+      spreadNow  = cone.spreadT * e;
+      coneAlpha  = 0.28 * e;
+    } else if (phase < 2) {
+      // holding
+      spreadNow  = cone.spreadT;
+      coneAlpha  = 0.28;
+    } else if (phase < 3) {
+      // fading
+      spreadNow  = cone.spreadT;
+      coneAlpha  = 0.28 * (1 - (phase - 2));
+    } else {
+      cone = null;
+    }
+
+    if (cone && coneAlpha > 0) {
+      ctx.save();
+      // Spotlight gradient
+      const cg = ctx.createRadialGradient(
+        cone.qx, cone.qy, 0, cone.qx, cone.qy, cone.maxR
+      );
+      cg.addColorStop(0, `rgba(124,58,237,${coneAlpha * 0.8})`);
+      cg.addColorStop(0.6, `rgba(167,139,250,${coneAlpha * 0.35})`);
+      cg.addColorStop(1, "rgba(0,0,0,0)");
+
+      ctx.beginPath();
+      ctx.moveTo(cone.qx, cone.qy);
+      ctx.arc(cone.qx, cone.qy, cone.maxR,
+              cone.angle - spreadNow,
+              cone.angle + spreadNow);
+      ctx.closePath();
+      ctx.fillStyle = cg;
+      ctx.fill();
+
+      // Highlight matched stars
+      for (const m of cone.matches) {
+        ctx.save();
+        ctx.globalAlpha = coneAlpha * 1.8;
+        ctx.fillStyle   = "#c4b5fd";
+        ctx.shadowBlur  = 30;
+        ctx.shadowColor = "#a78bfa";
+        ctx.beginPath();
+        ctx.arc(m.sx, m.sy, m.r * 2.5, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+  }
+
+  // ── comets ────────────────────────────────────────────
+  comets = comets.filter(cm => !cm.done);
+  for (const cm of comets) {
+    cm.t = Math.min(1, cm.t + cm.speed * dt);
+    const e   = ease(cm.t);
+    const cx  = lerp(cm.x0, cm.x1, e);
+    const cy  = lerp(cm.y0, cm.y1, e);
+
+    // trail
+    const TRAIL = 8;
+    for (let i = TRAIL; i >= 0; i--) {
+      const te  = Math.max(0, e - i * 0.012);
+      const tx  = lerp(cm.x0, cm.x1, ease(te));
+      const ty  = lerp(cm.y0, cm.y1, ease(te));
+      const fr  = (TRAIL - i) / TRAIL;
+      const tr  = fr * 5 * (1 - e * 0.5);
+      if (tr < 0.2) continue;
+      ctx.save();
+      ctx.globalAlpha = (1 - i / TRAIL) * 0.5 * (1 - e * 0.4);
+      ctx.fillStyle   = `hsl(${cm.hue},80%,80%)`;
+      ctx.shadowBlur  = 8;
+      ctx.shadowColor = `hsl(${cm.hue},80%,80%)`;
+      ctx.beginPath();
+      ctx.arc(tx, ty, tr, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // head
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, (1 - e) * 3 + 0.2);
+    ctx.fillStyle   = "#ffffff";
+    ctx.shadowBlur  = 18;
+    ctx.shadowColor = `hsl(${cm.hue},90%,90%)`;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3.5, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
+    if (cm.t >= 1) cm.done = true;
+  }
+
+  // ── shooting stars ────────────────────────────────────
+  if (now >= nextShootTime) spawnShooter();
+
+  shooters = shooters.filter(s => s.t < 2);
+  for (const s of shooters) {
+    s.t += s.speed * dt;
+
+    const ex = s.x0 + Math.cos(s.angle) * s.len;
+    const ey = s.y0 + Math.sin(s.angle) * s.len;
+
+    let tailA, headA, tailT, headT;
+    if (s.t <= 1) {
+      // drawing phase: line grows from head to tail
+      headT  = s.t;
+      tailT  = Math.max(0, s.t - 0.45);
+      tailA  = headA = 1;
+    } else {
+      // fade phase
+      headT  = tailT = 1;
+      const f = s.t - 1;
+      headA  = tailA = 1 - f;
+    }
+
+    const hx0 = lerp(s.x0, ex, tailT);
+    const hy0 = lerp(s.y0, ey, tailT);
+    const hx1 = lerp(s.x0, ex, headT);
+    const hy1 = lerp(s.y0, ey, headT);
+
+    if (Math.abs(hx1 - hx0) < 0.5 && Math.abs(hy1 - hy0) < 0.5) continue;
+
+    const sg = ctx.createLinearGradient(hx0, hy0, hx1, hy1);
+    sg.addColorStop(0, `hsla(${s.hue},60%,95%,0)`);
+    sg.addColorStop(1, `hsla(${s.hue},80%,98%,${tailA})`);
+
+    ctx.save();
+    ctx.globalAlpha = headA;
+    ctx.strokeStyle = sg;
+    ctx.lineWidth   = 1.8;
+    ctx.shadowBlur  = 12;
+    ctx.shadowColor = `hsl(${s.hue},80%,90%)`;
+    ctx.lineCap     = "round";
+    ctx.beginPath();
+    ctx.moveTo(hx0, hy0);
+    ctx.lineTo(hx1, hy1);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── constellation ─────────────────────────────────────
+  if (constellation) {
+    // Fade after 4s once Shift is released
+    if (!shiftHeld) {
+      const age = now - constellation.startedAt;
+      const heldUntil = constellation.heldUntil ??
+                        (constellation.heldUntil = now);
+      const sinceLet  = now - heldUntil;
+      constellation.alpha = Math.max(0, 1 - sinceLet / 4000);
+    } else {
+      constellation.heldUntil = undefined;
+    }
+
+    if (constellation.alpha <= 0) {
+      constellation = null;
+    } else {
+      ctx.save();
+      ctx.globalAlpha  = constellation.alpha * 0.65;
+      ctx.strokeStyle  = "#fbbf24";
+      ctx.lineWidth    = 0.8;
+      ctx.shadowBlur   = 8;
+      ctx.shadowColor  = "#fbbf24";
+      ctx.setLineDash([4, 6]);
+      for (const l of constellation.lines) {
+        ctx.beginPath();
+        ctx.moveTo(l.x1, l.y1);
+        ctx.lineTo(l.x2, l.y2);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      ctx.font          = "13px serif";
+      ctx.fillStyle     = "#fbbf24";
+      ctx.shadowBlur    = 6;
+      ctx.textAlign     = "center";
+      ctx.textBaseline  = "middle";
+      ctx.globalAlpha   = constellation.alpha * 0.45;
+      for (const g of constellation.glyphs) {
+        ctx.fillText(g.ch, g.x, g.y);
+      }
+      ctx.restore();
+    }
+  }
+
+  requestAnimationFrame(draw);
+}
+
+// ── buttons ───────────────────────────────────────────────
+document.getElementById("btn-add").addEventListener("click", () => {
+  const newStar = makeStar({
+    z   : rand(80, 200),
+    hue : randI(270, 340),
+    sat : 85,
+    baseR: rand(1.4, 2.4),
+    nova: true,
+  });
+  stars.push(newStar);
+  // Force project so comet has a destination
+  newStar.sx = CX + rand(-200, 200);
+  newStar.sy = CY + rand(-160, 160);
+  spawnComet(newStar);
+});
+
+document.getElementById("btn-search").addEventListener("click", () => {
+  spawnCone();
+});
+
+document.getElementById("btn-shoot").addEventListener("click", () => {
+  spawnShooter();
+  nextShootTime = performance.now() + rand(8000, 15000);
+});
+
+document.getElementById("btn-nebula").addEventListener("click", () => {
+  rebuildNebula();
+  // flash the nebulae by momentarily boosting alpha
+  for (const n of nebulae) n.a = Math.min(0.12, n.a * 2.5);
+  setTimeout(() => { for (const n of nebulae) n.a *= 0.4; }, 800);
+});
+
+// Drag to "throw" parallax target
+let dragging = false;
+canvas.addEventListener("mousedown", () => { dragging = true; });
+window.addEventListener("mouseup",   () => { dragging = false; });
+
+// ── boot ──────────────────────────────────────────────────
+resize();
+initStars();
+
+// Dim the hint after 5s
+setTimeout(() => {
+  document.getElementById("hint").style.opacity = "0";
+}, 5000);
+
+// Auto-shoot first star in 2s
+setTimeout(() => spawnShooter(), 2000);
+
+requestAnimationFrame(t => { lastT = t; requestAnimationFrame(draw); });
+</script>
+</body>
+</html>
