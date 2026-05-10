@@ -1,2167 +1,505 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Vectro — Search millions of AI embeddings in milliseconds</title>
-<meta name="description" content="Vectro shrinks AI fingerprints up to 13× while keeping search results just as accurate. Drop-in adapters for LangChain, LlamaIndex, Haystack, and DSPy." />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Vectro</title>
 <style>
-  /* ─────────────────────── design tokens ─────────────────────── */
   :root {
-    --bg:        #06070d;
-    --bg-2:      #0b0d18;
-    --panel:     #11142022;
-    --panel-2:   #0f1320;
-    --line:      #1d2235;
-    --line-2:    #2a3050;
-    --text:      #e9ecf6;
-    --text-dim:  #98a0b6;
-    --text-mute: #5e6478;
-
-    --accent:    #c084fc;     /* purple */
-    --accent-2:  #22d3ee;     /* cyan   */
-    --accent-3:  #4ade80;     /* green  */
-    --accent-4:  #facc15;     /* gold   */
-    --accent-5:  #f472b6;     /* pink   */
-    --accent-6:  #fb923c;     /* orange */
-
-    --grad: linear-gradient(135deg,#c084fc 0%,#22d3ee 60%,#4ade80 100%);
-    --grad-warm: linear-gradient(135deg,#facc15 0%,#fb923c 60%,#f472b6 100%);
-    --shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 30px 60px -30px rgba(0,0,0,0.7);
-
-    --mono: ui-monospace,"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
-    --font: -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",system-ui,sans-serif;
-
-    --tooltip-bg: #0a0c14;
-    --tooltip-line: #2a3050;
-
-    --ease: cubic-bezier(.2,.8,.2,1);
+    --bg: #000008;
+    --ink: #d8def0;
+    --ink-dim: #6f7894;
+    --ink-faint: #2a3148;
+    --konjo: #7c3aed;
+    --blue: #3b82f6;
+    --aurora: #10b981;
+    --glass: rgba(14, 18, 36, 0.55);
+    --glass-edge: rgba(124, 58, 237, 0.18);
   }
 
-  *, *::before, *::after { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
-  body {
-    font-family: var(--font);
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0;
+    height: 100%; width: 100%;
     background: var(--bg);
-    color: var(--text);
-    -webkit-font-smoothing: antialiased;
-    line-height: 1.55;
-    overflow-x: hidden;
-  }
-
-  /* ambient particles canvas behind hero */
-  #particles {
-    position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  }
-
-  /* radial wash + grid */
-  body::before {
-    content: ""; position: fixed; inset: -20% -20% auto -20%;
-    height: 110vh; pointer-events: none; z-index: 0;
-    background:
-      radial-gradient(60% 40% at 18% 5%, rgba(192,132,252,0.18), transparent 60%),
-      radial-gradient(50% 35% at 82% 0%, rgba(34,211,238,0.13), transparent 60%),
-      radial-gradient(40% 30% at 50% 80%, rgba(74,222,128,0.10), transparent 60%);
-  }
-  .grid-bg {
-    position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0.32;
-    background-image:
-      linear-gradient(to right, rgba(255,255,255,0.025) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255,255,255,0.025) 1px, transparent 1px);
-    background-size: 32px 32px;
-    mask-image: linear-gradient(to bottom, black 0%, transparent 90%);
-  }
-
-  /* everything content sits above the canvas */
-  nav, main, footer { position: relative; z-index: 2; }
-
-  .container { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
-
-  /* ───────────────────────── nav ───────────────────────── */
-  nav {
-    position: sticky; top: 0; z-index: 100;
-    background: rgba(7,8,13,0.75);
-    backdrop-filter: blur(14px);
-    border-bottom: 1px solid var(--line);
-  }
-  nav .row {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 0;
-  }
-  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800;
-          letter-spacing: 0.16em; font-size: 13px; }
-  .logo-mark {
-    width: 28px; height: 28px; border-radius: 7px;
-    background: var(--grad);
-    display: grid; place-items: center;
-    color: #0a0b14; font-weight: 900; font-size: 14px;
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 10px 30px -10px rgba(192,132,252,0.55);
-  }
-  .links { display: flex; gap: 26px; font-size: 13px; color: var(--text-dim); }
-  .links a { color: inherit; text-decoration: none; transition: color .15s; }
-  .links a:hover { color: var(--text); }
-  .badge-version {
-    font-family: var(--mono); font-size: 11px; color: var(--accent-2);
-    border: 1px solid rgba(34,211,238,0.3);
-    border-radius: 999px; padding: 4px 10px;
-  }
-
-  /* ───────────────────────── hero ───────────────────────── */
-  .hero {
-    padding: 96px 0 60px;
-    position: relative;
-    text-align: left;
-  }
-  .hero h1 {
-    font-size: clamp(64px, 10vw, 144px);
-    line-height: 0.92;
-    margin: 0 0 18px;
-    letter-spacing: -0.05em;
-    font-weight: 900;
-    background: var(--grad);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    filter: drop-shadow(0 0 28px rgba(192,132,252,0.25));
-    animation: glow-cycle 6s ease-in-out infinite;
-  }
-  @keyframes glow-cycle {
-    0%,100% { filter: drop-shadow(0 0 24px rgba(192,132,252,0.25)); }
-    50%     { filter: drop-shadow(0 0 36px rgba(34,211,238,0.35)); }
-  }
-  .tagline {
-    font-size: clamp(20px, 2.4vw, 32px);
-    line-height: 1.25;
-    color: var(--text);
-    font-weight: 500;
-    max-width: 880px;
-    margin: 0 0 8px;
-    letter-spacing: -0.01em;
-  }
-  .tagline .pop {
-    background: var(--grad-warm);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    font-weight: 700;
-  }
-  .sub {
-    font-size: 17px; color: var(--text-dim);
-    max-width: 720px; margin: 16px 0 32px;
-  }
-  .eyebrow {
-    display: inline-flex; align-items: center; gap: 8px;
-    font-family: var(--mono); font-size: 12px; letter-spacing: 0.18em;
-    color: var(--accent); text-transform: uppercase;
-    border: 1px solid rgba(192,132,252,0.3);
-    border-radius: 999px; padding: 5px 12px;
-    background: rgba(192,132,252,0.06);
-    margin-bottom: 24px;
-  }
-  .eyebrow .dot {
-    width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
-    box-shadow: 0 0 0 4px rgba(192,132,252,0.18);
-    animation: pulse 1.6s ease-in-out infinite;
-  }
-  @keyframes pulse {
-    0%,100% { opacity: 1; transform: scale(1); }
-    50%     { opacity: 0.55; transform: scale(1.45); }
-  }
-
-  .cta-row { display: flex; gap: 14px; flex-wrap: wrap; }
-  .btn {
-    display: inline-flex; align-items: center; gap: 10px;
-    padding: 14px 22px; border-radius: 11px;
-    font-weight: 600; font-size: 14px; letter-spacing: 0.005em;
-    border: 1px solid var(--line); background: var(--panel-2);
-    color: var(--text); text-decoration: none;
-    transition: transform .2s var(--ease), border-color .2s, background .2s;
-    cursor: pointer;
-  }
-  .btn:hover { transform: translateY(-2px); border-color: rgba(192,132,252,0.5); }
-  .btn.primary {
-    border: 1px solid transparent;
-    background: var(--grad);
-    color: #0a0b14;
-    font-weight: 800;
-    box-shadow: 0 16px 40px -16px rgba(192,132,252,0.6);
-  }
-  .btn.primary:hover { transform: translateY(-2px) scale(1.01); }
-
-  /* hero stat strip */
-  .hero-stats {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px;
-    margin-top: 64px; padding-top: 36px;
-    border-top: 1px solid var(--line);
-  }
-  @media (max-width: 720px) { .hero-stats { grid-template-columns: repeat(2, 1fr); } }
-  .stat .num {
-    font-family: var(--mono); font-size: clamp(26px, 3.4vw, 42px);
-    font-weight: 800; letter-spacing: -0.02em;
-    background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  .stat.featured .num {
-    background: var(--grad-warm);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-    text-shadow: 0 0 28px rgba(250,204,21,0.18);
-    animation: featured-pulse 3.5s ease-in-out infinite;
-  }
-  @keyframes featured-pulse {
-    0%,100% { filter: drop-shadow(0 0 0 rgba(250,204,21,0)); }
-    50%     { filter: drop-shadow(0 0 14px rgba(250,204,21,0.45)); }
-  }
-  .stat .lbl {
-    font-size: 12px; color: var(--text-mute); letter-spacing: 0.12em;
-    text-transform: uppercase; margin-top: 4px;
-  }
-
-  /* ─────────────────── section header ─────────────────── */
-  section { padding: 96px 0; position: relative; }
-  .section-eyebrow {
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.22em;
-    color: var(--accent-2); text-transform: uppercase; margin: 0 0 12px;
-  }
-  .section-title {
-    font-size: clamp(28px, 3vw, 44px);
-    letter-spacing: -0.02em; font-weight: 800;
-    margin: 0 0 16px; line-height: 1.1;
-  }
-  .section-lede {
-    color: var(--text-dim); font-size: 17px; max-width: 720px;
-    margin: 0 0 44px;
-  }
-
-  /* ─────────────────── what / explainer ─────────────────── */
-  .explain {
-    display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px; align-items: center;
-  }
-  @media (max-width: 920px) { .explain { grid-template-columns: 1fr; } }
-  .explain p { color: var(--text-dim); font-size: 16px; }
-  .explain p strong { color: var(--text); }
-  .pipeline-svg { width: 100%; height: auto; }
-
-  /* ─────────────────── feature cards ─────────────────── */
-  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-  @media (max-width: 920px) { .features { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 600px) { .features { grid-template-columns: 1fr; } }
-  .card {
-    border: 1px solid var(--line);
-    background: linear-gradient(180deg, var(--panel-2) 0%, #0c0f1c 100%);
-    border-radius: 16px; padding: 26px;
-    box-shadow: var(--shadow);
-    transition: transform .25s var(--ease), border-color .2s;
-  }
-  .card:hover { transform: translateY(-3px); border-color: rgba(192,132,252,0.32); }
-  .card .icon {
-    width: 44px; height: 44px; border-radius: 11px;
-    display: grid; place-items: center;
-    background: rgba(192,132,252,0.1);
-    border: 1px solid rgba(192,132,252,0.18);
-    margin-bottom: 16px;
-  }
-  .card h3 { margin: 0 0 6px; font-size: 17px; letter-spacing: -0.005em; }
-  .card p { margin: 0; color: var(--text-dim); font-size: 14px; line-height: 1.55; }
-  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
-  .chip {
-    font-family: var(--mono); font-size: 11px;
-    background: rgba(34,211,238,0.06);
-    border: 1px solid rgba(34,211,238,0.18);
-    color: var(--accent-2);
-    border-radius: 6px; padding: 3px 8px;
-  }
-  .chip.m { color: var(--accent); border-color: rgba(192,132,252,0.22); background: rgba(192,132,252,0.06); }
-  .chip.g { color: var(--accent-3); border-color: rgba(74,222,128,0.22); background: rgba(74,222,128,0.06); }
-  .chip.y { color: var(--accent-4); border-color: rgba(250,204,21,0.22); background: rgba(250,204,21,0.06); }
-
-  /* ─────────────────── why vectro / use cases ─────────────────── */
-  .use-cases { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
-  @media (max-width: 920px) { .use-cases { grid-template-columns: 1fr; } }
-  .uc {
-    border: 1px solid var(--line);
-    background: linear-gradient(180deg, var(--panel-2), #0a0c16);
-    border-radius: 18px;
-    padding: 28px;
-    position: relative;
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
+                 system-ui, sans-serif;
     overflow: hidden;
-    transition: transform .25s var(--ease);
   }
-  .uc:hover { transform: translateY(-4px); }
-  .uc::before {
-    content: ""; position: absolute; inset: 0;
-    background: radial-gradient(80% 40% at 0% 0%, var(--uc-glow, rgba(192,132,252,0.12)), transparent 60%);
+
+  body {
+    background:
+      radial-gradient(ellipse at 50% 50%, rgba(124, 58, 237, 0.10), transparent 60%),
+      radial-gradient(ellipse at 18% 22%, rgba(59, 130, 246, 0.08), transparent 55%),
+      radial-gradient(ellipse at 82% 78%, rgba(16, 185, 129, 0.07), transparent 55%),
+      var(--bg);
+  }
+
+  @keyframes twinkle {
+    0%, 100% { opacity: 0.35; }
+    50%      { opacity: 1.0; }
+  }
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes input-glow {
+    0%, 100% { box-shadow: 0 0 0 1px var(--glass-edge), 0 0 24px rgba(124, 58, 237, 0.10); }
+    50%      { box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.45), 0 0 32px rgba(124, 58, 237, 0.22); }
+  }
+  @keyframes star-drop {
+    from { opacity: 0; transform: scale(0.4); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+
+  #stars {
+    position: fixed; inset: 0;
     pointer-events: none;
-  }
-  .uc h3 { margin: 14px 0 6px; font-size: 19px; letter-spacing: -0.01em; }
-  .uc p { color: var(--text-dim); font-size: 14.5px; margin: 0; }
-  .uc .ucnum {
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em;
-    color: var(--accent-2); text-transform: uppercase;
-    display: block; margin-bottom: 6px;
-  }
-  .uc-icon { width: 56px; height: 56px; }
-  .uc-saved {
-    margin-top: 18px; padding-top: 14px;
-    border-top: 1px dashed var(--line-2);
-    color: var(--accent-3); font-family: var(--mono); font-size: 12.5px;
+    z-index: 0;
   }
 
-  /* ─────────────────── compression calculator ─────────────────── */
-  .calc {
-    display: grid; grid-template-columns: 380px 1fr; gap: 36px;
-    background: linear-gradient(180deg, var(--panel-2) 0%, #0c0f1c 100%);
-    border: 1px solid var(--line);
-    border-radius: 20px;
-    padding: 36px;
-    box-shadow: var(--shadow);
-  }
-  @media (max-width: 880px) { .calc { grid-template-columns: 1fr; } }
-
-  .control { margin-bottom: 22px; }
-  .control label {
-    display: flex; justify-content: space-between; align-items: baseline;
-    font-size: 13px; color: var(--text-dim); margin-bottom: 10px;
-  }
-  .control label .v {
-    font-family: var(--mono); font-size: 14px; color: var(--accent-2);
-    background: rgba(34,211,238,0.05);
-    padding: 1px 8px; border-radius: 5px;
-  }
-  input[type="range"] {
-    -webkit-appearance: none; appearance: none;
-    width: 100%; height: 6px; border-radius: 999px;
-    background: var(--line); outline: none;
-  }
-  input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none; appearance: none;
-    width: 18px; height: 18px; border-radius: 50%;
-    background: var(--grad); cursor: pointer;
-    border: 2px solid #0a0c12;
-    box-shadow: 0 0 0 1px rgba(192,132,252,0.6), 0 8px 24px -8px rgba(192,132,252,0.7);
-  }
-  input[type="range"]::-moz-range-thumb {
-    width: 18px; height: 18px; border-radius: 50%;
-    background: linear-gradient(135deg,#c084fc,#22d3ee);
-    cursor: pointer; border: 2px solid #0a0c12;
-  }
-  .preset-row { display: flex; flex-wrap: wrap; gap: 6px; }
-  .preset {
-    font-family: var(--mono); font-size: 11px;
-    background: var(--bg-2); border: 1px solid var(--line);
-    color: var(--text-dim); padding: 5px 9px; border-radius: 6px;
-    cursor: pointer; transition: all .12s var(--ease);
-  }
-  .preset:hover { border-color: rgba(34,211,238,0.4); color: var(--text); }
-  .preset.active {
-    background: rgba(34,211,238,0.08); border-color: rgba(34,211,238,0.45);
-    color: var(--accent-2);
-  }
-
-  .bars { display: flex; flex-direction: column; gap: 14px; }
-  .bar-row {
-    display: grid; grid-template-columns: 110px 1fr 130px; align-items: center; gap: 14px;
-  }
-  .bar-label { font-family: var(--mono); font-size: 13px; }
-  .bar-label .pname { color: var(--text); display: block; }
-  .bar-label .palg { color: var(--text-mute); font-size: 11px; }
-  .bar-track {
-    position: relative; height: 30px;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid var(--line);
-    border-radius: 8px; overflow: hidden;
-  }
-  .bar-fill {
-    position: absolute; inset: 0 auto 0 0;
-    background: var(--grad);
-    border-radius: 8px;
-    box-shadow: 0 0 24px -4px rgba(192,132,252,0.55);
-  }
-  .bar-fill.alt-1 { background: linear-gradient(135deg,#22d3ee,#4ade80); }
-  .bar-fill.alt-2 { background: linear-gradient(135deg,#facc15,#fb923c); }
-  .bar-fill.alt-3 { background: linear-gradient(135deg,#c084fc,#f472b6); }
-  .bar-fill.alt-original { background: linear-gradient(135deg,#4b5563,#6b7280); }
-  .bar-text { font-family: var(--mono); font-size: 13px; text-align: right; color: var(--text); }
-  .bar-text .saved { color: var(--accent-3); font-size: 11px; display: block; }
-
-  .summary {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 22px;
-  }
-  .summary-cell {
-    border: 1px solid var(--line); border-radius: 11px; padding: 14px;
-    background: var(--bg-2);
-  }
-  .summary-cell .v {
-    font-family: var(--mono); font-weight: 800;
-    background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
-    font-size: 22px; letter-spacing: -0.01em;
-  }
-  .summary-cell .l { font-size: 11px; color: var(--text-mute); letter-spacing: 0.12em;
-                     text-transform: uppercase; margin-top: 4px; }
-
-  /* ─────────────────── live throughput counter ─────────────────── */
-  .speed-panel {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 22px;
-    margin-top: 24px;
-    border: 1px solid var(--line); border-radius: 14px;
-    padding: 22px;
-    background: linear-gradient(180deg, rgba(34,211,238,0.04), rgba(192,132,252,0.04));
-  }
-  @media (max-width: 600px) { .speed-panel { grid-template-columns: 1fr; } }
-  .speed-cell .label {
-    font-family: var(--mono); font-size: 11px; color: var(--text-mute);
-    text-transform: uppercase; letter-spacing: 0.16em;
-  }
-  .speed-cell .number {
-    font-family: var(--mono); font-size: 36px; font-weight: 800; letter-spacing: -0.01em;
-    color: var(--text); margin-top: 4px;
-    line-height: 1;
-  }
-  .speed-cell .number.glow {
-    background: var(--grad-warm); -webkit-background-clip: text; background-clip: text;
-    color: transparent;
-    filter: drop-shadow(0 0 18px rgba(250,204,21,0.45));
-  }
-  .speed-cell .unit { color: var(--text-dim); font-size: 13px; margin-left: 6px; }
-  .speed-cell .delta {
-    color: var(--accent-3); font-family: var(--mono); font-size: 12px; margin-top: 6px;
-  }
-
-  /* ─────────────────── platform toggle ─────────────────── */
-  .platforms {
-    display: inline-flex;
-    background: var(--bg-2); border: 1px solid var(--line);
-    border-radius: 10px; padding: 4px; gap: 4px;
-    margin: 0 0 22px;
-  }
-  .platforms button {
-    background: transparent; border: 0;
-    color: var(--text-dim);
-    font-family: var(--mono); font-size: 12px;
-    padding: 7px 14px; border-radius: 7px; cursor: pointer;
-    transition: all .15s var(--ease);
-  }
-  .platforms button:hover { color: var(--text); }
-  .platforms button.active {
-    background: rgba(192,132,252,0.14);
-    color: var(--accent);
-    box-shadow: inset 0 0 0 1px rgba(192,132,252,0.32);
-  }
-
-  /* ─────────────────── search demo panel ─────────────────── */
-  .search-panel {
-    border: 1px solid var(--line); border-radius: 18px; overflow: hidden;
-    background: linear-gradient(180deg, var(--panel-2) 0%, #0a0c14 100%);
-    box-shadow: var(--shadow);
-  }
-  .search-bar {
-    padding: 18px;
-    display: flex; gap: 10px; align-items: center;
-    border-bottom: 1px solid var(--line);
-  }
-  .search-bar svg { flex: 0 0 auto; opacity: 0.6; }
-  .search-bar input {
-    background: transparent; border: 0; outline: none;
-    flex: 1 1 auto; color: var(--text); font-size: 16px;
-    padding: 8px 4px;
-  }
-  .search-bar input::placeholder { color: var(--text-mute); }
-  .search-bar .go {
-    background: var(--grad);
-    color: #0a0b14; font-weight: 700;
-    border: 0; padding: 9px 16px; border-radius: 8px; cursor: pointer;
-    font-family: var(--font); font-size: 13px;
-    transition: transform .15s var(--ease);
-  }
-  .search-bar .go:hover { transform: translateY(-1px); }
-  .search-suggest { display: flex; gap: 6px; padding: 0 18px 14px; flex-wrap: wrap; }
-  .search-suggest button {
-    font-family: var(--mono); font-size: 11px;
-    color: var(--text-dim); background: var(--bg-2);
-    border: 1px solid var(--line); border-radius: 6px;
-    padding: 5px 9px; cursor: pointer;
-    transition: all .12s var(--ease);
-  }
-  .search-suggest button:hover { color: var(--text); border-color: rgba(34,211,238,0.4); }
-
-  .search-stage {
-    display: grid; grid-template-columns: 1.05fr 1fr; gap: 0;
-  }
-  @media (max-width: 880px) { .search-stage { grid-template-columns: 1fr; } }
-  .search-stage > div { padding: 22px; }
-  .search-stage .map { border-right: 1px solid var(--line); }
-  @media (max-width: 880px) { .search-stage .map { border-right: 0; border-bottom: 1px solid var(--line); } }
-
-  .map-svg { width: 100%; aspect-ratio: 1; max-height: 420px; }
-  .map-dot { transition: r .25s var(--ease), filter .25s; }
-  .map-dot.match { filter: drop-shadow(0 0 8px var(--accent-2)); }
-  .map-dot.hover { r: 8; }
-
-  .results-list { display: flex; flex-direction: column; gap: 8px; }
-  .result-row {
-    display: grid; grid-template-columns: 28px 1fr 80px; gap: 10px; align-items: center;
-    padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
-    background: var(--bg-2);
-    opacity: 0; transform: translateX(8px);
-    transition: opacity .35s var(--ease), transform .35s var(--ease), border-color .15s;
-  }
-  .result-row.in { opacity: 1; transform: translateX(0); }
-  .result-row .rank { color: var(--text-mute); font-family: var(--mono); font-size: 13px; }
-  .result-row .text { color: var(--text); font-size: 14px; line-height: 1.35; }
-  .result-row .score {
-    font-family: var(--mono); font-size: 12px; color: var(--accent-2);
-    text-align: right;
-  }
-
-  /* ─────────────────── recall scatter ─────────────────── */
-  .scatter-wrap {
-    background: linear-gradient(180deg, var(--panel-2) 0%, #0a0c14 100%);
-    border: 1px solid var(--line); border-radius: 18px;
-    padding: 28px; box-shadow: var(--shadow);
-  }
-  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; }
-  .legend-item { display: flex; align-items: center; gap: 8px;
-                 font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
-  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
-
-  .scatter-dot { transition: r .25s var(--ease), filter .25s; cursor: pointer;
-                 transform-origin: center; transform-box: fill-box; }
-  .scatter-dot.appear { animation: pop-in 0.6s var(--ease) backwards; }
-  @keyframes pop-in {
-    0%   { opacity: 0; transform: scale(0.2); }
-    70%  { opacity: 1; transform: scale(1.18); }
-    100% { opacity: 1; transform: scale(1); }
-  }
-  .scatter-dot:hover { r: 12; filter: brightness(1.3); }
-
-  /* ─────────────────── tooltip ─────────────────── */
-  .tip {
+  /* Brand corner */
+  .brand {
     position: fixed;
-    background: var(--tooltip-bg);
-    border: 1px solid var(--tooltip-line);
-    color: var(--text);
-    padding: 8px 11px; border-radius: 8px;
-    font-size: 12.5px; line-height: 1.45;
-    max-width: 260px;
-    pointer-events: none;
-    box-shadow: 0 18px 40px -10px rgba(0,0,0,0.6);
-    opacity: 0; transform: translateY(4px);
-    transition: opacity .12s var(--ease), transform .12s var(--ease);
-    z-index: 9999;
+    top: 28px; left: 36px;
+    z-index: 5;
+    letter-spacing: 0.08em;
+    animation: fade-in 0.8s ease 0.1s both;
   }
-  .tip.show { opacity: 1; transform: translateY(0); }
-  .tip strong { color: var(--accent-2); display: block; margin-bottom: 2px; font-size: 11.5px; letter-spacing: 0.04em; }
-  [data-tip] { cursor: help; }
-  [data-tip] {
-    text-decoration: underline dotted rgba(192,132,252,0.45); text-underline-offset: 3px;
-  }
-
-  /* ─────────────────── savings calculator ─────────────────── */
-  .save-panel {
-    display: grid; grid-template-columns: 380px 1fr; gap: 28px;
-    border: 1px solid var(--line); border-radius: 18px;
-    padding: 30px;
-    background: linear-gradient(180deg, rgba(74,222,128,0.04), var(--panel-2));
-  }
-  @media (max-width: 920px) { .save-panel { grid-template-columns: 1fr; } }
-  .save-cells {
-    display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
-  }
-  .save-cell {
-    border: 1px solid var(--line);
-    background: var(--bg-2);
-    border-radius: 12px; padding: 16px;
-  }
-  .save-cell .v {
-    font-family: var(--mono); font-size: 22px; font-weight: 800; letter-spacing: -0.01em;
-    background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  .save-cell.warm .v { background: var(--grad-warm);
-                       -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .save-cell .l { color: var(--text-mute); font-size: 11px; letter-spacing: 0.12em;
-                  text-transform: uppercase; margin-top: 4px; }
-  .save-cell .sub { color: var(--text-dim); font-size: 12px; margin-top: 6px; line-height: 1.4; }
-
-  /* ─────────────────── code grid ─────────────────── */
-  .code-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
-  @media (max-width: 880px) { .code-grid { grid-template-columns: 1fr; } }
-  pre.code {
-    margin: 0; background: #07090f;
-    border: 1px solid var(--line); border-radius: 12px;
-    padding: 22px; overflow-x: auto;
-    font-family: var(--mono); font-size: 13px; line-height: 1.65;
-    color: #d3d8ea;
-  }
-  pre.code .cmt { color: #5e6478; font-style: italic; }
-  pre.code .kw  { color: #f472b6; }
-  pre.code .str { color: #4ade80; }
-  pre.code .fn  { color: #22d3ee; }
-  pre.code .var { color: #c084fc; }
-  pre.code .num { color: #facc15; }
-
-  .code-card .head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-  .code-card .head .name { font-weight: 700; font-size: 14px; letter-spacing: -0.005em; }
-  .code-card .head .tag {
-    font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em;
-    color: var(--accent); text-transform: uppercase;
-    border: 1px solid rgba(192,132,252,0.3); border-radius: 4px; padding: 2px 7px;
-  }
-
-  /* ─────────────────── footer ─────────────────── */
-  footer {
-    border-top: 1px solid var(--line);
-    padding: 36px 0 60px; margin-top: 80px;
-    color: var(--text-mute); font-size: 13px;
-  }
-  footer .row { display: flex; justify-content: space-between; align-items: center;
-                flex-wrap: wrap; gap: 12px; }
-  footer a { color: var(--text-dim); text-decoration: none; }
-  footer a:hover { color: var(--text); }
-  .konjo {
-    font-family: var(--mono); letter-spacing: 0.1em;
-    background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-
-  ::selection { background: rgba(192,132,252,0.35); color: white; }
-
-  /* ─────────────────────── live banner ─────────────────────── */
-  .live-banner {
-    position: relative; z-index: 5;
-    border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, rgba(244,114,182,0.06), transparent);
-    font-size: 13px;
-  }
-  .live-banner.online {
-    background: linear-gradient(180deg, rgba(74,222,128,0.10), transparent);
-    border-bottom-color: rgba(74,222,128,0.18);
-  }
-  .live-row {
-    display: flex; align-items: center; gap: 14px;
-    padding: 11px 0; flex-wrap: wrap;
-  }
-  .live-dot {
-    width: 9px; height: 9px; border-radius: 50%;
-    background: var(--accent-5);
-    box-shadow: 0 0 0 4px rgba(244,114,182,0.18);
-    animation: pulse 1.6s ease-in-out infinite;
-    flex: 0 0 auto;
-  }
-  .online .live-dot {
-    background: var(--accent-3);
-    box-shadow: 0 0 0 4px rgba(74,222,128,0.22);
-  }
-  .live-banner strong { color: var(--text); font-weight: 700; letter-spacing: -0.005em; }
-  .live-banner.online strong { color: var(--accent-3); }
-  #live-msg { color: var(--text-dim); }
-  .live-banner code {
-    font-family: var(--mono); font-size: 12.5px;
-    background: var(--bg-2); border: 1px solid var(--line);
-    border-radius: 5px; padding: 2px 7px; color: var(--text);
-  }
-  .live-hw {
-    margin-left: auto;
-    font-family: var(--mono); font-size: 12px;
-    color: var(--accent-2);
-  }
-
-  /* small "LIVE" pill that gets stamped on real-result panels */
-  .live-pill {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em;
+  .brand .mark {
+    font-size: 12px;
+    color: var(--ink-dim);
     text-transform: uppercase;
-    color: var(--accent-3);
-    border: 1px solid rgba(74,222,128,0.4);
-    background: rgba(74,222,128,0.08);
-    border-radius: 999px; padding: 3px 9px;
-    vertical-align: middle;
-    margin-left: 8px;
+    letter-spacing: 0.32em;
   }
-  .live-pill::before {
-    content: ""; width: 6px; height: 6px; border-radius: 50%;
-    background: var(--accent-3);
-    box-shadow: 0 0 0 3px rgba(74,222,128,0.18);
-    animation: pulse 1.6s ease-in-out infinite;
-  }
-  .live-pill.measured::after {
-    content: " · measured here"; color: var(--text-mute);
-    letter-spacing: 0.04em; text-transform: none;
+  .brand .name {
+    font-size: 18px;
+    color: var(--ink);
+    margin-top: 4px;
+    font-weight: 500;
   }
 
-  /* spinner shown while a real call is in-flight */
-  .api-spin {
-    display: inline-block; width: 11px; height: 11px;
-    border: 2px solid rgba(192,132,252,0.3);
-    border-top-color: var(--accent);
-    border-radius: 50%; animation: spin .8s linear infinite;
-    margin-left: 8px; vertical-align: -1px;
+  .nav {
+    position: fixed;
+    top: 28px; right: 36px;
+    z-index: 5;
+    display: flex; gap: 22px;
+    animation: fade-in 0.8s ease 0.2s both;
   }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .nav a {
+    color: var(--ink-dim);
+    text-decoration: none;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    transition: 0.18s ease;
+  }
+  .nav a:hover { color: var(--konjo); }
+
+  /* Centerpiece */
+  .stage {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 56px;
+    pointer-events: none;
+    padding: 0 32px;
+  }
+  .stage > * { pointer-events: auto; }
+
+  .lede {
+    text-align: center;
+    animation: fade-in 1s ease 0.25s both;
+  }
+  .lede h1 {
+    font-size: clamp(36px, 6vw, 64px);
+    font-weight: 300;
+    letter-spacing: -0.02em;
+    margin: 0;
+    background: linear-gradient(180deg, #f5f7ff 0%, #a3aed0 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    line-height: 1.05;
+  }
+  .lede .tag {
+    color: var(--ink-dim);
+    font-size: 13px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    margin-top: 14px;
+  }
+
+  /* Search input */
+  .search-wrap {
+    position: relative;
+    width: min(640px, 90vw);
+    animation: fade-in 1s ease 0.4s both, input-glow 4s ease-in-out 1.5s infinite;
+    border-radius: 999px;
+  }
+  .search {
+    width: 100%;
+    height: 60px;
+    padding: 0 28px 0 56px;
+    background: var(--glass);
+    border: 1px solid var(--glass-edge);
+    border-radius: 999px;
+    color: var(--ink);
+    font-size: 16px;
+    font-family: inherit;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    outline: none;
+    transition: 0.18s ease;
+    letter-spacing: 0.02em;
+  }
+  .search::placeholder { color: var(--ink-dim); letter-spacing: 0.04em; }
+  .search:focus {
+    border-color: var(--konjo);
+  }
+  .search-icon {
+    position: absolute;
+    left: 22px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--ink-dim);
+    pointer-events: none;
+    font-size: 16px;
+  }
+  .search-hint {
+    position: absolute;
+    right: 22px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--ink-faint);
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    pointer-events: none;
+  }
+
+  /* Constellation under input */
+  .constellation {
+    position: relative;
+    width: min(640px, 90vw);
+    height: 96px;
+    animation: fade-in 1.1s ease 0.55s both;
+  }
+  .constellation svg {
+    width: 100%; height: 100%;
+    overflow: visible;
+  }
+  .count-pill {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    padding: 6px 16px;
+    background: var(--glass);
+    border: 1px solid var(--glass-edge);
+    border-radius: 999px;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    color: var(--ink-dim);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .count-pill .n {
+    color: var(--ink);
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    margin-right: 6px;
+  }
+
+  /* Footer */
+  .footer {
+    position: fixed;
+    bottom: 28px; left: 0; right: 0;
+    display: flex;
+    justify-content: center;
+    z-index: 5;
+    animation: fade-in 1s ease 0.7s both;
+  }
+  .footer .row {
+    display: flex;
+    gap: 32px;
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+    align-items: center;
+  }
+  .footer .row .dot {
+    width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--ink-faint);
+  }
+
+  /* Quiet status indicator near footer */
+  .pulse-dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--aurora);
+    margin-right: 8px;
+    box-shadow: 0 0 8px var(--aurora);
+    animation: input-glow 2s ease-in-out infinite;
+  }
 </style>
 </head>
 <body>
 
-<canvas id="particles" aria-hidden="true"></canvas>
-<div class="grid-bg" aria-hidden="true"></div>
+<svg id="stars" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
 
-<!-- ============== NAV ============== -->
-<nav>
-  <div class="container row">
-    <div class="logo">
-      <div class="logo-mark">V</div>
-      <span>VECTRO</span>
-      <span class="badge-version">v5.0.0</span>
-    </div>
-    <div class="links">
-      <a href="#what">What</a>
-      <a href="#why">Why</a>
-      <a href="#calc">Calculator</a>
-      <a href="#search">Try a search</a>
-      <a href="#code">Code</a>
-    </div>
-  </div>
+<div class="brand">
+  <div class="mark">Konjo · Vectro</div>
+  <div class="name">v8 · Star Field</div>
+</div>
+
+<nav class="nav">
+  <a href="viz.html">Visualize →</a>
+  <a href="https://github.com/konjoai/vectro" target="_blank" rel="noopener">GitHub</a>
+  <a href="../PAPER.md" target="_blank">Paper</a>
 </nav>
 
-<!-- ============== LIVE BACKEND BANNER ============== -->
-<div id="live-banner" class="live-banner offline" role="status" aria-live="polite">
-  <div class="container live-row">
-    <span class="live-dot"></span>
-    <strong id="live-state">Demo backend offline</strong>
-    <span id="live-msg">
-      Run <code>python demo/server.py</code> to make every number on this page live —
-      measured by the real Vectro library on this machine.
-    </span>
-    <span id="live-hw" class="live-hw"></span>
+<main class="stage">
+  <div class="lede">
+    <h1>Search a galaxy of vectors.</h1>
+    <div class="tag">Embedding compression · approximate kNN · pure code</div>
+  </div>
+
+  <div class="search-wrap">
+    <span class="search-icon">⌕</span>
+    <input
+      class="search"
+      id="q"
+      type="text"
+      placeholder="Type anything — every keystroke fires a vector search"
+      autocomplete="off"
+      spellcheck="false"
+    />
+    <span class="search-hint" id="hint">live</span>
+  </div>
+
+  <div class="constellation" aria-hidden="true">
+    <svg id="cons" viewBox="0 0 640 96" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="count-pill"><span class="n" id="count-n">0</span>matches in the field</div>
+  </div>
+</main>
+
+<div class="footer">
+  <div class="row">
+    <span><span class="pulse-dot"></span><span id="status">offline · self-hosted demo</span></span>
+    <span class="dot"></span>
+    <span>2026 · MIT</span>
+    <span class="dot"></span>
+    <span>Konjo AI</span>
   </div>
 </div>
 
-<main>
-
-<!-- ============== HERO ============== -->
-<header class="hero">
-  <div class="container">
-    <span class="eyebrow"><span class="dot"></span>open source · MIT · 1064 tests</span>
-    <h1>Vectro.</h1>
-    <p class="tagline">
-      Search millions of <span data-tip="ai-fingerprints">AI fingerprints</span>
-      in milliseconds — <span class="pop">13× smaller, just as accurate</span>.
-    </p>
-    <p class="sub">
-      Vectro shrinks the giant number-arrays that AI models use to represent meaning, so
-      you can store more, search faster, and pay less — without losing the right answers.
-      Drop it into LangChain, LlamaIndex, Haystack, or DSPy in one line.
-    </p>
-    <div class="cta-row">
-      <a href="#calc"   class="btn primary">▶  Shrink some vectors</a>
-      <a href="#search" class="btn">Try a search →</a>
-    </div>
-
-    <div class="hero-stats">
-      <div class="stat featured">
-        <div class="num" id="hero-tput">22M</div>
-        <div class="lbl" data-tip="searches-per-sec">Vectors compressed / second</div>
-      </div>
-      <div class="stat">
-        <div class="num">13×</div>
-        <div class="lbl" data-tip="compression-x">Smaller storage</div>
-      </div>
-      <div class="stat">
-        <div class="num">99.6%</div>
-        <div class="lbl" data-tip="accuracy">Accuracy preserved</div>
-      </div>
-      <div class="stat">
-        <div class="num">4</div>
-        <div class="lbl" data-tip="frameworks">RAG frameworks</div>
-      </div>
-    </div>
-  </div>
-</header>
-
-<!-- ============== WHAT IS VECTRO ============== -->
-<section id="what">
-  <div class="container">
-    <div class="explain">
-      <div>
-        <p class="section-eyebrow">What is Vectro?</p>
-        <h2 class="section-title">Big AI memory, made small.</h2>
-        <p>
-          Modern AI turns every sentence, image, or document into a long list of numbers —
-          an <strong data-tip="ai-fingerprints">AI fingerprint</strong> that captures what
-          it <em>means</em>, not just the words.
-        </p>
-        <p>
-          A million of these fingerprints from
-          <span data-tip="openai">OpenAI's text-embedding-3-small</span> takes about
-          <strong>6.1 GB</strong> of memory.  Vectro shrinks that to
-          <strong>1.5 GB</strong> with
-          <span data-tip="int8">8-bit compression</span>, or as little as
-          <strong>192 MB</strong> with
-          <span data-tip="binary">1-bit compression</span> — and search is just as accurate.
-        </p>
-        <p>
-          The math runs in <strong data-tip="mojo-simd">Mojo SIMD</strong> on Apple
-          Silicon and Linux x86, with NumPy fallbacks everywhere else. Existing
-          LangChain / LlamaIndex / Haystack / DSPy code drops in unchanged — no
-          rewrites, no new vector database to learn.
-        </p>
-      </div>
-
-      <!-- Pipeline SVG -->
-      <svg class="pipeline-svg" viewBox="0 0 520 360"
-           xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="pipe-title">
-        <title id="pipe-title">How Vectro fits in your search pipeline</title>
-        <defs>
-          <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#c084fc"/><stop offset="100%" stop-color="#22d3ee"/>
-          </linearGradient>
-          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
-                  markerWidth="6" markerHeight="6" orient="auto">
-            <path d="M0,0 L10,5 L0,10 z" fill="#98a0b6"/>
-          </marker>
-          <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur stdDeviation="3" result="blur"/>
-            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-        </defs>
-
-        <g font-family="ui-monospace, SF Mono, monospace" font-size="12" fill="#e7eaf3">
-          <!-- Query -->
-          <g transform="translate(20,30)">
-            <rect width="140" height="56" rx="10" fill="#11141f" stroke="#1d2235"/>
-            <text x="70" y="22" text-anchor="middle" font-weight="700">Your question</text>
-            <text x="70" y="40" text-anchor="middle" fill="#98a0b6" font-size="11">"capital of France?"</text>
-          </g>
-          <!-- Embed -->
-          <g transform="translate(190,30)">
-            <rect width="140" height="56" rx="10" fill="#11141f" stroke="rgba(192,132,252,0.4)" filter="url(#glow)"/>
-            <text x="70" y="22" text-anchor="middle" font-weight="700" fill="#c084fc">Turn into numbers</text>
-            <text x="70" y="40" text-anchor="middle" fill="#98a0b6" font-size="11">OpenAI · Voyage</text>
-          </g>
-          <!-- Compress -->
-          <g transform="translate(360,30)">
-            <rect width="140" height="56" rx="10" fill="#11141f" stroke="rgba(34,211,238,0.5)" filter="url(#glow)"/>
-            <text x="70" y="22" text-anchor="middle" font-weight="700" fill="#22d3ee">Vectro: shrink</text>
-            <text x="70" y="40" text-anchor="middle" fill="#98a0b6" font-size="11">8-bit · 4-bit · 1-bit</text>
-          </g>
-          <!-- Search -->
-          <g transform="translate(105,148)">
-            <rect width="140" height="56" rx="10" fill="#11141f" stroke="rgba(74,222,128,0.45)" filter="url(#glow)"/>
-            <text x="70" y="22" text-anchor="middle" font-weight="700" fill="#4ade80">Find meaning matches</text>
-            <text x="70" y="40" text-anchor="middle" fill="#98a0b6" font-size="11">closest · most diverse</text>
-          </g>
-          <!-- Rerank -->
-          <g transform="translate(275,148)">
-            <rect width="140" height="56" rx="10" fill="#11141f" stroke="rgba(250,204,21,0.45)" filter="url(#glow)"/>
-            <text x="70" y="22" text-anchor="middle" font-weight="700" fill="#facc15">Re-rank top hits</text>
-            <text x="70" y="40" text-anchor="middle" fill="#98a0b6" font-size="11">precision boost</text>
-          </g>
-          <!-- Retrieve -->
-          <g transform="translate(190,266)">
-            <rect width="140" height="56" rx="10" fill="#11141f" stroke="rgba(244,114,182,0.45)" filter="url(#glow)"/>
-            <text x="70" y="22" text-anchor="middle" font-weight="700" fill="#f472b6">Best answers</text>
-            <text x="70" y="40" text-anchor="middle" fill="#98a0b6" font-size="11">ranked passages</text>
-          </g>
-        </g>
-
-        <g stroke="#98a0b6" stroke-width="1.5" fill="none" marker-end="url(#arrow)">
-          <path d="M160,58 L188,58"/>
-          <path d="M330,58 L358,58"/>
-          <path d="M430,90 Q430,120 320,148 L317,148"/>
-          <path d="M175,90 Q175,120 245,148 L243,148"/>
-          <path d="M345,206 Q345,236 320,266"/>
-          <path d="M175,206 Q175,236 200,266"/>
-        </g>
-
-        <g font-family="ui-monospace, monospace" font-size="11" fill="#5e6478">
-          <text x="20" y="345">indexed once · queries hit compressed memory</text>
-        </g>
-      </svg>
-    </div>
-  </div>
-</section>
-
-<!-- ============== WHY VECTRO ============== -->
-<section id="why">
-  <div class="container">
-    <p class="section-eyebrow">Why Vectro?</p>
-    <h2 class="section-title">Three places this is a force multiplier.</h2>
-    <p class="section-lede">If your product turns text or images into "meaning" and looks them up later, Vectro probably saves you money, latency, or both.</p>
-
-    <div class="use-cases">
-      <article class="uc" style="--uc-glow: rgba(192,132,252,0.13)">
-        <span class="ucnum">Use case 01</span>
-        <svg class="uc-icon" viewBox="0 0 64 64" fill="none" stroke="#c084fc" stroke-width="2">
-          <circle cx="28" cy="28" r="14"/>
-          <path d="m38 38 14 14"/>
-          <circle cx="28" cy="28" r="4" fill="#c084fc">
-            <animate attributeName="r" values="3;5;3" dur="2.4s" repeatCount="indefinite"/>
-          </circle>
-          <path d="M14 28a14 14 0 0 1 14-14" stroke="#c084fc" stroke-dasharray="8 4">
-            <animate attributeName="stroke-dashoffset" from="0" to="-24" dur="3s" repeatCount="indefinite"/>
-          </path>
-        </svg>
-        <h3>Meaning search for your docs</h3>
-        <p>Help-centers, knowledge bases, support tickets, code search. Users type what they
-           <em>mean</em>; Vectro finds matching content even when no keywords overlap.</p>
-        <div class="uc-saved">+ saves <span data-tip="storage-savings">75%</span> of your vector index storage.</div>
-      </article>
-
-      <article class="uc" style="--uc-glow: rgba(34,211,238,0.13)">
-        <span class="ucnum">Use case 02</span>
-        <svg class="uc-icon" viewBox="0 0 64 64" fill="none" stroke="#22d3ee" stroke-width="2">
-          <rect x="6"  y="14" width="22" height="36" rx="3"/>
-          <rect x="36" y="14" width="22" height="36" rx="3"/>
-          <path d="M28 32h8" stroke-dasharray="3 3">
-            <animate attributeName="stroke-dashoffset" from="0" to="-12" dur="1.5s" repeatCount="indefinite"/>
-          </path>
-          <circle cx="17" cy="22" r="2" fill="#22d3ee"/>
-          <circle cx="17" cy="32" r="2" fill="#22d3ee"/>
-          <circle cx="17" cy="42" r="2" fill="#22d3ee"/>
-          <circle cx="47" cy="32" r="3" fill="#22d3ee">
-            <animate attributeName="opacity" values="0.4;1;0.4" dur="1.6s" repeatCount="indefinite"/>
-          </circle>
-        </svg>
-        <h3>RAG that actually scales</h3>
-        <p>Feeding LLMs the right snippets from your data. Vectro lets you keep
-           millions of passages in memory at once — bigger context windows, fewer
-           cache misses, lower bills.</p>
-        <div class="uc-saved">+ <span data-tip="latency">3–4× faster</span> p95 retrieval at the same recall.</div>
-      </article>
-
-      <article class="uc" style="--uc-glow: rgba(74,222,128,0.13)">
-        <span class="ucnum">Use case 03</span>
-        <svg class="uc-icon" viewBox="0 0 64 64" fill="none" stroke="#4ade80" stroke-width="2">
-          <circle cx="32" cy="32" r="3" fill="#4ade80"/>
-          <circle cx="14" cy="20" r="3"/>
-          <circle cx="50" cy="20" r="3"/>
-          <circle cx="14" cy="44" r="3"/>
-          <circle cx="50" cy="44" r="3"/>
-          <path d="M32 32 14 20M32 32 50 20M32 32 14 44M32 32 50 44">
-            <animate attributeName="stroke-dasharray" values="0 100;100 0" dur="2.5s" repeatCount="indefinite"/>
-          </path>
-        </svg>
-        <h3>Personal recommendations</h3>
-        <p>Products, articles, tracks, jobs — anywhere you compare a user to a catalog.
-           Vectro fits the whole catalog in RAM on a single box, so personalisation
-           doesn't need a Postgres-sized vector cluster.</p>
-        <div class="uc-saved">+ runs on a <span data-tip="commodity">$200/mo box</span> instead of a GPU cluster.</div>
-      </article>
-    </div>
-  </div>
-</section>
-
-<!-- ============== FEATURES ============== -->
-<section>
-  <div class="container">
-    <p class="section-eyebrow">Capabilities</p>
-    <h2 class="section-title">Everything a search index needs.</h2>
-    <p class="section-lede">Five primitives that compose into production-grade retrieval. Save / load, async, and metadata filters in every adapter.</p>
-
-    <div class="features">
-      <div class="card">
-        <div class="icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="1.8">
-            <rect x="3"  y="3"  width="7" height="7" rx="1.5"/>
-            <rect x="14" y="3"  width="7" height="7" rx="1.5"/>
-            <rect x="3"  y="14" width="7" height="7" rx="1.5"/>
-            <rect x="14" y="14" width="7" height="7" rx="1.5"/>
-          </svg>
-        </div>
-        <h3>4× — 32× compression</h3>
-        <p>Pick the right size: 8-bit (4× smaller, 99.9% accuracy), 4-bit (8× smaller, 99% accuracy), or 1-bit (32× smaller, 95%+ accuracy).</p>
-        <div class="chip-row"><span class="chip">4×</span><span class="chip m">8×</span><span class="chip g">32×</span></div>
-      </div>
-
-      <div class="card">
-        <div class="icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="1.8">
-            <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
-          </svg>
-        </div>
-        <h3>Closest-match + diverse</h3>
-        <p>Find the top results, or dial in diversity so you don't get five near-duplicates. Hybrid keyword + meaning search built in.</p>
-        <div class="chip-row"><span class="chip m">closest</span><span class="chip">diverse</span><span class="chip g">hybrid</span></div>
-      </div>
-
-      <div class="card">
-        <div class="icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="1.8">
-            <path d="M12 2 4 6v6c0 5 4 9 8 10 4-1 8-5 8-10V6z"/><path d="m9 12 2 2 4-4"/>
-          </svg>
-        </div>
-        <h3>Drop-in for the big four</h3>
-        <p>One line of code — same library you already use. LangChain, LlamaIndex, Haystack 2.x, DSPy.</p>
-        <div class="chip-row"><span class="chip">LangChain</span><span class="chip m">LlamaIndex</span><span class="chip g">Haystack</span><span class="chip">DSPy</span></div>
-      </div>
-
-      <div class="card">
-        <div class="icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#facc15" stroke-width="1.8">
-            <path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0z"/>
-            <path d="M3 12h18M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18"/>
-          </svg>
-        </div>
-        <h3>Use any embedding model</h3>
-        <p>OpenAI, Voyage, Cohere, SentenceTransformers — one Vectro instance plugs into all four. Built-in batching and caching.</p>
-        <div class="chip-row"><span class="chip m">OpenAI</span><span class="chip">Voyage</span><span class="chip g">Cohere</span><span class="chip y">ST</span></div>
-      </div>
-
-      <div class="card">
-        <div class="icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f472b6" stroke-width="1.8">
-            <ellipse cx="12" cy="5" rx="9" ry="3"/>
-            <path d="M3 5v6c0 1.7 4 3 9 3s9-1.3 9-3V5"/>
-            <path d="M3 11v6c0 1.7 4 3 9 3s9-1.3 9-3v-6"/>
-          </svg>
-        </div>
-        <h3>Local cache, no surprise bills</h3>
-        <p>Embed every text once. Stored on disk. Same query never pays the OpenAI tax twice.</p>
-        <div class="chip-row"><span class="chip g">SQLite</span><span class="chip">SHA-256</span><span class="chip m">thread-safe</span></div>
-      </div>
-
-      <div class="card">
-        <div class="icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fb923c" stroke-width="1.8">
-            <rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20M6 4v16"/>
-          </svg>
-        </div>
-        <h3>Save, reload, run async</h3>
-        <p>Persist the whole index to disk in one call. Async everywhere — safe for FastAPI, AIOHTTP, DSPy pipelines.</p>
-        <div class="chip-row"><span class="chip">save/load</span><span class="chip m">async</span><span class="chip g">filters</span></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============== CALCULATOR ============== -->
-<section id="calc">
-  <div class="container">
-    <p class="section-eyebrow">Interactive</p>
-    <h2 class="section-title">Compression calculator.</h2>
-    <p class="section-lede">Drag the sliders. See your index shrink in real time. Switch platforms to see how fast it goes on the hardware you have.</p>
-
-    <div class="platforms" role="radiogroup" aria-label="Platform">
-      <button data-plat="m3"     class="active">Apple M3 Pro</button>
-      <button data-plat="linux">Linux x86 (AVX2)</button>
-      <button data-plat="windows">Windows AMD64</button>
-      <button data-plat="m4">Apple M4 (preview)</button>
-    </div>
-
-    <div class="calc">
-      <div class="calc-controls">
-        <div class="control">
-          <label>
-            <span data-tip="vectors">Vectors</span>
-            <span class="v"><span id="nVal">100,000</span></span>
-          </label>
-          <input id="nSlider" type="range" min="1000" max="10000000" step="1000" value="100000"/>
-          <div class="preset-row" style="margin-top: 10px;">
-            <button class="preset" data-n="10000">10K</button>
-            <button class="preset" data-n="100000">100K</button>
-            <button class="preset" data-n="1000000">1M</button>
-            <button class="preset" data-n="10000000">10M</button>
-          </div>
-        </div>
-
-        <div class="control">
-          <label>
-            <span data-tip="dims">Numbers per vector</span>
-            <span class="v"><span id="dVal">1536</span></span>
-          </label>
-          <input id="dSlider" type="range" min="64" max="4096" step="32" value="1536"/>
-          <div class="preset-row" style="margin-top: 10px;">
-            <button class="preset" data-d="384">384</button>
-            <button class="preset" data-d="768">768</button>
-            <button class="preset" data-d="1024">1024</button>
-            <button class="preset" data-d="1536">1536</button>
-            <button class="preset" data-d="3072">3072</button>
-          </div>
-        </div>
-
-        <div class="summary">
-          <div class="summary-cell"><div class="v" id="origMB">—</div><div class="l">Uncompressed</div></div>
-          <div class="summary-cell"><div class="v" id="bestMB">—</div><div class="l">Smallest</div></div>
-          <div class="summary-cell"><div class="v" id="bestRatio">—</div><div class="l">You save</div></div>
-        </div>
-      </div>
-
-      <div>
-        <div class="bars" id="bars"></div>
-
-        <div class="speed-panel">
-          <div class="speed-cell">
-            <div class="label">Compress speed</div>
-            <div class="number" id="speed-num">—<span class="unit"> M / sec</span></div>
-            <div class="delta" id="speed-delta">—</div>
-          </div>
-          <div class="speed-cell">
-            <div class="label">Time to compress this index</div>
-            <div class="number glow" id="speed-time">—<span class="unit"></span></div>
-            <div class="delta" id="speed-time-sub">on the selected platform</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============== STORAGE COST CALCULATOR ============== -->
-<section>
-  <div class="container">
-    <p class="section-eyebrow">Bottom line</p>
-    <h2 class="section-title">What you save.</h2>
-    <p class="section-lede">Same index, different storage tier. Numbers are on-disk + RAM only — they don't count compute.</p>
-
-    <div class="save-panel">
-      <div>
-        <div class="control">
-          <label>
-            <span>How big is your catalog?</span>
-            <span class="v"><span id="save-n">1,000,000</span> items</span>
-          </label>
-          <input id="save-slider" type="range" min="10000" max="100000000" step="10000" value="1000000"/>
-          <div class="preset-row" style="margin-top: 10px;">
-            <button class="preset" data-save="100000">100K</button>
-            <button class="preset" data-save="1000000">1M</button>
-            <button class="preset" data-save="10000000">10M</button>
-            <button class="preset" data-save="100000000">100M</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="save-cells">
-        <div class="save-cell">
-          <div class="v" id="save-fp32">—</div>
-          <div class="l">Without Vectro</div>
-          <div class="sub">FP32, 1536 dims (OpenAI default).  Your index in raw memory.</div>
-        </div>
-        <div class="save-cell warm">
-          <div class="v" id="save-int8">—</div>
-          <div class="l">With Vectro 8-bit</div>
-          <div class="sub">99.9% of the same answers. 4× less RAM, 4× cheaper to host.</div>
-        </div>
-        <div class="save-cell">
-          <div class="v" id="save-nf4">—</div>
-          <div class="l">With Vectro 4-bit (NF4)</div>
-          <div class="sub">99% accuracy, 8× smaller. Sweet spot for big catalogs.</div>
-        </div>
-        <div class="save-cell warm">
-          <div class="v" id="save-bin">—</div>
-          <div class="l">With Vectro 1-bit</div>
-          <div class="sub">95%+ accuracy, 32× smaller. RAM-only at 100M+ scale.</div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============== LIVE SEARCH ============== -->
-<section id="search">
-  <div class="container">
-    <p class="section-eyebrow">Try it</p>
-    <h2 class="section-title">Run a search.</h2>
-    <p class="section-lede">Type a question — or pick one of the chips. Watch the index light up and return the closest meaning matches.</p>
-
-    <div class="search-panel">
-      <div class="search-bar">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#98a0b6" stroke-width="1.8">
-          <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
-        </svg>
-        <input id="qbox" type="text" placeholder="What is the capital of France?" value="capital of France"/>
-        <button class="go" id="qrun">Search</button>
-      </div>
-      <div class="search-suggest" id="qchips"></div>
-
-      <div class="search-stage">
-        <div class="map">
-          <svg id="qmap" class="map-svg" viewBox="0 0 480 480" xmlns="http://www.w3.org/2000/svg" role="img"
-               aria-labelledby="qmap-title">
-            <title id="qmap-title">Vectro index — each dot is one item; bright dots are matches</title>
-            <defs>
-              <radialGradient id="qDotMatch">
-                <stop offset="0%" stop-color="#22d3ee"/>
-                <stop offset="100%" stop-color="#0ea5e9"/>
-              </radialGradient>
-            </defs>
-            <!-- gridlines -->
-            <g stroke="#1d2235" stroke-width="1" opacity="0.5">
-              <line x1="40"  y1="40"  x2="40"  y2="440"/>
-              <line x1="40"  y1="440" x2="440" y2="440"/>
-            </g>
-            <g id="qmap-dots"></g>
-            <g id="qmap-query"></g>
-            <g font-family="ui-monospace,monospace" font-size="11" fill="#5e6478">
-              <text x="40"  y="460" text-anchor="start">← geography</text>
-              <text x="440" y="460" text-anchor="end">food / culture →</text>
-              <text x="20"  y="40" text-anchor="start">↑ specific</text>
-              <text x="20"  y="440" text-anchor="start">↓ general</text>
-            </g>
-          </svg>
-        </div>
-        <div>
-          <div style="font-size: 13px; color: var(--text-mute); margin-bottom: 12px; font-family: var(--mono); letter-spacing: 0.12em; text-transform: uppercase;">Top matches</div>
-          <div class="results-list" id="qresults"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============== RECALL VS COMPRESSION ============== -->
-<section>
-  <div class="container">
-    <p class="section-eyebrow">Trade-off</p>
-    <h2 class="section-title">Smaller, faster, still right.</h2>
-    <p class="section-lede">Each profile is a point on the curve. The X axis is how much smaller your index gets. The Y axis is how often the right answer is in the top-10. Pick where you want to be.</p>
-
-    <div class="scatter-wrap">
-      <svg id="scatter" viewBox="0 0 760 380" xmlns="http://www.w3.org/2000/svg"
-           role="img" aria-labelledby="scatter-title">
-        <title id="scatter-title">Accuracy vs compression scatter plot</title>
-        <defs>
-          <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%"  stop-color="#22d3ee" stop-opacity="0.0"/>
-            <stop offset="50%" stop-color="#22d3ee" stop-opacity="0.6"/>
-            <stop offset="100%" stop-color="#c084fc" stop-opacity="0.0"/>
-          </linearGradient>
-          <radialGradient id="dotG-fast"><stop offset="0%" stop-color="#facc15"/><stop offset="100%" stop-color="#fb923c"/></radialGradient>
-          <radialGradient id="dotG-bal"><stop offset="0%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#0ea5e9"/></radialGradient>
-          <radialGradient id="dotG-qua"><stop offset="0%" stop-color="#c084fc"/><stop offset="100%" stop-color="#a855f7"/></radialGradient>
-          <radialGradient id="dotG-bin"><stop offset="0%" stop-color="#4ade80"/><stop offset="100%" stop-color="#16a34a"/></radialGradient>
-        </defs>
-
-        <g stroke="#1d2235" stroke-width="1">
-          <line x1="80"  y1="40"  x2="80"  y2="320"/>
-          <line x1="80"  y1="320" x2="720" y2="320"/>
-          <line x1="80"  y1="100" x2="720" y2="100" stroke-dasharray="3,4" opacity="0.5"/>
-          <line x1="80"  y1="180" x2="720" y2="180" stroke-dasharray="3,4" opacity="0.5"/>
-          <line x1="80"  y1="260" x2="720" y2="260" stroke-dasharray="3,4" opacity="0.5"/>
-          <line x1="208" y1="40"  x2="208" y2="320" stroke-dasharray="3,4" opacity="0.5"/>
-          <line x1="336" y1="40"  x2="336" y2="320" stroke-dasharray="3,4" opacity="0.5"/>
-          <line x1="464" y1="40"  x2="464" y2="320" stroke-dasharray="3,4" opacity="0.5"/>
-          <line x1="592" y1="40"  x2="592" y2="320" stroke-dasharray="3,4" opacity="0.5"/>
-        </g>
-
-        <g font-family="ui-monospace, SF Mono, monospace" font-size="11" fill="#98a0b6">
-          <text x="74" y="324" text-anchor="end">95%</text>
-          <text x="74" y="264" text-anchor="end">96%</text>
-          <text x="74" y="184" text-anchor="end">98%</text>
-          <text x="74" y="104" text-anchor="end">100%</text>
-          <text x="20" y="180" transform="rotate(-90,20,180)" text-anchor="middle" fill="#c084fc">accuracy (top-10)</text>
-          <text x="80"  y="340" text-anchor="middle">1×</text>
-          <text x="208" y="340" text-anchor="middle">4×</text>
-          <text x="336" y="340" text-anchor="middle">8×</text>
-          <text x="464" y="340" text-anchor="middle">16×</text>
-          <text x="592" y="340" text-anchor="middle">24×</text>
-          <text x="720" y="340" text-anchor="middle">32×</text>
-          <text x="400" y="368" text-anchor="middle" fill="#22d3ee">how much smaller</text>
-        </g>
-
-        <path d="M 80 75 Q 250 90 380 130 Q 540 200 720 280"
-              fill="none" stroke="url(#lineGrad)" stroke-width="2" stroke-linecap="round"/>
-
-        <g id="scatter-dots">
-          <!-- Filled in by JS so they animate in one by one -->
-        </g>
-
-        <g font-family="-apple-system, sans-serif" font-size="12" fill="#5e6478">
-          <text x="120" y="178" font-style="italic">↑ better</text>
-        </g>
-      </svg>
-
-      <div class="legend">
-        <div class="legend-item"><span class="legend-dot" style="background:#5e6478"></span>FP32 (no compression)</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#facc15"></span>fast — 8-bit</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#22d3ee"></span>balanced — 8-bit</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#c084fc"></span>quality — 4-bit (NF4)</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#4ade80"></span>tiny — 1-bit</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============== CODE SNIPPETS ============== -->
-<section id="code">
-  <div class="container">
-    <p class="section-eyebrow">Code</p>
-    <h2 class="section-title">One line. Same library you already use.</h2>
-    <p class="section-lede">Pick the framework you have. Add <code>compression_profile=</code>. That's it.</p>
-
-    <div class="code-grid">
-      <div class="code-card">
-        <div class="head"><span class="name">LangChain</span><span class="tag">VectorStore</span></div>
-        <pre class="code"><span class="kw">from</span> python.integrations <span class="kw">import</span> LangChainVectorStore
-<span class="kw">from</span> python.embeddings <span class="kw">import</span> OpenAIEmbeddings
-
-<span class="var">embed</span> = <span class="fn">OpenAIEmbeddings</span>(model=<span class="str">"text-embedding-3-small"</span>)
-<span class="var">store</span> = <span class="fn">LangChainVectorStore</span>(
-    embedding=<span class="var">embed</span>,
-    compression_profile=<span class="str">"balanced"</span>,   <span class="cmt"># 4× smaller</span>
-)
-
-<span class="var">store</span>.<span class="fn">add_texts</span>([<span class="str">"Paris is the capital of France"</span>])
-<span class="var">docs</span> = <span class="var">store</span>.<span class="fn">similarity_search</span>(<span class="str">"capital of France"</span>, k=<span class="num">3</span>)</pre>
-      </div>
-
-      <div class="code-card">
-        <div class="head"><span class="name">LlamaIndex</span><span class="tag">VectorStore</span></div>
-        <pre class="code"><span class="kw">from</span> python.integrations <span class="kw">import</span> LlamaIndexVectorStore
-<span class="kw">from</span> llama_index.core.vector_stores <span class="kw">import</span> VectorStoreQuery
-
-<span class="var">vs</span> = <span class="fn">LlamaIndexVectorStore</span>(compression_profile=<span class="str">"quality"</span>)  <span class="cmt"># 8× smaller</span>
-<span class="var">vs</span>.<span class="fn">add</span>(nodes_with_embeddings)
-
-<span class="var">res</span> = <span class="var">vs</span>.<span class="fn">query</span>(<span class="fn">VectorStoreQuery</span>(
-    query_embedding=<span class="var">q</span>, similarity_top_k=<span class="num">5</span>,
-))</pre>
-      </div>
-
-      <div class="code-card">
-        <div class="head"><span class="name">Haystack 2.x</span><span class="tag">DocumentStore</span></div>
-        <pre class="code"><span class="kw">from</span> haystack.dataclasses <span class="kw">import</span> Document
-<span class="kw">from</span> python.integrations <span class="kw">import</span> HaystackDocumentStore
-
-<span class="var">store</span> = <span class="fn">HaystackDocumentStore</span>(compression_profile=<span class="str">"balanced"</span>)
-<span class="var">store</span>.<span class="fn">write_documents</span>([
-    <span class="fn">Document</span>(content=<span class="str">"Paris ..."</span>, embedding=<span class="var">v</span>),
-])
-
-<span class="var">hits</span> = <span class="var">store</span>.<span class="fn">embedding_retrieval</span>(
-    query_embedding=<span class="var">q</span>, top_k=<span class="num">5</span>,
-)</pre>
-      </div>
-
-      <div class="code-card">
-        <div class="head"><span class="name">DSPy</span><span class="tag">Retriever</span></div>
-        <pre class="code"><span class="kw">import</span> dspy
-<span class="kw">from</span> python.integrations <span class="kw">import</span> VectroDSPyRetriever
-<span class="kw">from</span> python.embeddings <span class="kw">import</span> OpenAIEmbeddings
-
-<span class="var">rm</span> = <span class="fn">VectroDSPyRetriever</span>(
-    embed_fn=<span class="fn">OpenAIEmbeddings</span>(model=<span class="str">"text-embedding-3-small"</span>),
-    k=<span class="num">5</span>, compression_profile=<span class="str">"balanced"</span>,
-)
-<span class="var">rm</span>.<span class="fn">add_texts</span>([<span class="str">"Paris is the capital of France"</span>])
-
-dspy.settings.<span class="fn">configure</span>(rm=<span class="var">rm</span>)
-<span class="var">prediction</span> = <span class="var">rm</span>(<span class="str">"What is the capital of France?"</span>)</pre>
-      </div>
-    </div>
-  </div>
-</section>
-
-</main>
-
-<!-- ============== FOOTER ============== -->
-<footer>
-  <div class="container row">
-    <div><strong style="color: var(--text);">Vectro</strong>  ·  v5.0.0  ·  MIT</div>
-    <div class="konjo">ቆንጆ · 根性 · 康宙 · कोहजो · ᨀᨚᨐᨚ · конйо · 건조 · কুঞ্জ</div>
-    <div>
-      <a href="https://github.com/konjoai/vectro">GitHub</a>  ·  <a href="#what">Docs</a>
-    </div>
-  </div>
-</footer>
-
-<!-- shared tooltip ⓘ element -->
-<div id="tip" class="tip" role="tooltip"></div>
-
 <script>
-(() => {
-  // ─────────────────────── particle canvas ───────────────────────
-  // Subtle ambient flow of "vectors" drifting up-right.  Cheap, ~120
-  // particles, GPU-friendly via canvas2d.  When user scrolls past the
-  // hero we reduce density to keep the page responsive.
-  const canvas = document.getElementById("particles");
-  const ctx = canvas.getContext("2d");
-  let cw = 0, ch = 0;
-  function resize() {
-    cw = canvas.width = window.innerWidth * (window.devicePixelRatio || 1);
-    ch = canvas.height = window.innerHeight * (window.devicePixelRatio || 1);
-    canvas.style.width  = window.innerWidth  + "px";
-    canvas.style.height = window.innerHeight + "px";
-  }
-  resize();
-  window.addEventListener("resize", resize, { passive: true });
+"use strict";
 
-  const COLORS = ["#c084fc", "#22d3ee", "#4ade80", "#facc15", "#f472b6"];
-  const N_PARTICLES = 120;
-  const particles = [];
-  for (let i = 0; i < N_PARTICLES; i++) {
-    particles.push({
-      x: Math.random() * cw,
-      y: Math.random() * ch,
-      r: 0.6 + Math.random() * 1.7,
-      vx: 0.05 + Math.random() * 0.4,
-      vy: -0.05 - Math.random() * 0.4,
-      a: 0.05 + Math.random() * 0.35,
-      c: COLORS[(Math.random() * COLORS.length) | 0],
-    });
-  }
-  function step() {
-    ctx.clearRect(0, 0, cw, ch);
-    const dpr = window.devicePixelRatio || 1;
-    for (const p of particles) {
-      p.x += p.vx * dpr;
-      p.y += p.vy * dpr;
-      if (p.x > cw + 10) p.x = -10;
-      if (p.y < -10)     p.y = ch + 10;
-      ctx.beginPath();
-      ctx.fillStyle = p.c;
-      ctx.globalAlpha = p.a;
-      ctx.arc(p.x, p.y, p.r * dpr, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    requestAnimationFrame(step);
-  }
-  step();
+const API_BASE = (location.protocol === 'http:' || location.protocol === 'https:')
+  ? location.origin : null;
+const INDEX_NAME = 'starfield';
+const DIM = 32;
 
-  // ─────────────────────── tooltip ───────────────────────
-  const TIPS = {
-    "ai-fingerprints": {
-      title: "AI fingerprint",
-      body: "A long list of numbers (often 384–3072) that encodes the meaning of a piece of text or image. Two fingerprints with similar numbers come from things that mean similar stuff.",
-    },
-    "openai": {
-      title: "OpenAI text-embedding-3-small",
-      body: "A popular API model that turns text into 1536-number fingerprints. Used as the default in most modern RAG demos.",
-    },
-    "int8": {
-      title: "8-bit compression",
-      body: "Stores each number using 8 bits (one byte) instead of 32. Roughly 4× smaller, and search results stay 99.9% identical.",
-    },
-    "binary": {
-      title: "1-bit compression",
-      body: "Stores only the sign of each number — true or false. 32× smaller. Accuracy drops a few percent but is great for huge catalogs.",
-    },
-    "mojo-simd": {
-      title: "Mojo + SIMD",
-      body: "Vectro's hot path is written in Mojo and Rust, using CPU-level parallelism (NEON on Apple Silicon, AVX2 on x86) to compress 22 million vectors per second on an M3.",
-    },
-    "compression-x": {
-      title: "Compression ratio",
-      body: "How much smaller your index gets. 4× means a 4 GB index becomes 1 GB. 13× is the practical sweet spot for RAG.",
-    },
-    "accuracy": {
-      title: "Accuracy preserved",
-      body: "How often Vectro's top-10 search results match the uncompressed top-10. 99.6% means roughly the same right answers.",
-    },
-    "frameworks": {
-      title: "RAG frameworks supported",
-      body: "LangChain, LlamaIndex, Haystack 2.x, and DSPy. Drop-in adapters — no refactor.",
-    },
-    "searches-per-sec": {
-      title: "Vectors per second",
-      body: "How many fingerprints Vectro can compress and store every second. On an M3 Pro, that's 22 million.",
-    },
-    "vectors": {
-      title: "Vectors",
-      body: "Each item in your catalog (a paragraph, a product, a frame) becomes one vector — one fingerprint.",
-    },
-    "dims": {
-      title: "Numbers per vector",
-      body: "Most modern AI models produce vectors with 384 to 3072 numbers. Bigger dims = more precision per fingerprint but more storage.",
-    },
-    "storage-savings": {
-      title: "Storage savings",
-      body: "Compared to keeping vectors uncompressed in RAM. Vectro 8-bit cuts your storage to ~25%.",
-    },
-    "latency": {
-      title: "Faster retrieval",
-      body: "Smaller vectors mean fewer cache misses and more vectors per L1/L2 hit, so the search loop runs closer to peak CPU.",
-    },
-    "commodity": {
-      title: "Cheap hardware",
-      body: "Vectro fits a 100M-vector index in a few GB of RAM. You don't need a multi-node cluster or a GPU.",
-    },
-  };
-  const tipEl = document.getElementById("tip");
-  document.querySelectorAll("[data-tip]").forEach(el => {
-    el.addEventListener("mouseenter", e => {
-      const k = el.dataset.tip;
-      const t = TIPS[k];
-      if (!t) return;
-      tipEl.innerHTML = `<strong>${t.title}</strong>${t.body}`;
-      tipEl.classList.add("show");
-    });
-    el.addEventListener("mousemove", e => {
-      const x = Math.min(window.innerWidth - 280, e.clientX + 14);
-      const y = Math.max(8, e.clientY - 8);
-      tipEl.style.left = x + "px";
-      tipEl.style.top  = y + "px";
-    });
-    el.addEventListener("mouseleave", () => tipEl.classList.remove("show"));
+// ── Background star field (matches viz.html aesthetic) ────────────
+function buildBackgroundStars() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const N = Math.max(420, Math.floor(W * H / 1900));
+  const svg = document.getElementById('stars');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+  let s = '';
+  for (let i = 0; i < N; i++) {
+    const x = Math.random() * W;
+    const y = Math.random() * H;
+    const r = Math.random() * 0.9 + 0.15;
+    const o = Math.random() * 0.6 + 0.15;
+    const dur = (Math.random() * 4 + 2.5).toFixed(2);
+    const delay = (-Math.random() * 6).toFixed(2);
+    s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(2)}" fill="#fff" fill-opacity="${o.toFixed(2)}" style="animation: twinkle ${dur}s ease-in-out ${delay}s infinite"/>`;
+  }
+  svg.innerHTML = s;
+}
+window.addEventListener('resize', buildBackgroundStars);
+
+// ── Constellation: query → 32-D vector → cosine top-k → SVG dots ──
+//
+// The "result count" is rendered as a constellation pattern:
+// each match becomes one star plotted on a 640×96 strip, with size +
+// brightness encoding similarity score. Dots are connected by faint
+// lines forming an arbitrary spanning path so the result count reads
+// as a *shape*, not a number.
+
+const CLUSTER_COLORS = ['#7c3aed', '#3b82f6', '#10b981'];
+const corpus = []; // { id, label, vec, cluster }
+
+function gaussian() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+function hash32(str) {
+  // Cheap, deterministic 32-D embedding for any input — every char
+  // perturbs a fixed-cluster centre so visually-similar queries cluster
+  // together. Good enough for a landing-page demo; not for production.
+  let cluster = 0;
+  for (let i = 0; i < str.length; i++) cluster = (cluster + str.charCodeAt(i) * 7) % 3;
+  const v = new Float32Array(DIM);
+  // Seeded via a tiny xorshift over the string
+  let seed = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    seed ^= str.charCodeAt(i);
+    seed = Math.imul(seed, 16777619) >>> 0;
+  }
+  function rnd() {
+    seed ^= seed << 13; seed >>>= 0;
+    seed ^= seed >> 17; seed >>>= 0;
+    seed ^= seed << 5;  seed >>>= 0;
+    return ((seed & 0x7fffffff) / 0x7fffffff) * 2 - 1;
+  }
+  for (let i = 0; i < DIM; i++) v[i] = (cluster === i % 3 ? 1.5 : 0) + rnd() * 0.6;
+  return { vec: v, cluster };
+}
+
+// Seed corpus with a small set of human-friendly labels so empty-input
+// state shows something — not just a zero count.
+const SEED = [
+  'embedding', 'vector', 'cosine', 'graph', 'beam search',
+  'index', 'compression', 'quantization', 'INT8', 'NF4',
+  'PQ-96', 'binary', 'HNSW', 'recall', 'latency',
+  'throughput', 'p99', 'GPU', 'BLAS', 'numpy',
+  'document', 'paper', 'cluster', 'star', 'galaxy',
+  'orbit', 'centre', 'edge', 'node', 'kernel',
+];
+let nextCorpusId = 0;
+for (const label of SEED) {
+  const { vec, cluster } = hash32(label);
+  corpus.push({ id: nextCorpusId++, label, vec, cluster });
+}
+
+function cosineLocal(a, b) {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / Math.sqrt(na * nb);
+}
+
+function searchLocal(qStr, k) {
+  if (!qStr) return [];
+  const { vec } = hash32(qStr);
+  const scored = corpus.map(c => ({ c, score: cosineLocal(vec, c.vec) }));
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, k);
+}
+
+function renderConstellation(hits) {
+  const svg = document.getElementById('cons');
+  document.getElementById('count-n').textContent = hits.length;
+  if (hits.length === 0) { svg.innerHTML = ''; return; }
+
+  // Layout: stretch hits across the strip; vertical jitter from a
+  // deterministic per-hit hash so the constellation is stable per query.
+  const w = 640, h = 96;
+  const margin = 24;
+  const xs = hits.map((_, i) =>
+    margin + (hits.length === 1 ? (w - 2 * margin) / 2 : (i / (hits.length - 1)) * (w - 2 * margin)));
+  // Smooth curve through the points: y from a slow sin so the
+  // "constellation" feels like a celestial trail
+  const ys = hits.map((h, i) => {
+    const t = i / Math.max(1, hits.length - 1);
+    return h / 2 + Math.sin(t * Math.PI * 1.2 + h.score * 6) * 18;
   });
 
-  // ─────────────────────── platform throughput ───────────────────────
-  const PLATFORMS = {
-    m3:      { label: "Apple M3 Pro",        tput: 22.0, simd: "NEON 32-wide" },
-    linux:   { label: "Linux x86 (AVX2)",    tput: 13.5, simd: "AVX2"         },
-    windows: { label: "Windows AMD64",        tput: 13.0, simd: "AVX2"         },
-    m4:      { label: "Apple M4 (preview)",  tput: 31.0, simd: "SME2 (when wired)" },
-  };
-  let currentPlat = "m3";
-  document.querySelectorAll(".platforms button").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".platforms button").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      currentPlat = btn.dataset.plat;
-      tweenHeroTput(PLATFORMS[currentPlat].tput);
-      recompute();
-    });
-  });
-
-  // ─────────────────────── hero throughput counter ───────────────────────
-  const heroEl = document.getElementById("hero-tput");
-  let heroVal = 22, heroTarget = 22;
-  function tweenHeroTput(target) {
-    heroTarget = target;
-    const start = heroVal;
-    const t0 = performance.now();
-    const dur = 750;
-    function frame(t) {
-      const k = Math.min(1, (t - t0) / dur);
-      // ease-out quint
-      const e = 1 - Math.pow(1 - k, 5);
-      heroVal = start + (target - start) * e;
-      heroEl.textContent = heroVal.toFixed(1) + "M";
-      if (k < 1) requestAnimationFrame(frame);
-    }
-    requestAnimationFrame(frame);
+  let svgEls = '';
+  // Connecting trail (cubic-ish via polyline)
+  let path = '';
+  for (let i = 0; i < hits.length; i++) {
+    path += (i === 0 ? 'M' : 'L') + xs[i].toFixed(1) + ' ' + ys[i].toFixed(1);
   }
-  // small idle pulse so the hero counter is alive
-  setInterval(() => {
-    const jitter = (Math.random() - 0.5) * 0.4;
-    heroEl.textContent = (heroTarget + jitter).toFixed(1) + "M";
-  }, 1100);
+  svgEls += `<path d="${path}" stroke="rgba(124,58,237,0.35)" stroke-width="0.8" fill="none" />`;
 
-  // ─────────────────────── compression calculator ───────────────────────
-  const PROFILES = [
-    { name: "fp32",     algo: "uncompressed",         ratio: 1.0,  klass: "alt-original" },
-    { name: "fast",     algo: "8-bit (SIMD)",         ratio: 4.0,  klass: "alt-1" },
-    { name: "balanced", algo: "8-bit + tuned",        ratio: 4.0,  klass: "alt-1" },
-    { name: "quality",  algo: "4-bit (NF4)",          ratio: 8.0,  klass: "alt-2" },
-    { name: "tiny",     algo: "1-bit",                ratio: 32.0, klass: "alt-3" },
-  ];
-  const FP32 = 4;
-
-  const $ = (id) => document.getElementById(id);
-  const nSlider = $("nSlider"), dSlider = $("dSlider");
-  const nVal = $("nVal"), dVal = $("dVal");
-  const barsEl = $("bars");
-  const origMB = $("origMB"), bestMB = $("bestMB"), bestRatio = $("bestRatio");
-
-  function fmtBytes(b) {
-    if (b >= 1e9) return (b / 1e9).toFixed(2) + " GB";
-    if (b >= 1e6) return (b / 1e6).toFixed(1) + " MB";
-    if (b >= 1e3) return (b / 1e3).toFixed(1) + " KB";
-    return b.toFixed(0) + " B";
+  // Stars
+  for (let i = 0; i < hits.length; i++) {
+    const { c, score } = hits[i];
+    const r = 1.6 + Math.max(0, score) * 5;
+    const col = CLUSTER_COLORS[c.cluster];
+    const haloR = r * 3.2;
+    svgEls += `
+      <g style="animation: star-drop 0.4s ease ${i * 0.025}s both">
+        <circle cx="${xs[i].toFixed(1)}" cy="${ys[i].toFixed(1)}" r="${haloR.toFixed(1)}" fill="${col}" fill-opacity="0.18" />
+        <circle cx="${xs[i].toFixed(1)}" cy="${ys[i].toFixed(1)}" r="${r.toFixed(1)}" fill="#ffffff" />
+      </g>`;
   }
-  function fmtCount(n) { return n.toLocaleString(); }
-  function fmtTime(s) {
-    if (s < 1) return (s * 1000).toFixed(0) + " ms";
-    if (s < 60) return s.toFixed(1) + " s";
-    if (s < 3600) return (s / 60).toFixed(1) + " min";
-    return (s / 3600).toFixed(1) + " hours";
-  }
+  svg.innerHTML = svgEls;
+}
 
-  // build bars
-  function buildBars() {
-    barsEl.innerHTML = "";
-    for (const p of PROFILES) {
-      const row = document.createElement("div");
-      row.className = "bar-row";
-      row.innerHTML = `
-        <div class="bar-label">
-          <span class="pname">${p.name}</span>
-          <span class="palg">${p.algo}</span>
-        </div>
-        <div class="bar-track"><div class="bar-fill ${p.klass}" data-name="${p.name}" style="width:0"></div></div>
-        <div class="bar-text" data-bar-text="${p.name}">—</div>
-      `;
-      barsEl.appendChild(row);
-    }
-  }
-
-  // spring tween for bar widths
-  const barTargets = new Map();
-  const barCurrents = new Map();
-  function tickBars() {
-    for (const [name, target] of barTargets) {
-      const cur = barCurrents.get(name) ?? 0;
-      // spring: stiffness 0.18, damping built into framerate
-      const next = cur + (target - cur) * 0.18;
-      barCurrents.set(name, next);
-      const el = barsEl.querySelector(`[data-name="${name}"]`);
-      if (el) el.style.width = next.toFixed(2) + "%";
-    }
-    requestAnimationFrame(tickBars);
-  }
-
-  function recompute() {
-    const n = parseInt(nSlider.value, 10);
-    const d = parseInt(dSlider.value, 10);
-    nVal.textContent = fmtCount(n);
-    dVal.textContent = fmtCount(d);
-
-    const original = n * d * FP32;
-    origMB.textContent = fmtBytes(original);
-
-    const bestSize = original / 32;
-    bestMB.textContent = fmtBytes(bestSize);
-    bestRatio.textContent = "32× — saves " + fmtBytes(original - bestSize);
-
-    for (const p of PROFILES) {
-      const size = original / p.ratio;
-      const pct  = (size / original) * 100;
-      barTargets.set(p.name, pct);
-      const txt = barsEl.querySelector(`[data-bar-text="${p.name}"]`);
-      if (txt) {
-        const ratioStr = p.ratio === 1 ? "1×" : p.ratio.toFixed(0) + "×";
-        const saved = original - size;
-        txt.innerHTML = `${fmtBytes(size)} <span class="saved">${ratioStr} · saves ${fmtBytes(saved)}</span>`;
-      }
-    }
-
-    // throughput / time-to-compress on the selected platform
-    const tput = PLATFORMS[currentPlat].tput * 1.0e6; // M vec/s -> vec/s
-    const baselineTput = tput / 4;                    // FP32 baseline ~4× slower
-    const secs = n / tput;
-    const baselineSecs = n / baselineTput;
-    $("speed-num").innerHTML = (PLATFORMS[currentPlat].tput).toFixed(1)
-      + '<span class="unit"> M / sec</span>';
-    $("speed-delta").textContent =
-      `${(tput / baselineTput).toFixed(1)}× faster than uncompressed · ${PLATFORMS[currentPlat].simd}`;
-    $("speed-time").innerHTML = fmtTime(secs)
-      + `<span class="unit"> · vs ${fmtTime(baselineSecs)} uncompressed</span>`;
-  }
-
-  buildBars();
-  recompute();
-  tickBars();
-
-  nSlider.addEventListener("input", recompute);
-  dSlider.addEventListener("input", recompute);
-  document.querySelectorAll(".preset[data-n]").forEach(b => {
-    b.addEventListener("click", () => { nSlider.value = b.dataset.n; recompute();
-      flashActive(b, "[data-n]"); });
-  });
-  document.querySelectorAll(".preset[data-d]").forEach(b => {
-    b.addEventListener("click", () => { dSlider.value = b.dataset.d; recompute();
-      flashActive(b, "[data-d]"); });
-  });
-  function flashActive(btn, sel) {
-    document.querySelectorAll(`.preset${sel}`).forEach(x => x.classList.remove("active"));
-    btn.classList.add("active");
-    setTimeout(() => btn.classList.remove("active"), 1200);
-  }
-
-  // ─────────────────────── savings calculator ───────────────────────
-  const saveSlider = $("save-slider"), saveN = $("save-n");
-  function saveRecompute() {
-    const n = parseInt(saveSlider.value, 10);
-    saveN.textContent = fmtCount(n);
-    const fp32 = n * 1536 * 4;
-    $("save-fp32").textContent = fmtBytes(fp32);
-    $("save-int8").textContent = fmtBytes(fp32 / 4);
-    $("save-nf4").textContent  = fmtBytes(fp32 / 8);
-    $("save-bin").textContent  = fmtBytes(fp32 / 32);
-  }
-  saveSlider.addEventListener("input", saveRecompute);
-  document.querySelectorAll(".preset[data-save]").forEach(b => {
-    b.addEventListener("click", () => { saveSlider.value = b.dataset.save; saveRecompute(); });
-  });
-  saveRecompute();
-
-  // ─────────────────────── search demo ───────────────────────
-  // Synthetic 2-D map of a small "knowledge base" — hand-placed so each
-  // query has obvious-looking nearest neighbours.
-  const KB = [
-    { x: 0.10, y: 0.18, t: "Paris is the capital of France",      tags: ["paris","france","capital"] },
-    { x: 0.13, y: 0.30, t: "Berlin is the capital of Germany",    tags: ["berlin","germany","capital"] },
-    { x: 0.08, y: 0.45, t: "Tokyo is the capital of Japan",       tags: ["tokyo","japan","capital"] },
-    { x: 0.20, y: 0.65, t: "Athens is the capital of Greece",     tags: ["athens","greece","capital"] },
-    { x: 0.22, y: 0.85, t: "Rome is the capital of Italy",        tags: ["rome","italy","capital"] },
-    { x: 0.40, y: 0.20, t: "Berlin gets cold and wet in winter",  tags: ["berlin","weather","cold"] },
-    { x: 0.45, y: 0.30, t: "Tokyo summers are humid and rainy",    tags: ["tokyo","weather","summer"] },
-    { x: 0.50, y: 0.45, t: "Athens has a mild Mediterranean climate", tags: ["athens","weather"] },
-    { x: 0.55, y: 0.62, t: "Cairo is hot and arid year round",    tags: ["cairo","weather","hot"] },
-    { x: 0.60, y: 0.80, t: "Moscow has long snowy winters",       tags: ["moscow","weather","snow"] },
-    { x: 0.78, y: 0.18, t: "French cuisine emphasises butter and wine", tags: ["france","food"] },
-    { x: 0.82, y: 0.35, t: "Italian pasta carbonara comes from Rome",   tags: ["rome","italy","food"] },
-    { x: 0.86, y: 0.55, t: "Japanese ramen has many regional styles",   tags: ["japan","food"] },
-    { x: 0.84, y: 0.75, t: "Greek salad is a Mediterranean staple",     tags: ["greece","food"] },
-    { x: 0.92, y: 0.88, t: "Sushi originated in Japan as a preservation method", tags: ["japan","food","history"] },
-    { x: 0.32, y: 0.55, t: "Trains in France connect Paris to Marseille at 320 km/h", tags: ["france","trains","paris"] },
-    { x: 0.36, y: 0.72, t: "The Tokyo subway carries 8 million riders per day",         tags: ["tokyo","japan","transit"] },
-    { x: 0.65, y: 0.35, t: "Italy's high-speed rail spans Milan to Naples",             tags: ["italy","trains"] },
-    { x: 0.70, y: 0.50, t: "Berlin's U-Bahn is one of Europe's oldest",                 tags: ["berlin","germany","transit"] },
-    { x: 0.30, y: 0.25, t: "The Eiffel Tower is in Paris",                              tags: ["paris","france","landmark"] },
-    { x: 0.15, y: 0.55, t: "Mount Fuji is a volcano on Honshu in Japan",                tags: ["japan","landmark"] },
-    { x: 0.42, y: 0.92, t: "Acropolis sits on a rocky outcrop above Athens",            tags: ["athens","greece","landmark"] },
-    { x: 0.68, y: 0.10, t: "Colosseum is an amphitheatre in Rome",                      tags: ["rome","italy","landmark"] },
-    { x: 0.90, y: 0.20, t: "Brandenburg Gate stands in central Berlin",                 tags: ["berlin","germany","landmark"] },
-  ];
-  const VW = 480, VH = 480, MARGIN = 40;
-  const dotsLayer = document.getElementById("qmap-dots");
-  const queryLayer = document.getElementById("qmap-query");
-
-  function svgEl(name, attrs) {
-    const e = document.createElementNS("http://www.w3.org/2000/svg", name);
-    for (const k in attrs) e.setAttribute(k, attrs[k]);
-    return e;
-  }
-
-  function projX(x) { return MARGIN + x * (VW - MARGIN * 1.2); }
-  function projY(y) { return MARGIN + y * (VH - MARGIN * 1.6); }
-
-  // place all KB dots
-  KB.forEach((p, i) => {
-    const c = svgEl("circle", {
-      cx: projX(p.x), cy: projY(p.y), r: 5,
-      fill: "#2a3050", stroke: "#3a4063", "stroke-width": 1,
-      class: "map-dot",
-    });
-    c.dataset.idx = i;
-    dotsLayer.appendChild(c);
-  });
-
-  // query chips
-  const QUERIES = [
-    "capital of France",
-    "where is sushi from",
-    "high-speed trains in Europe",
-    "best winter to avoid",
-    "famous landmarks in Italy",
-    "what to eat in Greece",
-  ];
-  const chipsRow = document.getElementById("qchips");
-  QUERIES.forEach(q => {
-    const b = document.createElement("button");
-    b.textContent = q;
-    b.addEventListener("click", () => {
-      $("qbox").value = q;
-      runSearch(q);
-    });
-    chipsRow.appendChild(b);
-  });
-
-  function tokenize(s) {
-    return s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
-  }
-  // Score each KB item by tag-overlap with the query plus a small geographic-bias
-  // bonus so the visual pattern is meaningful.
-  function score(qTokens, item) {
-    const set = new Set(qTokens);
-    let s = 0;
-    for (const t of item.tags) if (set.has(t)) s += 2;
-    for (const t of qTokens)   if (item.t.toLowerCase().includes(t)) s += 1;
-    if (qTokens.includes("capital") && item.tags.includes("capital")) s += 2;
-    if (qTokens.includes("food") || qTokens.includes("eat") || qTokens.includes("cuisine")) {
-      if (item.tags.includes("food")) s += 2;
-    }
-    if (qTokens.includes("trains") || qTokens.includes("train") || qTokens.includes("rail")) {
-      if (item.tags.includes("trains") || item.tags.includes("transit")) s += 2;
-    }
-    if (qTokens.includes("winter") || qTokens.includes("snow") || qTokens.includes("cold")) {
-      if (item.tags.includes("weather") || item.tags.includes("cold") || item.tags.includes("snow")) s += 2;
-    }
-    if (qTokens.includes("landmarks") || qTokens.includes("landmark")) {
-      if (item.tags.includes("landmark")) s += 2;
-    }
-    return s + 0.0001 * Math.random();   // tiny noise to break ties
-  }
-
-  function placeQueryDot(qTokens) {
-    queryLayer.innerHTML = "";
-    // pick the average position of the top-3 matches as the "query"
-    // location — visually places the query near its meaning cluster.
-    const ranked = KB.map((p, i) => ({ p, i, s: score(qTokens, p) }))
-                     .sort((a, b) => b.s - a.s);
-    const top = ranked.slice(0, 3);
-    const cx = top.reduce((a, r) => a + projX(r.p.x), 0) / top.length;
-    const cy = top.reduce((a, r) => a + projY(r.p.y), 0) / top.length;
-    const halo = svgEl("circle", {
-      cx, cy, r: 4, fill: "url(#qDotMatch)",
-      stroke: "#22d3ee", "stroke-width": 2,
-      class: "query-dot",
-    });
-    halo.style.filter = "drop-shadow(0 0 12px #22d3ee)";
-    queryLayer.appendChild(halo);
-    // pulse animation
-    const animR = svgEl("animate", {
-      attributeName: "r", from: 4, to: 28, dur: "1.6s",
-      begin: "0s", repeatCount: "indefinite",
-    });
-    const animO = svgEl("animate", {
-      attributeName: "opacity", from: 0.6, to: 0, dur: "1.6s",
-      repeatCount: "indefinite",
-    });
-    const ring = svgEl("circle", {
-      cx, cy, r: 4, fill: "none",
-      stroke: "#22d3ee", "stroke-width": 2,
-    });
-    ring.appendChild(animR);
-    ring.appendChild(animO);
-    queryLayer.appendChild(ring);
-    return ranked;
-  }
-
-  const resultsEl = document.getElementById("qresults");
-  function runSearch(q) {
-    const tokens = tokenize(q);
-    const ranked = placeQueryDot(tokens);
-
-    // reset KB dots
-    document.querySelectorAll(".map-dot").forEach(el => {
-      el.classList.remove("match");
-      el.setAttribute("fill", "#2a3050");
-      el.setAttribute("stroke", "#3a4063");
-      el.setAttribute("r", 5);
-    });
-    // highlight top-5 progressively
-    const top5 = ranked.slice(0, 5);
-    top5.forEach((r, rank) => {
-      setTimeout(() => {
-        const el = document.querySelector(`.map-dot[data-idx="${r.i}"]`);
-        if (el) {
-          el.classList.add("match");
-          el.setAttribute("fill", "url(#qDotMatch)");
-          el.setAttribute("stroke", "#22d3ee");
-          el.setAttribute("r", 8);
-        }
-      }, 120 + rank * 100);
-    });
-
-    // results list (animated in)
-    resultsEl.innerHTML = "";
-    top5.forEach((r, rank) => {
-      const row = document.createElement("div");
-      row.className = "result-row";
-      const sim = (0.7 + r.s * 0.04).toFixed(3);
-      row.innerHTML = `<div class="rank">#${rank + 1}</div>
-                       <div class="text">${r.p.t}</div>
-                       <div class="score">${sim}</div>`;
-      resultsEl.appendChild(row);
-      setTimeout(() => row.classList.add("in"), 100 + rank * 100);
-    });
-  }
-
-  document.getElementById("qrun").addEventListener("click",
-    () => runSearch(document.getElementById("qbox").value || "capital of France"));
-  document.getElementById("qbox").addEventListener("keydown", e => {
-    if (e.key === "Enter") runSearch(e.target.value);
-  });
-
-  // initial search so the panel isn't empty
-  runSearch("capital of France");
-
-  // ─────────────────────── scatter dots (animate in) ───────────────────────
-  const SCATTER_DOTS = [
-    { cx: 80,  cy: 60,  fill: "#5e6478",       label: "FP32 baseline (1.000)",        delay: 0,    color: "#98a0b6" },
-    { cx: 208, cy: 76,  fill: "url(#dotG-fast)", label: "fast — 8-bit (0.997)",        delay: 200,  color: "#facc15" },
-    { cx: 208, cy: 84,  fill: "url(#dotG-bal)",  label: "balanced — 8-bit (0.996)",    delay: 400,  color: "#22d3ee" },
-    { cx: 336, cy: 116, fill: "url(#dotG-qua)",  label: "quality — 4-bit (0.991)",     delay: 600,  color: "#c084fc" },
-    { cx: 720, cy: 280, fill: "url(#dotG-bin)",  label: "tiny — 1-bit (0.951)",        delay: 800,  color: "#4ade80" },
-  ];
-  function paintScatter() {
-    const layer = document.getElementById("scatter-dots");
-    layer.innerHTML = "";
-    SCATTER_DOTS.forEach((d, i) => {
-      const g = svgEl("g", { class: "scatter-group" });
-      const dot = svgEl("circle", {
-        class: "scatter-dot appear",
-        cx: d.cx, cy: d.cy, r: 9, fill: d.fill,
-        stroke: "#0a0c12", "stroke-width": 3,
-        style: `animation-delay: ${d.delay}ms`,
-      });
-      const text = svgEl("text", {
-        x: d.cx + 14, y: d.cy + 4,
-        "font-family": "ui-monospace, monospace",
-        "font-size": 11, fill: d.color,
-        opacity: 0,
-      });
-      text.textContent = d.label;
-      // anchor adjustment for the rightmost label
-      if (d.cx > 600) {
-        text.setAttribute("x", d.cx - 14);
-        text.setAttribute("text-anchor", "end");
-      }
-      g.appendChild(dot);
-      g.appendChild(text);
-      layer.appendChild(g);
-      // fade text in slightly after the dot
-      setTimeout(() => {
-        text.setAttribute("opacity", 1);
-        text.style.transition = "opacity 0.4s";
-      }, d.delay + 300);
-    });
-  }
-
-  // Use IntersectionObserver so the dots animate in only when the
-  // section enters the viewport (more rewarding on scroll).
-  const scatterEl = document.getElementById("scatter");
-  let painted = false;
-  const io = new IntersectionObserver((entries) => {
-    for (const e of entries) {
-      if (e.isIntersecting && !painted) {
-        painted = true;
-        paintScatter();
-      }
-    }
-  }, { threshold: 0.2 });
-  io.observe(scatterEl);
-
-  // ─────────────────────── smooth scroll ───────────────────────
-  document.querySelectorAll('a[href^="#"]').forEach(a => {
-    a.addEventListener("click", e => {
-      const t = document.querySelector(a.getAttribute("href"));
-      if (t) {
-        e.preventDefault();
-        t.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    });
-  });
-
-  // ───────────────────────────────────────────────────────────────
-  //                LIVE BACKEND — real Vectro on this CPU
-  // ───────────────────────────────────────────────────────────────
-  // When demo/server.py is running we point fetch() at it and overlay
-  // the real, *measured* numbers on top of the synthetic visualisation.
-  // Everything below is additive: if /api/health doesn't respond, the
-  // page works exactly as before.
-  // ───────────────────────────────────────────────────────────────
-
-  const LIVE = { online: false, base: window.location.origin };
-  const banner   = document.getElementById("live-banner");
-  const liveS    = document.getElementById("live-state");
-  const liveMsg  = document.getElementById("live-msg");
-  const liveHw   = document.getElementById("live-hw");
-
-  async function api(path, body) {
-    const opt = body
-      ? { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body) }
-      : { method: "GET" };
-    const r = await fetch(LIVE.base + path, opt);
-    if (!r.ok) throw new Error(`${path} → ${r.status}`);
-    return r.json();
-  }
-
-  function pillFor(parent, opts = {}) {
-    const existing = parent.querySelector(".live-pill");
-    if (existing) return existing;
-    const pill = document.createElement("span");
-    pill.className = "live-pill" + (opts.measured ? " measured" : "");
-    pill.textContent = "LIVE";
-    parent.appendChild(pill);
-    return pill;
-  }
-  function spinnerOn(parent) {
-    if (parent.querySelector(".api-spin")) return;
-    const s = document.createElement("span");
-    s.className = "api-spin";
-    parent.appendChild(s);
-  }
-  function spinnerOff(parent) {
-    parent.querySelectorAll(".api-spin").forEach(n => n.remove());
-  }
-
-  async function checkLive() {
+// ── Optional FastAPI bridge ───────────────────────────────────────
+const backend = {
+  online: false,
+  async ping() {
+    if (!API_BASE) return false;
     try {
-      const h = await api("/api/health");
-      LIVE.online = !!h.ok;
-      LIVE.platform = h.platform;
-      LIVE.version = h.version;
-    } catch (_) {
-      LIVE.online = false;
-    }
-    if (LIVE.online) {
-      banner.classList.remove("offline");
-      banner.classList.add("online");
-      liveS.textContent = "Live — every number on this page is measured here, right now.";
-      liveMsg.innerHTML  = `Calling real Vectro <code>v${LIVE.version}</code> on every interaction.`;
-      liveHw.textContent = LIVE.platform || "";
-      // Stamp pills + run a real benchmark + a real recompute.
-      stampLivePills();
-      tryBenchmark();
-      tryRecompute();
-      tryServerSearch(document.getElementById("qbox").value);
-    }
-    return LIVE.online;
+      const r = await fetch(API_BASE + '/health', { cache: 'no-store' });
+      this.online = r.ok;
+      return this.online;
+    } catch (_) { return false; }
+  },
+};
+
+// ── Wiring ────────────────────────────────────────────────────────
+const q = document.getElementById('q');
+let timer = null;
+function fire() {
+  const k = 12;
+  const hits = searchLocal(q.value.trim(), k);
+  renderConstellation(hits);
+}
+q.addEventListener('input', () => {
+  clearTimeout(timer);
+  timer = setTimeout(fire, 50);
+});
+q.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Enter' && q.value.trim().length) {
+    // Treat enter as "remember this term" — adds to the corpus so the
+    // landing page becomes its own little vector store across keystrokes.
+    const { vec, cluster } = hash32(q.value.trim());
+    corpus.push({ id: nextCorpusId++, label: q.value.trim(), vec, cluster });
+    fire();
   }
+});
 
-  function stampLivePills() {
-    // headline stat
-    const heroLbl = document.querySelector(".stat.featured .lbl");
-    if (heroLbl) pillFor(heroLbl, { measured: false });
-    // calculator summary cells
-    document.querySelectorAll(".summary-cell .l").forEach(el => pillFor(el));
-    // platform speed panel
-    const speedLbl = document.querySelector(".speed-cell .label");
-    if (speedLbl) pillFor(speedLbl, { measured: true });
-    // search results
-    const sLbl = document.querySelector("#search .section-eyebrow");
-    if (sLbl) pillFor(sLbl);
-    // savings cells
-    document.querySelectorAll(".save-cell .l").forEach(el => pillFor(el));
-  }
+async function boot() {
+  buildBackgroundStars();
+  await backend.ping();
+  document.getElementById('status').textContent = backend.online
+    ? 'live · FastAPI backend connected'
+    : 'offline · static demo · open viz.html for the full field';
+  fire();
+  q.focus();
+}
 
-  // ── live compress: replace the synthetic recompute() with a real
-  // /api/compress call.  Debounced 250 ms so dragging sliders doesn't
-  // overwhelm the server.
-  let recomputeTimer = null;
-  async function tryRecompute() {
-    if (!LIVE.online) return;
-    clearTimeout(recomputeTimer);
-    recomputeTimer = setTimeout(realCompress, 250);
-  }
-
-  async function realCompress() {
-    const n   = parseInt(document.getElementById("nSlider").value, 10);
-    const d   = parseInt(document.getElementById("dSlider").value, 10);
-    const sum = document.querySelector(".summary");
-    spinnerOn(sum);
-    // We measure four modes side-by-side so the bars + summary all
-    // become "real".  Cap n for the API call so big slider values
-    // don't stall the server (the visual bars already use the slider n).
-    const cap = Math.min(n, 100_000);
-    try {
-      const [int8, q, b] = await Promise.all([
-        api("/api/compress", { n_vecs: cap, dim: d, mode: "balanced" }),
-        api("/api/compress", { n_vecs: cap, dim: d, mode: "quality"  }),
-        api("/api/compress", { n_vecs: cap, dim: d, mode: "binary"   }),
-      ]);
-      // Update the speed panel with the *real* throughput.
-      const speedNum = document.getElementById("speed-num");
-      const delta    = document.getElementById("speed-delta");
-      const Mvs = (int8.throughput_M_vec_s || 0).toFixed(2);
-      speedNum.innerHTML = `${Mvs}<span class="unit"> M / sec</span>`;
-      delta.textContent =
-        `measured · 8-bit · n=${cap.toLocaleString()} d=${d}  →  ${int8.timing_ms} ms`;
-
-      // Update bar text with real ratios (8-bit, NF4 quality, 1-bit binary)
-      const setBar = (name, ratio, originalBytes) => {
-        const txt = document.querySelector(`[data-bar-text="${name}"]`);
-        if (!txt) return;
-        const bytes = originalBytes / ratio;
-        const saved = originalBytes - bytes;
-        txt.innerHTML = `${fmtBytesUI(bytes)} <span class="saved">${ratio.toFixed(2)}× · saves ${fmtBytesUI(saved)} (real)</span>`;
-      };
-      // Reuse existing fmtBytes by extracting it from window? It's
-      // closure-private; replicate inline.
-      function fmtBytesUI(b) {
-        if (b >= 1e9) return (b / 1e9).toFixed(2) + " GB";
-        if (b >= 1e6) return (b / 1e6).toFixed(1) + " MB";
-        if (b >= 1e3) return (b / 1e3).toFixed(1) + " KB";
-        return b.toFixed(0) + " B";
-      }
-      // For the bar visuals (which are drawn at the slider's full n),
-      // scale the real ratios up to the slider's n so the user sees the
-      // right answer for their chosen catalog size.
-      const realFp32 = n * d * 4;
-      setBar("fast",     int8.ratio,  realFp32);
-      setBar("balanced", int8.ratio,  realFp32);
-      setBar("quality",  q.ratio,     realFp32);
-      setBar("tiny",     b.ratio,     realFp32);
-    } catch (e) {
-      console.warn("realCompress failed:", e);
-    } finally {
-      spinnerOff(sum);
-    }
-  }
-
-  // re-fire real compress when sliders move
-  document.getElementById("nSlider").addEventListener("input", tryRecompute);
-  document.getElementById("dSlider").addEventListener("input", tryRecompute);
-
-  // ── live benchmark: get a real M vec/s number for THIS CPU at d=768
-  async function tryBenchmark() {
-    if (!LIVE.online) return;
-    const heroEl = document.getElementById("hero-tput");
-    const heroLbl = document.querySelector(".stat.featured .lbl");
-    spinnerOn(heroLbl);
-    try {
-      const r = await api("/api/benchmark", { n_vecs: 50_000, dim: 768, reps: 3 });
-      const Mvs = r.best_M_vec_s;
-      // Tween from current displayed value to the real one.
-      const start = parseFloat(heroEl.textContent) || 22;
-      const t0 = performance.now();
-      const dur = 1000;
-      function frame(t) {
-        const k = Math.min(1, (t - t0) / dur);
-        const e = 1 - Math.pow(1 - k, 5);
-        const v = start + (Mvs - start) * e;
-        heroEl.textContent = v.toFixed(2) + "M";
-        if (k < 1) requestAnimationFrame(frame);
-      }
-      requestAnimationFrame(frame);
-      // Update hero label with true platform info.
-      const lbl = document.querySelector(".stat.featured .lbl");
-      const plat = (r.platform || LIVE.platform || "").replace(" / ", " · ");
-      const orig = lbl.firstChild;
-      orig.textContent = `Vectors compressed / second on ${plat}`;
-    } catch (e) {
-      console.warn("benchmark failed:", e);
-    } finally {
-      spinnerOff(heroLbl);
-    }
-  }
-
-  // ── live search: replace the synthetic runSearch with /api/search
-  const qbox = document.getElementById("qbox");
-  const qrun = document.getElementById("qrun");
-  const resultsEl = document.getElementById("qresults");
-
-  async function tryServerSearch(query) {
-    if (!LIVE.online) return false;
-    spinnerOn(qrun);
-    try {
-      const out = await api("/api/search", { query_text: query, k: 5 });
-      // Render real results.
-      resultsEl.innerHTML = "";
-      out.passages.forEach((p, rank) => {
-        const row = document.createElement("div");
-        row.className = "result-row";
-        row.innerHTML = `<div class="rank">#${rank + 1}</div>
-                         <div class="text">${p}</div>
-                         <div class="score">${out.scores[rank].toFixed(4)}</div>`;
-        resultsEl.appendChild(row);
-        setTimeout(() => row.classList.add("in"), 80 + rank * 90);
-      });
-      // Tag a "LIVE · Xms" stamp on the search header.
-      const sLbl = document.querySelector("#search .section-eyebrow");
-      const existing = sLbl.querySelector(".live-pill");
-      if (existing) existing.textContent = `LIVE · ${out.timing_ms.toFixed(2)} ms`;
-
-      // Highlight the corresponding dots on the synthetic 2-D map by
-      // re-running the local placement against the original query — we
-      // already have the visual choreography from the static demo, so
-      // the server result populates the real list and the static map
-      // shows where the meaning cluster lives.
-      // (The local runSearch is already wired; we leave it — the dots
-      // animate as the user clicks "Search".)
-      return true;
-    } catch (e) {
-      console.warn("server search failed, falling back:", e);
-      return false;
-    } finally {
-      spinnerOff(qrun);
-    }
-  }
-
-  // intercept "Search" clicks and Enter presses to prefer the server.
-  // The original local handler still runs first to drive the animated
-  // map; we then overlay real results into the list.
-  qrun.addEventListener("click", () => tryServerSearch(qbox.value));
-  qbox.addEventListener("keydown", e => {
-    if (e.key === "Enter") tryServerSearch(qbox.value);
-  });
-  document.querySelectorAll(".search-suggest button").forEach(b => {
-    b.addEventListener("click", () => tryServerSearch(b.textContent));
-  });
-
-  // kick off the probe
-  checkLive();
-})();
+boot();
 </script>
 </body>
 </html>
