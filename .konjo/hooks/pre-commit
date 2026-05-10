@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Konjo Quality Framework — Wall 1: Pre-Commit Hook
+set -euo pipefail
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+BOLD="$(tput bold 2>/dev/null || echo '')"
+RED="$(tput setaf 1 2>/dev/null || echo '')"
+YEL="$(tput setaf 3 2>/dev/null || echo '')"
+GRN="$(tput setaf 2 2>/dev/null || echo '')"
+RST="$(tput sgr0 2>/dev/null || echo '')"
+banner() { echo "${BOLD}[konjo] $1${RST}"; }
+pass()   { echo "${GRN}  ✓ $1${RST}"; }
+warn()   { echo "${YEL}  ⚠ $1${RST}"; }
+fail()   { echo "${RED}  ✗ $1${RST}" >&2; exit 1; }
+HAS_RUST=false; HAS_PYTHON=false; HAS_MOJO=false
+[[ -f "$REPO_ROOT/Cargo.toml" ]] && HAS_RUST=true
+{ [[ -f "$REPO_ROOT/pyproject.toml" ]] || [[ -f "$REPO_ROOT/requirements.txt" ]]; } && HAS_PYTHON=true
+[[ -f "$REPO_ROOT/pixi.toml" ]] && HAS_MOJO=true
+STAGED="$(git diff --cached --name-only 2>/dev/null || echo '')"
+[[ -z "$STAGED" ]] && echo "[konjo] No staged files." && exit 0
+STAGED_RS="$(echo "$STAGED" | grep '\.rs$' || true)"
+STAGED_PY="$(echo "$STAGED" | grep '\.py$' || true)"
+banner "Wall 1 pre-commit ($(date +%H:%M:%S))"
+if $HAS_RUST && [[ -n "$STAGED_RS" ]]; then
+    banner "1a. cargo check"
+    cargo check --workspace --quiet 2>&1 || fail "cargo check failed"
+    pass "cargo check"
+    banner "1b. clippy"
+    cargo clippy --workspace --all-targets --quiet -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic -D clippy::todo -D clippy::dbg_macro 2>&1 || fail "clippy violations"
+    pass "clippy"
+    banner "1c. unwrap/expect scan"
+    UNWRAP_HITS=""
+    while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        [[ "$f" =~ _tests?\.rs$ ]] && continue; [[ "$f" =~ /tests?\.rs$ ]] && continue
+        [[ "$f" =~ /tests/ ]] && continue; [[ "$f" =~ /benches/ ]] && continue
+        HITS=$(awk '/^#\[cfg\(test\)\]/ { skip=1; depth=0 } skip { n=split($0,a,"{"); depth+=(n-1); n=split($0,b,"}"); depth-=(n-1); if (depth<0) { skip=0; next } } !skip { print NR": "$0 }' "$f" | grep -E '(\.unwrap\(\)|\.expect\()' | grep -v '^\s*//' || true)
+        [[ -n "$HITS" ]] && UNWRAP_HITS+="$f: $HITS"$'\n'
+    done <<< "$STAGED_RS"
+    [[ -n "$UNWRAP_HITS" ]] && echo "$UNWRAP_HITS" && fail "unwrap()/expect() in production code"
+    pass "no unwrap/expect in production Rust"
+fi
+if $HAS_PYTHON && [[ -n "$STAGED_PY" ]]; then
+    if command -v ruff &>/dev/null; then
+        ruff check $STAGED_PY --exit-non-zero-on-fix 2>&1 || fail "ruff lint violations"
+        ruff format $STAGED_PY --check 2>&1 || fail "ruff format violations"
+        pass "ruff lint+format"
+    else warn "ruff not found"; fi
+    SILENT_HITS=""
+    while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        HITS=$(grep -En '(except\s*:$|except\s+Exception\s*:$)' "$f" || true)
+        [[ -n "$HITS" ]] && SILENT_HITS+="$f:\n$HITS\n"
+    done <<< "$STAGED_PY"
+    [[ -n "$SILENT_HITS" ]] && echo -e "$SILENT_HITS" && fail "Bare except: found"
+    pass "no silent error swallowing"
+fi
+banner "3a. file size check"
+while IFS= read -r f; do
+    [[ -f "$f" ]] || continue
+    case "$f" in *.rs|*.py|*.mojo|*.ts|*.tsx) ;; *) continue ;; esac
+    LC=$(wc -l < "$f" | tr -d ' ')
+    [[ "$LC" -gt 500 ]] && warn "$f: $LC lines (limit 500)"
+done <<< "$STAGED"
+pass "file size check complete"
+banner "3b. DRY check"
+if [[ -f "$REPO_ROOT/.konjo/scripts/dry_check.py" ]] && command -v python3 &>/dev/null; then
+    python3 "$REPO_ROOT/.konjo/scripts/dry_check.py" --staged-only --min-lines 20 --threshold 0.85 2>&1 || fail "DRY violation"
+    pass "DRY check"
+else warn "dry_check.py not found"; fi
+banner "3c. TODO/FIXME scan"
+TODO_HITS=""
+while IFS= read -r f; do
+    [[ -f "$f" ]] || continue
+    [[ "$f" =~ \.konjo/hooks/ ]] && continue; [[ "$f" =~ \.claude/ ]] && continue; [[ "$f" =~ \.md$ ]] && continue
+    HITS=$(grep -En '(TODO|FIXME|HACK|XXX)\b' "$f" || true)
+    [[ -n "$HITS" ]] && TODO_HITS+="$f: $HITS"$'\n'
+done <<< "$STAGED"
+[[ -n "$TODO_HITS" ]] && echo "$TODO_HITS" && fail "TODO/FIXME in staged code"
+pass "no TODO/FIXME"
+echo ""
+pass "Wall 1 cleared."
