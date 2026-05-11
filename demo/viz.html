@@ -9,18 +9,14 @@
   html, body { width: 100%; height: 100%; overflow: hidden; background: #020208; }
 
   canvas {
-    display: block;
-    position: fixed; inset: 0;
-    will-change: transform;
+    display: block; position: fixed; inset: 0;
+    will-change: transform; cursor: crosshair;
   }
 
-  /* ── HUD ── */
   #hud {
     position: fixed; top: 0; left: 0; right: 0;
     display: flex; align-items: center; justify-content: space-between;
-    padding: 20px 28px;
-    z-index: 20;
-    pointer-events: none;
+    padding: 20px 28px; z-index: 20; pointer-events: none;
   }
   .wordmark {
     font-family: -apple-system, "SF Pro Display", system-ui, sans-serif;
@@ -29,47 +25,63 @@
   }
   .wordmark span { color: #a78bfa; }
 
-  /* ── controls ── */
   #controls {
     position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
-    display: flex; gap: 10px; z-index: 20;
+    display: flex; gap: 10px; z-index: 20; flex-wrap: wrap;
+    justify-content: center; max-width: 96vw;
   }
   .btn {
-    font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+    font-family: -apple-system, system-ui, sans-serif;
     font-size: 12px; font-weight: 600; letter-spacing: 0.06em;
     color: rgba(255,255,255,0.8);
     background: rgba(255,255,255,0.06);
     border: 1px solid rgba(255,255,255,0.14);
     border-radius: 999px; padding: 9px 18px;
     cursor: pointer; outline: none;
-    transition: background 0.2s, border-color 0.2s, transform 0.15s;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    transition: background .2s, border-color .2s, transform .15s;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   }
   .btn:hover {
-    background: rgba(167,139,250,0.18);
-    border-color: rgba(167,139,250,0.55);
+    background: rgba(167,139,250,0.18); border-color: rgba(167,139,250,0.55);
     transform: translateY(-2px);
   }
-  .btn:active { transform: translateY(0px); }
-  .btn.active { background: rgba(167,139,250,0.3); border-color: #a78bfa; }
+  .btn:active { transform: translateY(0); }
+  .btn.active { background: rgba(167,139,250,0.3); border-color: #a78bfa; color: #c4b5fd; }
 
   #hint {
-    position: fixed; bottom: 82px; left: 50%; transform: translateX(-50%);
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
     font-family: -apple-system, system-ui, sans-serif;
     font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
-    color: rgba(255,255,255,0.28);
-    pointer-events: none; z-index: 20;
-    transition: opacity 0.5s;
+    color: rgba(255,255,255,0.28); pointer-events: none; z-index: 20;
+    transition: opacity .5s; white-space: nowrap;
   }
 
   #stats {
     position: fixed; top: 20px; right: 28px;
     font-family: ui-monospace, "SF Mono", Menlo, monospace;
     font-size: 11px; color: rgba(255,255,255,0.25);
-    z-index: 20; pointer-events: none; text-align: right;
-    line-height: 1.7;
+    z-index: 20; pointer-events: none; text-align: right; line-height: 1.7;
   }
+
+  /* ── glass-morphism tooltip ── */
+  #tt {
+    position: fixed; z-index: 30;
+    padding: 10px 14px;
+    background: rgba(14, 10, 28, 0.72);
+    border: 1px solid rgba(167,139,250,0.22);
+    border-radius: 10px;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 4px 32px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.04) inset;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px; line-height: 1.7; color: rgba(255,255,255,0.7);
+    pointer-events: none;
+    transform-origin: bottom left;
+    transition: opacity .18s, transform .22s cubic-bezier(0.23,1,0.32,1);
+  }
+  #tt.hidden { opacity: 0; transform: scale(0.82); }
+  #tt.visible { opacity: 1; transform: scale(1); }
+  #tt .tt-id { color: #c4b5fd; font-weight: 700; margin-bottom: 2px; }
+  #tt .tt-row span { color: rgba(255,255,255,0.45); }
 </style>
 </head>
 <body>
@@ -83,38 +95,55 @@
 <div id="stats">
   <div id="s-fps">60 fps</div>
   <div id="s-stars">0 vectors</div>
-  <div id="s-thermal">hold ⇧ for constellations</div>
+  <div id="s-mode">⊙ cosmos</div>
 </div>
 
-<p id="hint">shift · drag · interact</p>
+<p id="hint">⇧ constellations · D resonance · drag to query · scroll to zoom</p>
+
+<!-- glass tooltip -->
+<div id="tt" class="hidden"></div>
 
 <div id="controls">
   <button class="btn" id="btn-add">+ Add Vector</button>
-  <button class="btn" id="btn-search">⊙ Run Search</button>
-  <button class="btn" id="btn-shoot">☄ Shooting Star</button>
+  <button class="btn" id="btn-search">⊙ Search</button>
+  <button class="btn" id="btn-cluster">⬡ Cluster</button>
+  <button class="btn" id="btn-shoot">☄ Meteor</button>
   <button class="btn" id="btn-nebula">◎ Nebula</button>
+  <button class="btn" id="btn-res">◈ Resonance</button>
 </div>
 
 <script>
-/* =========================================================
-   VECTRO VECTOR COSMOS — demo/viz.html
-   Seven effects, one canvas, one RAF loop.
+/* =============================================================
+   VECTRO VECTOR COSMOS v2 — demo/viz.html
+   15 effects, one canvas, one RAF loop.
 
-   Effects
-   -------
-   1. True 3D perspective star field (z-drift camera forward)
-   2. Multi-layer mouse parallax (near/mid/far bands + nebula)
-   3. Shooting stars (random every 8–15s + on-demand)
-   4. Comet birth for new vectors (+ nova pulse at landing)
-   5. Search cone (translucent spotlight, 0°→full over 400ms)
-   6. Constellation hover (shift key, gold lines, 4s fade)
-   7. Star glow bloom (shadowBlur + repeat draw at 3× radius)
-   ========================================================= */
+   Original 7
+   ----------
+   1.  True 3D perspective star field (z-drift camera forward)
+   2.  Multi-layer mouse parallax (near/mid/far + nebula)
+   3.  Shooting stars (random + on-demand)
+   4.  Comet birth for new vectors (+ nova pulse)
+   5.  Search cone (spotlight, 0°→full over 400ms)
+   6.  Constellation hover (shift key, gold lines, 4s fade)
+   7.  Star glow bloom (shadowBlur + 3× radius halo)
+
+   New wave
+   --------
+   8.  Gravity wells — k-means clusters, centroid pull + pulse ring
+   9.  k-NN search rays — progressive lines, ring ripple at endpoints
+   10. Scroll-zoom with momentum (vel decay, hyperspace feel)
+   11. Vector addition ripple — radial push + spring-back
+   12. Hover tooltip — glass-morphism, 500ms delay, scale-in
+   13. Star age hue shift — oldest→blue, newest→amber
+   14. Dimensional resonance (D key) — radial oscillation per freq
+   15. Drag-to-query — draw line, release → run k-NN from that point
+   ============================================================= */
 
 const canvas = document.getElementById("c");
 const ctx    = canvas.getContext("2d");
+const ttEl   = document.getElementById("tt");
 
-// ── sizing ────────────────────────────────────────────────
+// ── sizing ─────────────────────────────────────────────────
 let W, H, DPR, CX, CY;
 function resize() {
   DPR = window.devicePixelRatio || 1;
@@ -125,56 +154,67 @@ function resize() {
   canvas.style.width  = W + "px";
   canvas.style.height = H + "px";
   ctx.scale(DPR, DPR);
-  CX = W / 2;
-  CY = H / 2;
+  CX = W / 2; CY = H / 2;
   rebuildNebula();
 }
 window.addEventListener("resize", resize);
 
-// ── math helpers ──────────────────────────────────────────
+// ── math helpers ───────────────────────────────────────────
 const TAU    = Math.PI * 2;
 const lerp   = (a, b, t) => a + (b - a) * t;
+const clamp  = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const rand   = (lo, hi) => lo + Math.random() * (hi - lo);
 const randI  = (lo, hi) => lo + (Math.random() * (hi - lo + 1)) | 0;
-// cubic-bezier(0.23, 1, 0.32, 1) — Quint ease-out, used for all transitions.
-// Approximated as 1-(1-t)^3 for the RAF loop (matches the curve closely at
-// the speeds we animate; a true bezier solver would cost more per frame).
-const ease   = t => 1 - Math.pow(1 - t, 3);
-const easeIO = t => t < 0.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
-// Alias used by nova + comet calls explicitly referencing the bezier spec:
-const cubicBezier023_1_032_1 = ease;
+const ease   = t => 1 - Math.pow(1 - t, 3);  // cubic-bezier(0.23, 1, 0.32, 1) approx
 
-// ── 3D star config ────────────────────────────────────────
-const N_STARS  = 520;
-const FOCAL    = 500;
-const MAX_Z    = 900;
-const DRIFT_Z  = 0.22;   // camera advance per frame
+// ── 3D star config ─────────────────────────────────────────
+const N_STARS   = 520;
+const MAX_Z     = 900;
+const DRIFT_Z   = 0.22;
 
-// Depth bands: index 0 = far, 1 = mid, 2 = near
+// Feature 10: focal is now dynamic (scroll zoom with momentum)
+let focal    = 500;
+let focalVel = 0;
+
 const BANDS = [
-  { from: MAX_Z * 0.55, to: MAX_Z,      parallax: 0.004 },
-  { from: MAX_Z * 0.25, to: MAX_Z*0.55, parallax: 0.014 },
-  { from: 1,            to: MAX_Z*0.25, parallax: 0.035 },
+  { from: MAX_Z * 0.55, to: MAX_Z,       parallax: 0.004 },
+  { from: MAX_Z * 0.25, to: MAX_Z * 0.55, parallax: 0.014 },
+  { from: 1,            to: MAX_Z * 0.25, parallax: 0.035 },
 ];
 const BAND_BLOOM = [0.05, 0.12, 0.25];
 
-// ── star state ────────────────────────────────────────────
-let stars = [];
+// ── star state ─────────────────────────────────────────────
+let stars       = [];
+let totalBorn   = 0;   // monotonic count for age colouring
 
 function makeStar(opts = {}) {
-  const z    = opts.z    ?? rand(2, MAX_Z);
+  const z    = opts.z ?? rand(2, MAX_Z);
   const band = z > BANDS[1].from ? 0 : z > BANDS[2].from ? 1 : 2;
+  const age  = totalBorn++;
   return {
-    x    : rand(-W * 2.5, W * 2.5),
-    y    : rand(-H * 2.5, H * 2.5),
+    x: rand(-W * 2.5, W * 2.5),
+    y: rand(-H * 2.5, H * 2.5),
     z,
     band,
-    hue  : opts.hue  ?? randI(200, 300),
-    sat  : opts.sat  ?? randI(40, 80),
-    baseR: opts.baseR ?? rand(0.5, 1.6),
-    born : performance.now(),
-    novaDur: opts.nova ? 700 : 0,
+    hue   : opts.hue   ?? randI(200, 300),
+    sat   : opts.sat   ?? randI(40, 80),
+    baseR : opts.baseR ?? rand(0.5, 1.6),
+    born  : performance.now(),
+    age,                                // Feature 13: insertion index
+    // Nova (Feature 4)
+    novaDur  : opts.nova ? 700 : 0,
     novaStart: opts.nova ? performance.now() : 0,
+    // Gravity (Feature 8) — world-space velocity, applied during projection
+    vx: 0, vy: 0,
+    clusterIdx: -1,
+    // Ripple (Feature 11) — screen-space displacement
+    rippleOx: 0, rippleOy: 0,
+    rippleVx: 0, rippleVy: 0,
+    // Resonance (Feature 14)
+    freq : rand(0.4, 3.2),
+    phase: rand(0, TAU),
+    // Hover stats (Feature 12)
+    accessCount: randI(1, 20),
     // projected — filled each frame
     sx: 0, sy: 0, r: 0, alpha: 0,
   };
@@ -182,180 +222,360 @@ function makeStar(opts = {}) {
 
 function initStars() {
   stars = [];
+  totalBorn = 0;
   for (let i = 0; i < N_STARS; i++) stars.push(makeStar());
 }
 
-// ── parallax ──────────────────────────────────────────────
-const PARALLAX = { x: [0, 0, 0], y: [0, 0, 0], tx: [0, 0, 0], ty: [0, 0, 0] };
-const NEBULA_PX = 0.008;   // 30% of near band's 0.035 ≈ 0.008
+// ── parallax ───────────────────────────────────────────────
+const PARALLAX = { x: [0,0,0], y: [0,0,0], tx: [0,0,0], ty: [0,0,0] };
+const NEBULA_PX = 0.008;
 
 let mouseX = 0, mouseY = 0;
 window.addEventListener("mousemove", e => {
-  mouseX = e.clientX;
-  mouseY = e.clientY;
+  mouseX = e.clientX; mouseY = e.clientY;
   for (let b = 0; b < 3; b++) {
     PARALLAX.tx[b] = (mouseX - CX) * BANDS[b].parallax;
     PARALLAX.ty[b] = (mouseY - CY) * BANDS[b].parallax;
   }
+  handleHoverMove(e);
+  if (dragQuery) {
+    dragQuery.x1 = e.clientX;
+    dragQuery.y1 = e.clientY;
+    const now = performance.now();
+    dragQuery.trail.push({ x: e.clientX, y: e.clientY, t: now });
+    // Keep only the last 40 trail points
+    if (dragQuery.trail.length > 40) dragQuery.trail.shift();
+  }
 });
 
-// ── nebula layer ──────────────────────────────────────────
+// ── nebula layer ───────────────────────────────────────────
 let nebulae = [];
 function rebuildNebula() {
   nebulae = [];
-  const n = 9;
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < 9; i++) {
     nebulae.push({
-      x  : rand(W * 0.05, W * 0.95),
-      y  : rand(H * 0.05, H * 0.95),
-      r  : rand(W * 0.12, W * 0.28),
-      hue: randI(220, 310),
-      a  : rand(0.018, 0.05),
-      ox : 0, oy : 0,   // parallax offset
+      x: rand(W * 0.05, W * 0.95), y: rand(H * 0.05, H * 0.95),
+      r: rand(W * 0.12, W * 0.28), hue: randI(220, 310),
+      a: rand(0.018, 0.05), ox: 0, oy: 0,
     });
   }
 }
 
-// ── shooting stars ────────────────────────────────────────
-let shooters = [];
+// ── shooting stars ─────────────────────────────────────────
+let shooters      = [];
 let nextShootTime = performance.now() + rand(8000, 15000);
 
 function spawnShooter() {
-  const angle = rand(TAU * 0.05, TAU * 0.45);  // top-right trending
-  const len   = rand(120, 260);
+  const angle = rand(TAU * 0.05, TAU * 0.45);
   const edge  = pickEdge();
   shooters.push({
-    x0   : edge.x, y0: edge.y,
-    angle,
-    len,
+    x0: edge.x, y0: edge.y, angle,
+    len  : rand(120, 260),
     hue  : randI(180, 270),
-    t    : 0,   // 0→1 draw phase, 1→2 fade phase
+    t    : 0,
     speed: rand(0.012, 0.022),
   });
   nextShootTime = performance.now() + rand(8000, 15000);
 }
 
 function pickEdge() {
-  const side = randI(0, 3);
-  if (side === 0) return { x: rand(0, W),   y: -20 };         // top
-  if (side === 1) return { x: W + 20,       y: rand(0, H) };  // right
-  if (side === 2) return { x: rand(0, W),   y: H + 20 };      // bottom
-  return              { x: -20,             y: rand(0, H) };   // left
+  const s = randI(0, 3);
+  if (s === 0) return { x: rand(0, W), y: -20 };
+  if (s === 1) return { x: W + 20,    y: rand(0, H) };
+  if (s === 2) return { x: rand(0, W), y: H + 20 };
+  return              { x: -20,       y: rand(0, H) };
 }
 
-// ── comets ────────────────────────────────────────────────
+// ── comets ─────────────────────────────────────────────────
 let comets = [];
-
 function spawnComet(targetStar) {
   const edge = pickEdge();
-  // project the target star to get screen destination
-  const tsx = targetStar.sx;
-  const tsy = targetStar.sy;
   comets.push({
-    x0: edge.x, y0: edge.y,
-    x1: tsx,    y1: tsy,
-    hue: targetStar.hue,
-    t  : 0,
-    speed: 0.008,
-    done : false,
+    x0: edge.x, y0: edge.y, x1: targetStar.sx, y1: targetStar.sy,
+    hue: targetStar.hue, t: 0, speed: 0.008, done: false,
     target: targetStar,
   });
 }
 
-// ── search cone ───────────────────────────────────────────
+// ── Feature 8: Gravity wells / k-means clustering ──────────
+const K = 4;
+const CLUSTER_HUES = [260, 180, 320, 40];   // violet, cyan, pink, amber
+let   clusters = [];    // [{cx, cy, hue, stars: []}]
+
+function recluster() {
+  // Only cluster visible near/mid stars with some spread
+  const visible = stars.filter(s => s.alpha > 0.3 && s.sx > 0 && s.sx < W);
+  if (visible.length < K) return;
+
+  // Init centroids by spacing evenly through sorted list (avoids empty clusters)
+  const step = Math.floor(visible.length / K);
+  let cents = Array.from({ length: K }, (_, i) => ({
+    cx: visible[i * step].sx, cy: visible[i * step].sy,
+    hue: CLUSTER_HUES[i],
+  }));
+
+  // 5 Lloyd iterations
+  for (let iter = 0; iter < 5; iter++) {
+    // Assign
+    const sums = Array.from({ length: K }, () => ({ sx: 0, sy: 0, n: 0 }));
+    for (const s of visible) {
+      let best = 0, bd = Infinity;
+      for (let k = 0; k < K; k++) {
+        const d = Math.hypot(s.sx - cents[k].cx, s.sy - cents[k].cy);
+        if (d < bd) { bd = d; best = k; }
+      }
+      s.clusterIdx = best;
+      sums[best].sx += s.sx; sums[best].sy += s.sy; sums[best].n++;
+    }
+    // Move centroids
+    for (let k = 0; k < K; k++) {
+      if (sums[k].n > 0) {
+        cents[k].cx = sums[k].sx / sums[k].n;
+        cents[k].cy = sums[k].sy / sums[k].n;
+      }
+    }
+  }
+  clusters = cents;
+}
+
+// Gravity pull: called during star position update
+function applyGravity(s) {
+  if (s.clusterIdx < 0 || s.clusterIdx >= clusters.length) return;
+  const c = clusters[s.clusterIdx];
+  // Pull in world-space by working backward from screen centroid
+  // Simpler: apply small world-velocity toward projected centroid
+  const txWorld = (c.cx - CX) / (focal / s.z);
+  const tyWorld = (c.cy - CY) / (focal / s.z);
+  s.vx = lerp(s.vx, (txWorld - s.x) * 0.0002, 0.1);
+  s.vy = lerp(s.vy, (tyWorld - s.y) * 0.0002, 0.1);
+  s.x += s.vx;
+  s.y += s.vy;
+}
+
+// ── Feature 9: k-NN search rays ───────────────────────────
+let searchRays  = [];
+let searchRipples = [];   // ring ripples at endpoint
+
+function spawnSearchRays(qx, qy, matchStars) {
+  // Clear previous
+  searchRays = [];
+  const now = performance.now();
+  matchStars.slice(0, 5).forEach((m, i) => {
+    const dist = Math.hypot(m.sx - qx, m.sy - qy);
+    if (dist < 1) return;
+    searchRays.push({
+      qx, qy, tx: m.sx, ty: m.sy,
+      hue       : 270 - i * 20,
+      dist,
+      progress  : 0,       // 0→1: ray extends
+      rippled   : false,
+      startTime : now + i * 100,   // stagger rays
+      speed     : clamp(600 / dist, 0.5, 2.5),   // fast for short, slow for long
+    });
+  });
+}
+
+// ── Feature 5: search cone (unchanged + used alongside rays) ─
 let cone = null;
 
-function spawnCone() {
-  // pick 3-6 random stars as "matches"
-  const pool = stars.filter(s => s.alpha > 0.4 && s.band <= 1);
-  const n    = Math.min(pool.length, randI(4, 7));
-  const matches = [];
-  const used    = new Set();
-  while (matches.length < n && used.size < pool.length) {
-    const i = randI(0, pool.length - 1);
-    if (!used.has(i)) { used.add(i); matches.push(pool[i]); }
-  }
-  if (!matches.length) return;
-  // find a spread angle to encompass all matches
-  const angles = matches.map(s => Math.atan2(s.sy - CY, s.sx - CX));
+function spawnSearchFromPoint(qx, qy) {
+  // Find k=5 nearest visible stars
+  const visible = stars.filter(s => s.alpha > 0.3 && s.sx > 0 && s.sx < W);
+  const sorted  = visible
+    .map(s => ({ s, d: Math.hypot(s.sx - qx, s.sy - qy) }))
+    .sort((a, b) => a.d - b.d)
+    .slice(0, 5)
+    .map(o => o.s);
+  if (!sorted.length) return;
+
+  spawnSearchRays(qx, qy, sorted);
+
+  // Also show the cone
+  const angles = sorted.map(s => Math.atan2(s.sy - qy, s.sx - qx));
   const meanA  = angles.reduce((a, b) => a + b, 0) / angles.length;
   const spread = Math.max(...angles.map(a => Math.abs(a - meanA))) + 0.35;
-
   cone = {
-    qx: CX, qy: CY,
-    angle  : meanA,
-    spread : 0,            // animates to `spreadTarget`
-    spreadT: spread,
-    matches,
-    maxR   : Math.max(...matches.map(s => Math.hypot(s.sx - CX, s.sy - CY))) + 60,
-    t      : 0,            // 0→1 open, 1→2 hold, 2→3 fade
-    speed  : 1 / 400,      // 1/ms
-    alpha  : 0.0,
+    qx, qy, angle: meanA, spread: 0, spreadT: spread,
+    matches: sorted,
+    maxR   : Math.max(...sorted.map(s => Math.hypot(s.sx - qx, s.sy - qy))) + 60,
+    t: 0, speed: 1 / 400, alpha: 0,
   };
 }
 
-// ── constellation ─────────────────────────────────────────
-let shiftHeld        = false;
-let constellation    = null;   // { lines, glyphs, alpha, startedAt }
-const CONST_NEAR_PX  = 110;
-const GLYPHS = ["✦", "✧", "⊕", "⊗", "◈", "⬡", "⬢", "⬟", "⟁", "⊙"];
+// ── Feature 11: ripple disturbance ─────────────────────────
+function spawnRipple(cx, cy) {
+  const R = 120;
+  for (const s of stars) {
+    const dx = s.sx - cx, dy = s.sy - cy;
+    const dist = Math.hypot(dx, dy);
+    if (dist < R && dist > 0.5) {
+      const angle  = Math.atan2(dy, dx);
+      const power  = (1 - dist / R) * 10;
+      s.rippleVx  += Math.cos(angle) * power;
+      s.rippleVy  += Math.sin(angle) * power;
+    }
+  }
+}
 
+// ── Feature 6: constellation ───────────────────────────────
+let shiftHeld     = false;
+let constellation = null;
+const CONST_PX    = 110;
+const GLYPHS = ["✦","✧","⊕","⊗","◈","⬡","⬢","⬟","⟁","⊙"];
+
+function buildConstellation() {
+  const vis = stars.filter(s => s.alpha > 0.35);
+  const lines = [];
+  for (let i = 0; i < vis.length; i++) {
+    for (let j = i + 1; j < vis.length; j++) {
+      if (Math.hypot(vis[i].sx - vis[j].sx, vis[i].sy - vis[j].sy) < CONST_PX) {
+        lines.push({ x1: vis[i].sx, y1: vis[i].sy, x2: vis[j].sx, y2: vis[j].sy });
+      }
+    }
+  }
+  const glyphs = [];
+  const count = Math.min((vis.length / 8) | 0, 5);
+  for (let g = 0; g < count; g++) {
+    const seed = vis[randI(0, vis.length - 1)];
+    glyphs.push({ x: seed.sx, y: seed.sy - 18, ch: GLYPHS[randI(0, GLYPHS.length - 1)] });
+  }
+  constellation = { lines, glyphs, alpha: 1.0, startedAt: performance.now() };
+}
+
+// ── Feature 14: dimensional resonance ─────────────────────
+let resonanceOn = false;
+
+// ── Feature 12: hover tooltip ──────────────────────────────
+let hoverTimer   = null;
+let hoveredStar  = null;
+const HOVER_R    = 18;   // px hit radius
+
+function findStarUnderMouse(mx, my) {
+  let best = null, bd = HOVER_R;
+  for (const s of stars) {
+    if (!s.alpha) continue;
+    const d = Math.hypot(s.sx - mx, s.sy - my);
+    if (d < bd) { bd = d; best = s; }
+  }
+  return best;
+}
+
+function showTooltip(star, mx, my) {
+  const ageRatio = totalBorn > 1 ? star.age / (totalBorn - 1) : 0;
+  const nn = findNearestNeighborSim(star);
+  ttEl.innerHTML = `
+    <div class="tt-id">Vector #${star.age}</div>
+    <div class="tt-row">Cluster <span>:</span> ${star.clusterIdx >= 0 ? star.clusterIdx : "—"}</div>
+    <div class="tt-row">NN sim <span>:</span> ${nn.toFixed(3)}</div>
+    <div class="tt-row">Age <span>:</span> ${ageRatio < 0.33 ? "oldest" : ageRatio < 0.66 ? "mid" : "newest"}</div>
+    <div class="tt-row">Accessed <span>:</span> ${star.accessCount}×</div>
+  `;
+  const pad = 14;
+  const tx = clamp(mx + 16, pad, W - 170);
+  const ty = clamp(my - 90, pad, H - 130);
+  ttEl.style.left = tx + "px";
+  ttEl.style.top  = ty + "px";
+  ttEl.className  = "visible";
+}
+
+function hideTooltip() {
+  ttEl.className = "hidden";
+  hoveredStar    = null;
+}
+
+function findNearestNeighborSim(star) {
+  let best = 0;
+  for (const s of stars) {
+    if (s === star || !s.alpha) continue;
+    // Pseudo-cosine from hue distance (demo)
+    const dh = Math.abs(s.hue - star.hue) / 360;
+    const sim = 1 - dh * 0.8;
+    if (sim > best) best = sim;
+  }
+  return best;
+}
+
+function handleHoverMove(e) {
+  const star = findStarUnderMouse(e.clientX, e.clientY);
+  if (star !== hoveredStar) {
+    clearTimeout(hoverTimer);
+    hideTooltip();
+    hoveredStar = star;
+    if (star) {
+      hoverTimer = setTimeout(() => {
+        star.accessCount++;
+        showTooltip(star, e.clientX, e.clientY);
+      }, 500);
+    }
+  }
+}
+
+// ── Feature 15: drag-to-query ──────────────────────────────
+let dragQuery = null;   // { x0, y0, x1, y1, trail: [{x,y,t}] }
+
+// ── Feature 10: scroll-zoom ────────────────────────────────
+window.addEventListener("wheel", e => {
+  e.preventDefault();
+  // Invert so scrolling down = zoom in (like most 3D apps)
+  focalVel += e.deltaY * -0.15;
+}, { passive: false });
+
+// ── keyboard ───────────────────────────────────────────────
 window.addEventListener("keydown", e => {
   if (e.key === "Shift" && !shiftHeld) {
     shiftHeld = true;
     buildConstellation();
   }
+  if (e.key === "d" || e.key === "D") {
+    resonanceOn = !resonanceOn;
+    document.getElementById("btn-res").classList.toggle("active", resonanceOn);
+    document.getElementById("s-mode").textContent = resonanceOn
+      ? "◈ resonance" : "⊙ cosmos";
+  }
 });
 window.addEventListener("keyup", e => {
-  if (e.key === "Shift") { shiftHeld = false; }
+  if (e.key === "Shift") shiftHeld = false;
 });
 
-function buildConstellation() {
-  const visible = stars.filter(s => s.alpha > 0.35);
-  const lines   = [];
-  for (let i = 0; i < visible.length; i++) {
-    for (let j = i + 1; j < visible.length; j++) {
-      const dx = visible[i].sx - visible[j].sx;
-      const dy = visible[i].sy - visible[j].sy;
-      if (Math.hypot(dx, dy) < CONST_NEAR_PX) {
-        lines.push({ x1: visible[i].sx, y1: visible[i].sy,
-                     x2: visible[j].sx, y2: visible[j].sy });
-      }
-    }
+// ── mouse drag-to-query ────────────────────────────────────
+canvas.addEventListener("mousedown", e => {
+  // Don't intercept button clicks
+  if (e.target !== canvas) return;
+  dragQuery = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY, trail: [] };
+});
+window.addEventListener("mouseup", e => {
+  if (!dragQuery) return;
+  const dist = Math.hypot(dragQuery.x1 - dragQuery.x0, dragQuery.y1 - dragQuery.y0);
+  if (dist > 30) {
+    // Release point becomes the query origin
+    spawnSearchFromPoint(dragQuery.x0, dragQuery.y0);
   }
-  // Cluster centroids for glyph placement (simple grouping)
-  const glyphs = [];
-  if (visible.length > 3) {
-    for (let g = 0; g < Math.min(visible.length / 8 | 0, 5); g++) {
-      const seed = visible[randI(0, visible.length - 1)];
-      glyphs.push({ x: seed.sx, y: seed.sy - 18,
-                    ch: GLYPHS[randI(0, GLYPHS.length - 1)] });
-    }
-  }
-  constellation = { lines, glyphs, alpha: 1.0, startedAt: performance.now() };
-}
+  dragQuery = null;
+});
 
-// ── frame state ───────────────────────────────────────────
-let lastT    = 0;
-let fps      = 60;
-let frameN   = 0;
+// ── frame state ────────────────────────────────────────────
+let lastT  = 0;
+let fps    = 60;
+let frameN = 0;
 
-// UI refs
 const sFps   = document.getElementById("s-fps");
 const sStars = document.getElementById("s-stars");
 
-// ── DRAW ──────────────────────────────────────────────────
+// ── DRAW ───────────────────────────────────────────────────
 function draw(now) {
   const dt = Math.min(now - lastT, 50);
   lastT    = now;
   frameN++;
 
-  // fps rolling average
   fps = fps * 0.92 + (1000 / dt) * 0.08;
   if (frameN % 30 === 0) {
     sFps.textContent   = fps.toFixed(0) + " fps";
     sStars.textContent = stars.length + " vectors";
   }
+
+  // Feature 10: focal momentum
+  focalVel *= 0.85;
+  focal     = clamp(focal + focalVel, 80, 2200);
 
   // lerp parallax
   for (let b = 0; b < 3; b++) {
@@ -363,20 +583,16 @@ function draw(now) {
     PARALLAX.y[b] = lerp(PARALLAX.y[b], PARALLAX.ty[b], 0.055);
   }
 
-  // ── clear ─────────────────────────────────────────────
+  // ── clear ────────────────────────────────────────────────
   ctx.clearRect(0, 0, W, H);
 
-  // Vignette gradient background
   const vg = ctx.createRadialGradient(CX, CY, 0, CX, CY, Math.hypot(CX, CY));
   vg.addColorStop(0, "rgba(8,6,22,0.0)");
   vg.addColorStop(1, "rgba(2,2,10,1.0)");
   ctx.fillStyle = vg;
   ctx.fillRect(0, 0, W, H);
 
-  // ── nebula layer ──────────────────────────────────────
-  // Nebula parallax: 30% of near band
-  const nebX = lerp(0, PARALLAX.tx[2] * 0.3, 0.04) || nebulae[0]?.ox || 0;
-  const nebY = lerp(0, PARALLAX.ty[2] * 0.3, 0.04) || 0;
+  // ── nebula layer ─────────────────────────────────────────
   ctx.save();
   ctx.filter = "blur(44px)";
   for (const n of nebulae) {
@@ -396,46 +612,94 @@ function draw(now) {
   ctx.filter = "none";
   ctx.restore();
 
-  // ── project + advance stars ───────────────────────────
+  // ── Feature 8: draw cluster centroid pulse rings ──────────
+  for (let k = 0; k < clusters.length; k++) {
+    const c   = clusters[k];
+    const ph  = (now * 0.0015 + k * 1.5) % TAU;
+    const r   = 18 + Math.sin(ph) * 6;
+    const a   = 0.18 + Math.sin(ph) * 0.06;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.strokeStyle = `hsl(${c.hue},70%,65%)`;
+    ctx.lineWidth   = 1.2;
+    ctx.shadowBlur  = 30;
+    ctx.shadowColor = `hsl(${c.hue},80%,60%)`;
+    ctx.beginPath();
+    ctx.arc(c.cx, c.cy, r, 0, TAU);
+    ctx.stroke();
+    // Outer pulse (slower)
+    const r2 = 28 + Math.sin(ph * 0.7) * 8;
+    const a2 = Math.max(0, 0.09 + Math.sin(ph * 0.7) * 0.05);
+    ctx.globalAlpha = a2;
+    ctx.lineWidth   = 0.7;
+    ctx.beginPath();
+    ctx.arc(c.cx, c.cy, r2, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── project + advance stars ───────────────────────────────
   for (const s of stars) {
     s.z -= DRIFT_Z;
     if (s.z < 1) {
-      // wrap to far end, randomise position
-      s.z     = MAX_Z;
-      s.x     = rand(-W * 2.5, W * 2.5);
-      s.y     = rand(-H * 2.5, H * 2.5);
-      s.hue   = randI(200, 300);
-      s.baseR = rand(0.5, 1.6);
-      s.band  = 0;
+      s.z = MAX_Z;
+      s.x = rand(-W * 2.5, W * 2.5);
+      s.y = rand(-H * 2.5, H * 2.5);
+      s.hue = randI(200, 300); s.baseR = rand(0.5, 1.6);
+      s.vx  = 0; s.vy = 0; s.clusterIdx = -1;
     }
-    // Update band
     s.band = s.z > BANDS[1].from ? 0 : s.z > BANDS[2].from ? 1 : 2;
 
-    // Perspective projection
+    // Feature 8: gravity pull toward cluster centroid
+    if (clusters.length) applyGravity(s);
+
+    // Feature 11: ripple spring physics
+    s.rippleVx *= 0.88;
+    s.rippleVy *= 0.88;
+    // Restore toward 0 (spring)
+    s.rippleOx = lerp(s.rippleOx, 0, 0.06);
+    s.rippleOy = lerp(s.rippleOy, 0, 0.06);
+    s.rippleOx += s.rippleVx * dt * 0.01;
+    s.rippleOy += s.rippleVy * dt * 0.01;
+
     const px = PARALLAX.x[s.band];
     const py = PARALLAX.y[s.band];
-    s.sx = (s.x) * FOCAL / s.z + CX + px;
-    s.sy = (s.y) * FOCAL / s.z + CY + py;
-    s.r  = s.baseR * FOCAL / s.z;
+    s.sx = s.x * focal / s.z + CX + px + s.rippleOx;
+    s.sy = s.y * focal / s.z + CY + py + s.rippleOy;
+    s.r  = s.baseR * focal / s.z;
 
-    // Alpha: dim far, bright near; clamp
-    s.alpha = Math.min(1, (1 - s.z / MAX_Z) * 1.4 + 0.1);
+    // Feature 14: resonance oscillation (screen-space radial)
+    if (resonanceOn) {
+      const osc   = Math.sin(now * 0.001 * s.freq + s.phase) * s.r * 1.2;
+      const angle = s.phase;    // personal radial direction
+      s.sx += Math.cos(angle) * osc;
+      s.sy += Math.sin(angle) * osc;
+    }
+
+    s.alpha = clamp((1 - s.z / MAX_Z) * 1.4 + 0.1, 0, 1);
   }
 
-  // ── draw stars (far → near for painter's sort) ────────
+  // ── draw stars (far → near) ───────────────────────────────
+  const maxAge = Math.max(1, totalBorn - 1);
   for (let band = 0; band < 3; band++) {
     for (const s of stars) {
       if (s.band !== band) continue;
       if (s.sx < -20 || s.sx > W + 20 || s.sy < -20 || s.sy > H + 20) continue;
 
       const r   = Math.max(0.4, s.r);
-      const hsl = `hsl(${s.hue},${s.sat}%,${band === 2 ? 90 : 80}%)`;
 
-      // bloom: draw large soft halo first
-      const bloomA  = s.alpha * BAND_BLOOM[band];
+      // Feature 13: age hue shift — oldest→-20deg (blue), newest→+20deg (amber)
+      const ageRatio = s.age / maxAge;
+      const hueShift = lerp(-20, 20, ageRatio);
+      const hue      = s.hue + hueShift;
+      const lum      = band === 2 ? 90 : 80;
+      const hsl      = `hsl(${hue},${s.sat}%,${lum}%)`;
+
+      // bloom
+      const bloomA = s.alpha * BAND_BLOOM[band];
       if (bloomA > 0.01) {
         ctx.save();
-        ctx.shadowBlur  = band === 2 ? 22 : 10;
+        ctx.shadowBlur = band === 2 ? 22 : 10;
         ctx.shadowColor = hsl;
         ctx.globalAlpha = bloomA;
         ctx.fillStyle   = hsl;
@@ -445,7 +709,7 @@ function draw(now) {
         ctx.restore();
       }
 
-      // core star
+      // core
       ctx.save();
       ctx.globalAlpha = s.alpha;
       ctx.fillStyle   = hsl;
@@ -456,13 +720,13 @@ function draw(now) {
       ctx.fill();
       ctx.restore();
 
-      // nova pulse (new-star ignition)
+      // nova pulse
       if (s.novaDur > 0) {
-        const novaProg = (now - s.novaStart) / s.novaDur;
-        if (novaProg < 1) {
-          const ne = ease(novaProg);
+        const p = (now - s.novaStart) / s.novaDur;
+        if (p < 1) {
+          const ne = ease(p);
           ctx.save();
-          ctx.globalAlpha = (1 - novaProg) * 0.85;
+          ctx.globalAlpha = (1 - p) * 0.85;
           ctx.strokeStyle = "#ffffff";
           ctx.lineWidth   = 1.5;
           ctx.shadowBlur  = 30;
@@ -478,194 +742,227 @@ function draw(now) {
     }
   }
 
-  // ── search cone ───────────────────────────────────────
-  if (cone) {
-    cone.t += cone.speed * dt;
-    const phase = cone.t;
+  // ── Feature 9: k-NN search rays ──────────────────────────
+  searchRays = searchRays.filter(ray => ray.progress < 2);
+  for (const ray of searchRays) {
+    const elapsed = now - ray.startTime;
+    if (elapsed < 0) continue;  // staggered start
 
-    let coneAlpha, spreadNow;
-    if (phase < 1) {
-      // opening
-      const e = ease(phase);
-      spreadNow  = cone.spreadT * e;
-      coneAlpha  = 0.28 * e;
-    } else if (phase < 2) {
-      // holding
-      spreadNow  = cone.spreadT;
-      coneAlpha  = 0.28;
-    } else if (phase < 3) {
-      // fading
-      spreadNow  = cone.spreadT;
-      coneAlpha  = 0.28 * (1 - (phase - 2));
-    } else {
-      cone = null;
-    }
+    ray.progress = Math.min(2, ray.progress + ray.speed * dt * 0.001);
+    const t = Math.min(1, ray.progress);
+    const tx = lerp(ray.qx, ray.tx, ease(t));
+    const ty = lerp(ray.qy, ray.ty, ease(t));
 
-    if (cone && coneAlpha > 0) {
+    // Ray itself
+    const alpha = t < 1 ? t : 2 - ray.progress;
+    if (alpha > 0) {
+      const rg = ctx.createLinearGradient(ray.qx, ray.qy, tx, ty);
+      rg.addColorStop(0, `hsla(${ray.hue},80%,70%,0)`);
+      rg.addColorStop(0.5, `hsla(${ray.hue},90%,80%,${alpha * 0.6})`);
+      rg.addColorStop(1,   `hsla(${ray.hue},100%,90%,${alpha})`);
       ctx.save();
-      // Spotlight gradient
-      const cg = ctx.createRadialGradient(
-        cone.qx, cone.qy, 0, cone.qx, cone.qy, cone.maxR
-      );
-      cg.addColorStop(0, `rgba(124,58,237,${coneAlpha * 0.8})`);
-      cg.addColorStop(0.6, `rgba(167,139,250,${coneAlpha * 0.35})`);
-      cg.addColorStop(1, "rgba(0,0,0,0)");
-
+      ctx.strokeStyle = rg;
+      ctx.lineWidth   = 1.5;
+      ctx.shadowBlur  = 12;
+      ctx.shadowColor = `hsl(${ray.hue},80%,75%)`;
+      ctx.lineCap     = "round";
       ctx.beginPath();
-      ctx.moveTo(cone.qx, cone.qy);
-      ctx.arc(cone.qx, cone.qy, cone.maxR,
-              cone.angle - spreadNow,
-              cone.angle + spreadNow);
-      ctx.closePath();
-      ctx.fillStyle = cg;
-      ctx.fill();
-
-      // Highlight matched stars
-      for (const m of cone.matches) {
-        ctx.save();
-        ctx.globalAlpha = coneAlpha * 1.8;
-        ctx.fillStyle   = "#c4b5fd";
-        ctx.shadowBlur  = 30;
-        ctx.shadowColor = "#a78bfa";
-        ctx.beginPath();
-        ctx.arc(m.sx, m.sy, m.r * 2.5, 0, TAU);
-        ctx.fill();
-        ctx.restore();
-      }
-      ctx.restore();
-    }
-  }
-
-  // ── comets ────────────────────────────────────────────
-  comets = comets.filter(cm => !cm.done);
-  for (const cm of comets) {
-    cm.t = Math.min(1, cm.t + cm.speed * dt);
-    const e   = ease(cm.t);
-    const cx  = lerp(cm.x0, cm.x1, e);
-    const cy  = lerp(cm.y0, cm.y1, e);
-
-    // trail
-    const TRAIL = 8;
-    for (let i = TRAIL; i >= 0; i--) {
-      const te  = Math.max(0, e - i * 0.012);
-      const tx  = lerp(cm.x0, cm.x1, ease(te));
-      const ty  = lerp(cm.y0, cm.y1, ease(te));
-      const fr  = (TRAIL - i) / TRAIL;
-      const tr  = fr * 5 * (1 - e * 0.5);
-      if (tr < 0.2) continue;
-      ctx.save();
-      ctx.globalAlpha = (1 - i / TRAIL) * 0.5 * (1 - e * 0.4);
-      ctx.fillStyle   = `hsl(${cm.hue},80%,80%)`;
-      ctx.shadowBlur  = 8;
-      ctx.shadowColor = `hsl(${cm.hue},80%,80%)`;
-      ctx.beginPath();
-      ctx.arc(tx, ty, tr, 0, TAU);
-      ctx.fill();
+      ctx.moveTo(ray.qx, ray.qy);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
       ctx.restore();
     }
 
-    // head
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, (1 - e) * 3 + 0.2);
-    ctx.fillStyle   = "#ffffff";
-    ctx.shadowBlur  = 18;
-    ctx.shadowColor = `hsl(${cm.hue},90%,90%)`;
-    ctx.beginPath();
-    ctx.arc(cx, cy, 3.5, 0, TAU);
-    ctx.fill();
-    ctx.restore();
-
-    if (cm.t >= 1) cm.done = true;
+    // Ring ripple at endpoint once ray arrives
+    if (t >= 1 && !ray.rippled) {
+      ray.rippled = true;
+      searchRipples.push({
+        x: ray.tx, y: ray.ty, hue: ray.hue,
+        r: 0, maxR: 22, t: 0, speed: 0.003,
+      });
+    }
   }
 
-  // ── shooting stars ────────────────────────────────────
-  if (now >= nextShootTime) spawnShooter();
-
-  shooters = shooters.filter(s => s.t < 2);
-  for (const s of shooters) {
-    s.t += s.speed * dt;
-
-    const ex = s.x0 + Math.cos(s.angle) * s.len;
-    const ey = s.y0 + Math.sin(s.angle) * s.len;
-
-    let tailA, headA, tailT, headT;
-    if (s.t <= 1) {
-      // drawing phase: line grows from head to tail
-      headT  = s.t;
-      tailT  = Math.max(0, s.t - 0.45);
-      tailA  = headA = 1;
-    } else {
-      // fade phase
-      headT  = tailT = 1;
-      const f = s.t - 1;
-      headA  = tailA = 1 - f;
-    }
-
-    const hx0 = lerp(s.x0, ex, tailT);
-    const hy0 = lerp(s.y0, ey, tailT);
-    const hx1 = lerp(s.x0, ex, headT);
-    const hy1 = lerp(s.y0, ey, headT);
-
-    if (Math.abs(hx1 - hx0) < 0.5 && Math.abs(hy1 - hy0) < 0.5) continue;
-
-    const sg = ctx.createLinearGradient(hx0, hy0, hx1, hy1);
-    sg.addColorStop(0, `hsla(${s.hue},60%,95%,0)`);
-    sg.addColorStop(1, `hsla(${s.hue},80%,98%,${tailA})`);
-
+  // Draw endpoint ring ripples
+  searchRipples = searchRipples.filter(rp => rp.t < 1);
+  for (const rp of searchRipples) {
+    rp.t = Math.min(1, rp.t + rp.speed * dt);
+    const e = ease(rp.t);
+    rp.r = rp.maxR * e;
     ctx.save();
-    ctx.globalAlpha = headA;
-    ctx.strokeStyle = sg;
-    ctx.lineWidth   = 1.8;
-    ctx.shadowBlur  = 12;
-    ctx.shadowColor = `hsl(${s.hue},80%,90%)`;
-    ctx.lineCap     = "round";
+    ctx.globalAlpha = (1 - rp.t) * 0.8;
+    ctx.strokeStyle = `hsl(${rp.hue},90%,80%)`;
+    ctx.lineWidth   = 1.5;
+    ctx.shadowBlur  = 16;
+    ctx.shadowColor = `hsl(${rp.hue},80%,70%)`;
     ctx.beginPath();
-    ctx.moveTo(hx0, hy0);
-    ctx.lineTo(hx1, hy1);
+    ctx.arc(rp.x, rp.y, rp.r, 0, TAU);
     ctx.stroke();
     ctx.restore();
   }
 
-  // ── constellation ─────────────────────────────────────
+  // ── search cone ───────────────────────────────────────────
+  if (cone) {
+    cone.t += cone.speed * dt;
+    let coneAlpha, spreadNow;
+    if      (cone.t < 1) { const e=ease(cone.t); spreadNow=cone.spreadT*e; coneAlpha=0.22*e; }
+    else if (cone.t < 2) { spreadNow=cone.spreadT; coneAlpha=0.22; }
+    else if (cone.t < 3) { spreadNow=cone.spreadT; coneAlpha=0.22*(1-(cone.t-2)); }
+    else                 { cone=null; }
+
+    if (cone && coneAlpha > 0) {
+      ctx.save();
+      const cg = ctx.createRadialGradient(cone.qx,cone.qy,0,cone.qx,cone.qy,cone.maxR);
+      cg.addColorStop(0, `rgba(124,58,237,${coneAlpha*0.7})`);
+      cg.addColorStop(0.6, `rgba(167,139,250,${coneAlpha*0.3})`);
+      cg.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.beginPath();
+      ctx.moveTo(cone.qx, cone.qy);
+      ctx.arc(cone.qx, cone.qy, cone.maxR, cone.angle-spreadNow, cone.angle+spreadNow);
+      ctx.closePath();
+      ctx.fillStyle = cg;
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // ── comets ────────────────────────────────────────────────
+  comets = comets.filter(cm => !cm.done);
+  for (const cm of comets) {
+    cm.t = Math.min(1, cm.t + cm.speed * dt);
+    const e  = ease(cm.t);
+    const cx = lerp(cm.x0, cm.x1, e);
+    const cy = lerp(cm.y0, cm.y1, e);
+    for (let i = 8; i >= 0; i--) {
+      const te = Math.max(0, e - i * 0.012);
+      const tx = lerp(cm.x0, cm.x1, ease(te));
+      const ty = lerp(cm.y0, cm.y1, ease(te));
+      const fr = (8 - i) / 8;
+      const tr = fr * 5 * (1 - e * 0.5);
+      if (tr < 0.2) continue;
+      ctx.save();
+      ctx.globalAlpha = (1 - i / 8) * 0.5 * (1 - e * 0.4);
+      ctx.fillStyle   = `hsl(${cm.hue},80%,80%)`;
+      ctx.shadowBlur  = 8; ctx.shadowColor = `hsl(${cm.hue},80%,80%)`;
+      ctx.beginPath(); ctx.arc(tx, ty, tr, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, (1 - e) * 3 + 0.2);
+    ctx.fillStyle   = "#ffffff"; ctx.shadowBlur = 18;
+    ctx.shadowColor = `hsl(${cm.hue},90%,90%)`;
+    ctx.beginPath(); ctx.arc(cx, cy, 3.5, 0, TAU); ctx.fill();
+    ctx.restore();
+    if (cm.t >= 1) cm.done = true;
+  }
+
+  // ── shooting stars ────────────────────────────────────────
+  if (now >= nextShootTime) spawnShooter();
+  shooters = shooters.filter(s => s.t < 2);
+  for (const s of shooters) {
+    s.t += s.speed * dt;
+    const ex = s.x0 + Math.cos(s.angle) * s.len;
+    const ey = s.y0 + Math.sin(s.angle) * s.len;
+    let tailT, headT, alpha;
+    if (s.t <= 1) { headT=s.t; tailT=Math.max(0,s.t-0.45); alpha=1; }
+    else          { headT=tailT=1; alpha=1-(s.t-1); }
+    const hx0=lerp(s.x0,ex,tailT), hy0=lerp(s.y0,ey,tailT);
+    const hx1=lerp(s.x0,ex,headT), hy1=lerp(s.y0,ey,headT);
+    if (Math.abs(hx1-hx0)<0.5 && Math.abs(hy1-hy0)<0.5) continue;
+    const sg = ctx.createLinearGradient(hx0,hy0,hx1,hy1);
+    sg.addColorStop(0, `hsla(${s.hue},60%,95%,0)`);
+    sg.addColorStop(1, `hsla(${s.hue},80%,98%,${alpha})`);
+    ctx.save();
+    ctx.globalAlpha=alpha; ctx.strokeStyle=sg; ctx.lineWidth=1.8;
+    ctx.shadowBlur=12; ctx.shadowColor=`hsl(${s.hue},80%,90%)`;
+    ctx.lineCap="round";
+    ctx.beginPath(); ctx.moveTo(hx0,hy0); ctx.lineTo(hx1,hy1); ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── constellation ─────────────────────────────────────────
   if (constellation) {
-    // Fade after 4s once Shift is released
     if (!shiftHeld) {
-      const age = now - constellation.startedAt;
-      const heldUntil = constellation.heldUntil ??
-                        (constellation.heldUntil = now);
-      const sinceLet  = now - heldUntil;
-      constellation.alpha = Math.max(0, 1 - sinceLet / 4000);
+      constellation.heldUntil = constellation.heldUntil ?? now;
+      constellation.alpha = Math.max(0, 1 - (now - constellation.heldUntil) / 4000);
     } else {
       constellation.heldUntil = undefined;
     }
-
     if (constellation.alpha <= 0) {
       constellation = null;
     } else {
       ctx.save();
-      ctx.globalAlpha  = constellation.alpha * 0.65;
-      ctx.strokeStyle  = "#fbbf24";
-      ctx.lineWidth    = 0.8;
-      ctx.shadowBlur   = 8;
-      ctx.shadowColor  = "#fbbf24";
-      ctx.setLineDash([4, 6]);
+      ctx.globalAlpha = constellation.alpha * 0.65;
+      ctx.strokeStyle = "#fbbf24"; ctx.lineWidth=0.8;
+      ctx.shadowBlur=8; ctx.shadowColor="#fbbf24";
+      ctx.setLineDash([4,6]);
       for (const l of constellation.lines) {
-        ctx.beginPath();
-        ctx.moveTo(l.x1, l.y1);
-        ctx.lineTo(l.x2, l.y2);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(l.x1,l.y1); ctx.lineTo(l.x2,l.y2); ctx.stroke();
       }
       ctx.setLineDash([]);
+      ctx.font="13px serif"; ctx.fillStyle="#fbbf24";
+      ctx.shadowBlur=6; ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.globalAlpha = constellation.alpha * 0.45;
+      for (const g of constellation.glyphs) ctx.fillText(g.ch, g.x, g.y);
+      ctx.restore();
+    }
+  }
 
-      ctx.font          = "13px serif";
-      ctx.fillStyle     = "#fbbf24";
-      ctx.shadowBlur    = 6;
-      ctx.textAlign     = "center";
-      ctx.textBaseline  = "middle";
-      ctx.globalAlpha   = constellation.alpha * 0.45;
-      for (const g of constellation.glyphs) {
-        ctx.fillText(g.ch, g.x, g.y);
+  // ── Feature 15: drag-to-query line ───────────────────────
+  if (dragQuery) {
+    const dx  = dragQuery.x1 - dragQuery.x0;
+    const dy  = dragQuery.y1 - dragQuery.y0;
+    const len = Math.hypot(dx, dy);
+    if (len > 10) {
+      // Glowing query line
+      const qg = ctx.createLinearGradient(
+        dragQuery.x0, dragQuery.y0, dragQuery.x1, dragQuery.y1
+      );
+      qg.addColorStop(0, "rgba(167,139,250,0.85)");
+      qg.addColorStop(1, "rgba(250,204,21,0.85)");
+      ctx.save();
+      ctx.strokeStyle = qg; ctx.lineWidth=2.2;
+      ctx.shadowBlur=18; ctx.shadowColor="#a78bfa";
+      ctx.lineCap="round";
+      ctx.beginPath();
+      ctx.moveTo(dragQuery.x0, dragQuery.y0);
+      ctx.lineTo(dragQuery.x1, dragQuery.y1);
+      ctx.stroke();
+      // Arrowhead at tip
+      const angle = Math.atan2(dy, dx);
+      const ah    = 10;
+      ctx.beginPath();
+      ctx.moveTo(dragQuery.x1, dragQuery.y1);
+      ctx.lineTo(dragQuery.x1 - ah * Math.cos(angle - 0.45),
+                 dragQuery.y1 - ah * Math.sin(angle - 0.45));
+      ctx.moveTo(dragQuery.x1, dragQuery.y1);
+      ctx.lineTo(dragQuery.x1 - ah * Math.cos(angle + 0.45),
+                 dragQuery.y1 - ah * Math.sin(angle + 0.45));
+      ctx.stroke();
+      ctx.restore();
+
+      // Fading trail
+      const trail  = dragQuery.trail;
+      const cutoff = now - 400;
+      for (let i = 1; i < trail.length; i++) {
+        const pt = trail[i], prev = trail[i - 1];
+        if (pt.t < cutoff) continue;
+        const a = (pt.t - cutoff) / 400 * 0.4;
+        ctx.save();
+        ctx.globalAlpha = a;
+        ctx.strokeStyle = "#a78bfa"; ctx.lineWidth=1.5; ctx.lineCap="round";
+        ctx.beginPath(); ctx.moveTo(prev.x,prev.y); ctx.lineTo(pt.x,pt.y); ctx.stroke();
+        ctx.restore();
       }
+
+      // Query origin pulse
+      ctx.save();
+      const qph = (now * 0.004) % TAU;
+      const qr  = 5 + Math.sin(qph) * 2;
+      ctx.globalAlpha = 0.7 + Math.sin(qph) * 0.2;
+      ctx.fillStyle   = "#c4b5fd";
+      ctx.shadowBlur  = 20; ctx.shadowColor = "#a78bfa";
+      ctx.beginPath(); ctx.arc(dragQuery.x0, dragQuery.y0, qr, 0, TAU); ctx.fill();
       ctx.restore();
     }
   }
@@ -673,24 +970,27 @@ function draw(now) {
   requestAnimationFrame(draw);
 }
 
-// ── buttons ───────────────────────────────────────────────
+// ── buttons ────────────────────────────────────────────────
 document.getElementById("btn-add").addEventListener("click", () => {
-  const newStar = makeStar({
-    z   : rand(80, 200),
-    hue : randI(270, 340),
-    sat : 85,
-    baseR: rand(1.4, 2.4),
-    nova: true,
+  const s = makeStar({
+    z: rand(80, 200), hue: randI(270, 340), sat: 85,
+    baseR: rand(1.4, 2.4), nova: true,
   });
-  stars.push(newStar);
-  // Force project so comet has a destination
-  newStar.sx = CX + rand(-200, 200);
-  newStar.sy = CY + rand(-160, 160);
-  spawnComet(newStar);
+  stars.push(s);
+  s.sx = CX + rand(-200, 200);
+  s.sy = CY + rand(-160, 160);
+  spawnComet(s);
+  spawnRipple(s.sx, s.sy);         // Feature 11: ripple disturbance
 });
 
 document.getElementById("btn-search").addEventListener("click", () => {
-  spawnCone();
+  spawnSearchFromPoint(CX, CY);    // Feature 9: rays + cone from centre
+});
+
+document.getElementById("btn-cluster").addEventListener("click", () => {
+  recluster();
+  document.getElementById("btn-cluster").classList.add("active");
+  setTimeout(() => document.getElementById("btn-cluster").classList.remove("active"), 800);
 });
 
 document.getElementById("btn-shoot").addEventListener("click", () => {
@@ -700,27 +1000,26 @@ document.getElementById("btn-shoot").addEventListener("click", () => {
 
 document.getElementById("btn-nebula").addEventListener("click", () => {
   rebuildNebula();
-  // flash the nebulae by momentarily boosting alpha
   for (const n of nebulae) n.a = Math.min(0.12, n.a * 2.5);
   setTimeout(() => { for (const n of nebulae) n.a *= 0.4; }, 800);
 });
 
-// Drag to "throw" parallax target
-let dragging = false;
-canvas.addEventListener("mousedown", () => { dragging = true; });
-window.addEventListener("mouseup",   () => { dragging = false; });
+document.getElementById("btn-res").addEventListener("click", () => {
+  resonanceOn = !resonanceOn;
+  document.getElementById("btn-res").classList.toggle("active", resonanceOn);
+  document.getElementById("s-mode").textContent = resonanceOn ? "◈ resonance" : "⊙ cosmos";
+});
 
-// ── boot ──────────────────────────────────────────────────
+// ── boot ───────────────────────────────────────────────────
 resize();
 initStars();
 
-// Dim the hint after 5s
-setTimeout(() => {
-  document.getElementById("hint").style.opacity = "0";
-}, 5000);
-
-// Auto-shoot first star in 2s
+setTimeout(() => document.getElementById("hint").style.opacity = "0", 6000);
 setTimeout(() => spawnShooter(), 2000);
+
+// Initial cluster + periodic recluster
+recluster();
+setInterval(recluster, 4000);
 
 requestAnimationFrame(t => { lastT = t; requestAnimationFrame(draw); });
 </script>
