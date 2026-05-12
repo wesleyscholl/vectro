@@ -48,7 +48,7 @@ from .profiles_api import (
     create_custom_profile
 )
 
-__version__ = "5.4.0"
+__version__ = "5.5.0"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"

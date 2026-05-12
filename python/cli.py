@@ -372,7 +372,65 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("input", help="Input .npz or .vqz compressed artifact")
     p.add_argument("output", help="Output .onnx file path")
 
+    # audit
+    p = sub.add_parser(
+        "audit",
+        help="Audit quantization quality: compare original vs compressed vectors",
+    )
+    p.add_argument("input", help="Original float32 vectors (.npy file)")
+    p.add_argument(
+        "--precision",
+        default="int8",
+        choices=["int8", "nf4", "binary", "int4", "int2"],
+        help="Precision mode for compression (default: int8)",
+    )
+    p.add_argument(
+        "--json", action="store_true",
+        help="Output full JSON report instead of summary",
+    )
+    p.add_argument("--seed", type=int, default=42, help="RNG seed (default: 42)")
+    p.add_argument(
+        "--no-recall", action="store_true",
+        help="Skip Recall@K evaluation (faster for large batches)",
+    )
+
     return parser
+
+
+def _cmd_audit(args: argparse.Namespace) -> int:
+    """Run the quantization audit subcommand."""
+    import numpy as np
+    from .quantization_audit import QuantizationAuditor
+    from .vectro import Vectro
+
+    try:
+        original = np.load(args.input, allow_pickle=False)
+    except Exception as exc:
+        print(f"Error loading {args.input}: {exc}", file=sys.stderr)
+        return 1
+
+    if original.ndim == 1:
+        original = original.reshape(1, -1)
+    if original.dtype != np.float32:
+        original = original.astype(np.float32)
+
+    vectro = Vectro()
+    result = vectro.compress_batch(original)
+    compressed = result.reconstructed if hasattr(result, "reconstructed") else original
+
+    auditor = QuantizationAuditor()
+    report = auditor.run(
+        original,
+        compressed,
+        run_recall=not args.no_recall,
+        seed=args.seed,
+    )
+
+    if args.json:
+        print(report.to_json())
+    else:
+        print(report.summary())
+    return 0
 
 
 def main(argv: Optional[list] = None) -> None:
@@ -392,6 +450,7 @@ def main(argv: Optional[list] = None) -> None:
         "benchmark": _cmd_benchmark,
         "info": _cmd_info,
         "export-onnx": _cmd_export_onnx,
+        "audit": _cmd_audit,
     }
     sys.exit(dispatch[args.command](args))
 

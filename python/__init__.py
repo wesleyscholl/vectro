@@ -145,7 +145,15 @@ from .pipeline_checkpoint import (
     checkpoint_info,
 )
 
-__version__ = "5.4.0"
+# v5.5.0 quantization audit
+from .quantization_audit import (
+    QuantizationAuditor,
+    QuantizationReport,
+    VectorPairMetrics,
+    RecallResult,
+)
+
+__version__ = "5.5.0"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"
@@ -302,6 +310,12 @@ __all__ = [
     "save_pipeline",
     "load_pipeline",
     "checkpoint_info",
+
+    # v5.5.0 quantization audit
+    "QuantizationAuditor",
+    "QuantizationReport",
+    "VectorPairMetrics",
+    "RecallResult",
 
     # Utilities
     "get_version_info"

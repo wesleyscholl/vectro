@@ -1,7 +1,60 @@
 # Vectro — Plan
 
 > Last updated: 2026-05-11
-> Current version: **5.4.0** (Python) / **8.0.0** (Rust) — pipeline checkpointing, PipelineCheckpoint, save_pipeline, load_pipeline, checkpoint_info.
+> Current version: **5.5.0** (Python) / **8.0.0** (Rust) — quantization audit, QuantizationAuditor, QuantizationReport, VectorPairMetrics, RecallResult.
+
+---
+
+## v5.5.0 — Quantization Audit (2026-05-11)
+
+### Summary
+
+Adds a structured quality-audit layer that compares original float32 vectors
+against their quantized/compressed counterparts and produces a rich diagnostic
+report.
+
+**`python/quantization_audit.py` — new module.**
+`VectorPairMetrics` is a frozen dataclass capturing per-vector `cosine_similarity`,
+`l2_error`, and `relative_error`.  `RecallResult` records a single Recall@K
+result.  `QuantizationReport` aggregates all per-vector metrics, aggregate
+statistics (mean/min/p5 cosine similarity, mean L2 error), optional Recall@K
+scores at K=1/5/10, compression ratio, and the k worst-case vector indices.
+`QuantizationAuditor.run()` validates shapes, casts to FP32, computes all
+metrics, and returns a `QuantizationReport`.  `_cosine_similarities` uses
+`np.einsum` for numerical stability; `_recall_at_k` performs brute-force
+exact search suitable for audit sets up to ~100 K vectors.
+
+**`python/cli.py` — `audit` subcommand.**
+Reads original vectors from a `.npy` file, compresses with the specified
+`--precision` mode, runs the audit, and prints `report.summary()` or the full
+JSON output with `--json`.
+
+**`tests/test_quantization_audit.py` — 20 tests.**
+Covers: all report fields present, frozen VectorPairMetrics, identical-vector
+cosine ≈ 1, identical-vector L2 ≈ 0, cosine range [-1,1], positive compression
+ratio, n_vectors matches input, mean_cosine ≤ 1, p5 ≤ mean ≤ 1, worst_k
+length, worst_k are truly worst, recall_at_{1,5,10} in [0,1], recall disabled
+→ None, JSON roundtrip, summary non-empty string, dtype strings recorded,
+shape mismatch raises ValueError, seeded recall deterministic.
+
+**`python/__init__.py` / `python/__init__.pyi`** — exports `QuantizationAuditor`,
+`QuantizationReport`, `VectorPairMetrics`, `RecallResult`; version bumped to `5.5.0`.
+
+**Version bump in all 4 version files:** `python/vectro.py`,
+`python/__init__.py`, `pyproject.toml`, `pixi.toml`.
+
+### Deliverables
+
+| # | Deliverable | Status |
+|---|-------------|--------|
+| 1 | `python/quantization_audit.py` — `VectorPairMetrics`, `RecallResult`, `QuantizationReport`, `QuantizationAuditor` | ✅ |
+| 2 | `python/cli.py` — `audit` subcommand | ✅ |
+| 3 | `tests/test_quantization_audit.py` — 20 tests | ✅ |
+| 4 | `python/__init__.py` — new exports + version `5.5.0` | ✅ |
+| 5 | `python/__init__.pyi` — stubs for 4 new audit symbols | ✅ |
+| 6 | `python/vectro.py` — `__version__ = "5.5.0"` | ✅ |
+| 7 | `pyproject.toml` — version `5.5.0` | ✅ |
+| 8 | `pixi.toml` — version `5.5.0` | ✅ |
 
 ---
 

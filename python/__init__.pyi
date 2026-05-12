@@ -150,6 +150,12 @@ from .pipeline_checkpoint import (
     load_pipeline as load_pipeline,
     checkpoint_info as checkpoint_info,
 )
+from .quantization_audit import (
+    QuantizationAuditor as QuantizationAuditor,
+    QuantizationReport as QuantizationReport,
+    VectorPairMetrics as VectorPairMetrics,
+    RecallResult as RecallResult,
+)
 
 __version__: str
 __author__: str
