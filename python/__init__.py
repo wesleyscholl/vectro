@@ -137,7 +137,15 @@ from .telemetry import (
     attach_telemetry,
 )
 
-__version__ = "5.3.0"
+# v5.4.0 pipeline checkpointing
+from .pipeline_checkpoint import (
+    PipelineCheckpoint,
+    save_pipeline,
+    load_pipeline,
+    checkpoint_info,
+)
+
+__version__ = "5.4.0"
 __author__ = "Wesley Scholl"
 __license__ = "MIT"
 __description__ = "Ultra-High-Performance LLM Embedding Compressor"
@@ -288,6 +296,12 @@ __all__ = [
     "TelemetryHook",
     "InMemoryTelemetryCollector",
     "attach_telemetry",
+
+    # v5.4.0 pipeline checkpointing
+    "PipelineCheckpoint",
+    "save_pipeline",
+    "load_pipeline",
+    "checkpoint_info",
 
     # Utilities
     "get_version_info"

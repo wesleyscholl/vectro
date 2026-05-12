@@ -1,7 +1,60 @@
 # Vectro — Plan
 
-> Last updated: 2026-05-07
-> Current version: **5.3.0** (Python) / **8.0.0** (Rust) — pipeline telemetry & observability, TelemetryCollector, TelemetryEvent, InMemoryTelemetryCollector, attach_telemetry.
+> Last updated: 2026-05-11
+> Current version: **5.4.0** (Python) / **8.0.0** (Rust) — pipeline checkpointing, PipelineCheckpoint, save_pipeline, load_pipeline, checkpoint_info.
+
+---
+
+## v5.4.0 — Pipeline Checkpointing (2026-05-12)
+
+### Summary
+
+Adds save/load checkpointing for `CompressionPipeline`, enabling reproducible
+pipeline configurations and experiment tracking without re-specifying stages.
+
+**`python/pipeline_checkpoint.py` — new module.**
+`PipelineCheckpoint` is a frozen dataclass capturing `version` (schema version
+string), `created_at` (ISO-8601 UTC timestamp), `stage_configs` (ordered list
+of per-stage dicts), and `metadata` (arbitrary user dict).
+`save_pipeline(pipeline, path, *, metadata)` serialises a `CompressionPipeline`
+to a human-readable JSON file using an atomic write (write to `.tmp`, then
+`os.replace`) and creates parent directories automatically.
+`load_pipeline(path)` deserialises the JSON and reconstructs a
+`CompressionPipeline` with the same stage sequence; raises `FileNotFoundError`
+on missing file and `ValueError` on invalid schema.
+`checkpoint_info(path)` reads only the metadata without constructing a
+pipeline, returning the raw dict — useful for inspecting checkpoints in scripts.
+
+**`PipelineStage` introspection** — `to_config()` / `from_config()` added to
+`PipelineStage` in `async_pipeline.py`.  `to_config()` returns a serialisable
+dict with `name`, `mode`, and optional `profile`/`group_size`; `from_config()`
+reconstructs the stage.
+
+**`tests/test_pipeline_checkpoint.py` — 18 tests.** Covers file creation,
+valid JSON output, stage-name round-trip, `CompressionPipeline` type,
+`checkpoint_info` key set, version correctness, metadata round-trip, atomic
+write, parent-dir creation, `TypeError` on wrong arg, `FileNotFoundError`,
+`ValueError` on bad schema, zero-stage pipeline, three-stage pipeline,
+`None` metadata, nested metadata, `to_config()` and `from_config()`.
+
+**`python/__init__.py`** — exports `PipelineCheckpoint`, `save_pipeline`,
+`load_pipeline`, `checkpoint_info`; version bumped to `5.4.0`.
+
+**Version bump in all 4 version files:** `python/vectro.py`,
+`python/__init__.py`, `pyproject.toml`, `pixi.toml`.
+
+### Deliverables
+
+| # | Deliverable | Status |
+|---|-------------|--------|
+| 1 | `python/pipeline_checkpoint.py` — `PipelineCheckpoint`, `save_pipeline`, `load_pipeline`, `checkpoint_info` | ✅ |
+| 2 | `python/async_pipeline.py` — `PipelineStage.to_config()` / `from_config()` | ✅ |
+| 3 | `tests/test_pipeline_checkpoint.py` — 18 tests | ✅ |
+| 4 | `python/__init__.py` — new exports + version `5.4.0` | ✅ |
+| 5 | `python/__init__.pyi` — stubs for 4 new checkpoint symbols | ✅ |
+| 6 | `python/vectro.py` — `__version__ = "5.4.0"` | ✅ |
+| 7 | `pyproject.toml` — version `5.4.0` | ✅ |
+| 8 | `pixi.toml` — version `5.4.0` | ✅ |
 
 ---
 

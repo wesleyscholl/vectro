@@ -17,13 +17,49 @@ logger = logging.getLogger(__name__)
 @dataclass
 class PipelineStage:
     """One stage in a compression pipeline."""
+
     mode: str
     profile: Optional[str] = None
     group_size: Optional[int] = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        """Validate that mode is non-empty."""
         if not self.mode:
             raise ValueError("PipelineStage.mode must be non-empty")
+
+    def to_config(self) -> dict:
+        """Return a JSON-serialisable dict of this stage's constructor args.
+
+        The dict always contains ``"name"`` (equal to ``mode``) so that
+        :func:`pipeline_checkpoint.checkpoint_info` can display a human-readable
+        stage name without importing this class.
+        """
+        cfg: dict = {"name": self.mode, "mode": self.mode}
+        if self.profile is not None:
+            cfg["profile"] = self.profile
+        if self.group_size is not None:
+            cfg["group_size"] = self.group_size
+        return cfg
+
+    @classmethod
+    def from_config(cls, config: dict) -> "PipelineStage":
+        """Reconstruct a PipelineStage from a config dict produced by :meth:`to_config`.
+
+        Parameters
+        ----------
+        config:
+            Dict with at minimum a ``"mode"`` or ``"name"`` key.
+
+        Returns
+        -------
+        PipelineStage
+        """
+        mode = config.get("mode") or config.get("name") or "int8"
+        return cls(
+            mode=mode,
+            profile=config.get("profile"),
+            group_size=config.get("group_size"),
+        )
 
 
 @dataclass

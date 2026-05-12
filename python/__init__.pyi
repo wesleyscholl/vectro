@@ -144,6 +144,12 @@ from .telemetry import (
     InMemoryTelemetryCollector as InMemoryTelemetryCollector,
     attach_telemetry as attach_telemetry,
 )
+from .pipeline_checkpoint import (
+    PipelineCheckpoint as PipelineCheckpoint,
+    save_pipeline as save_pipeline,
+    load_pipeline as load_pipeline,
+    checkpoint_info as checkpoint_info,
+)
 
 __version__: str
 __author__: str
@@ -287,6 +293,11 @@ __all__ = [
     "TelemetryHook",
     "InMemoryTelemetryCollector",
     "attach_telemetry",
+    # v5.4.0 pipeline checkpointing
+    "PipelineCheckpoint",
+    "save_pipeline",
+    "load_pipeline",
+    "checkpoint_info",
     # Utilities
     "get_version_info",
 ]
