@@ -1,5 +1,15 @@
 """HNSW (Hierarchical Navigable Small World) graph index for Vectro v3, Phase 5.
 
+v5.1.0 additions
+----------------
+* Per-vector metadata sidecar (``add(vectors, metadata=...)``)
+* O(1) soft-delete via tombstone set (``delete(node_id)``)
+* Pre-filter during graph walk (``search(..., filter=...)``)
+* Graph health inspection (``stats()``)
+* Tombstone removal + orphan reconnection (``compact()``)
+* Brute-force recall estimator with Wilson 95% CI (``estimate_recall()``)
+
+
 Implements the algorithm from Malkov & Yashunin 2018 (arXiv:1603.09320).
 
 Internal storage uses INT8 quantised vectors with per-vector abs-max scales,
@@ -32,7 +42,7 @@ import heapq
 import math
 import pickle
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -122,6 +132,10 @@ class HNSWIndex:
         self._entry_point: int = -1
         self._max_level: int = -1
 
+        # v5.1.0 additions
+        self._metadata: List[Optional[Dict[str, Any]]] = []
+        self._deleted: set = set()   # tombstone set — O(1) lookup
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -145,17 +159,30 @@ class HNSWIndex:
             return v.astype(np.float32)
         return (v / norm).astype(np.float32)
 
+    def _is_alive(self, nid: int) -> bool:
+        """Return True if node *nid* has not been soft-deleted."""
+        return nid not in self._deleted
+
     def _search_layer(
         self,
         query: np.ndarray,
         entry_points: List[int],
         ef: int,
         layer: int,
+        filter_fn: Optional[Callable[[int], bool]] = None,
     ) -> List[Tuple[float, int]]:
         """Beam search on a single layer.
 
         Returns a list of (distance, node_id) sorted ascending by distance
         (closest first), with at most `ef` entries.
+
+        Parameters
+        ----------
+        filter_fn : optional callable
+            If provided, a node is only added to the result set W when
+            ``filter_fn(node_id)`` is True.  Deleted nodes are always
+            excluded from W regardless of filter_fn, but they are still
+            traversed as graph connectors so the walk remains connected.
         """
         visited: set = set(entry_points)
         candidates: list = []   # min-heap (dist, nid)
@@ -164,7 +191,9 @@ class HNSWIndex:
         for ep in entry_points:
             d_ep = self._distance(query, self._vectors[ep])
             heapq.heappush(candidates, (d_ep, ep))
-            heapq.heappush(W, (-d_ep, ep))
+            # Only count live, passing nodes in the result set
+            if self._is_alive(ep) and (filter_fn is None or filter_fn(ep)):
+                heapq.heappush(W, (-d_ep, ep))
 
         while candidates:
             d_c, c = heapq.heappop(candidates)
@@ -184,9 +213,14 @@ class HNSWIndex:
                     continue
                 visited.add(nb)
                 d_nb = self._distance(query, self._vectors[nb])
+                # Always use nb as a connector (keeps graph traversal valid).
+                # Only add to the candidate queue if it has a chance of
+                # improving W (standard HNSW guard).
                 if d_nb < _heap_worst_dist(W) or len(W) < ef:
                     heapq.heappush(candidates, (d_nb, nb))
-                    _heap_push_result(W, d_nb, nb, ef)
+                    # Only place in result set if alive AND passes the filter.
+                    if self._is_alive(nb) and (filter_fn is None or filter_fn(nb)):
+                        _heap_push_result(W, d_nb, nb, ef)
 
         # Convert max-heap to sorted ascending list
         return sorted((-neg_d, nid) for neg_d, nid in W)
@@ -264,22 +298,49 @@ class HNSWIndex:
     # Public: add
     # ------------------------------------------------------------------
 
-    def add(self, vectors: np.ndarray) -> None:
+    def add(
+        self,
+        vectors: np.ndarray,
+        metadata: Optional[List[Optional[Dict[str, Any]]]] = None,
+    ) -> List[int]:
         """Add one or more vectors to the index.
 
         Parameters
         ----------
         vectors : np.ndarray
             Shape ``(d,)`` for a single vector or ``(n, d)`` for a batch.
+        metadata : list of dicts, optional
+            Per-vector metadata dicts (must match the number of rows in
+            *vectors*).  Use ``None`` entries for vectors without metadata.
+            Values are stored verbatim and used by the *filter* parameter
+            of :meth:`search`.
+
+        Returns
+        -------
+        list of int
+            The node IDs assigned to the inserted vectors (stable within this
+            process lifetime).
         """
-        vectors = np.asarray(vectors, dtype=np.float32)
-        if vectors.ndim == 1:
-            self._insert_one(self._normalize(vectors))
-        elif vectors.ndim == 2:
-            for v in vectors:
-                self._insert_one(self._normalize(v))
-        else:
+        vecs = np.asarray(vectors, dtype=np.float32)
+        if vecs.ndim == 1:
+            vecs = vecs[np.newaxis, :]
+        if vecs.ndim != 2:
             raise ValueError("vectors must be 1-D or 2-D")
+
+        n = vecs.shape[0]
+        if metadata is not None and len(metadata) != n:
+            raise ValueError(
+                f"metadata length ({len(metadata)}) must match "
+                f"number of vectors ({n})"
+            )
+
+        node_ids: List[int] = []
+        for i, v in enumerate(vecs):
+            nid = self._insert_one(self._normalize(v))
+            # _insert_one returns the assigned node ID
+            self._metadata.append(metadata[i] if metadata is not None else None)
+            node_ids.append(nid)
+        return node_ids
 
     # ------------------------------------------------------------------
     # Public: search
@@ -290,6 +351,7 @@ class HNSWIndex:
         query: np.ndarray,
         k: int = 10,
         ef: int = 64,
+        filter: Optional[Dict[str, Any]] = None,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Search for the k approximate nearest neighbours of query.
 
@@ -301,26 +363,44 @@ class HNSWIndex:
             Number of nearest neighbours to return.
         ef : int
             Search beam width.  Must be >= k.  Higher => better recall.
+        filter : dict, optional
+            Metadata pre-filter applied *during* graph traversal (not after).
+            A node must satisfy all ``{field: value}`` equality constraints in
+            *filter* to be included in the result set.  The graph is still
+            traversed through non-matching nodes, keeping the walk connected.
+            Example: ``filter={"category": "science"}``
 
         Returns
         -------
-        indices : np.ndarray, shape (k,), dtype int64
-            Node IDs of the k nearest neighbours (ascending distance order).
-        distances : np.ndarray, shape (k,), dtype float32
+        indices : np.ndarray, shape (≤k,), dtype int64
+            Node IDs of the nearest neighbours that pass the filter,
+            in ascending distance order.
+        distances : np.ndarray, shape (≤k,), dtype float32
             Corresponding cosine (or L2²) distances.
         """
-        if len(self._vectors) == 0:
+        live = len(self._vectors) - len(self._deleted)
+        if live == 0:
             return np.array([], dtype=np.int64), np.array([], dtype=np.float32)
 
         q = self._normalize(np.asarray(query, dtype=np.float32))
         ef_actual = max(ef, k)
 
+        # Build the filter callable from the dict
+        filter_fn: Optional[Callable[[int], bool]] = None
+        if filter:
+            def filter_fn(nid: int, _f: Dict[str, Any] = filter) -> bool:
+                meta = self._metadata[nid] if nid < len(self._metadata) else None
+                if meta is None:
+                    return False
+                return all(meta.get(fk) == fv for fk, fv in _f.items())
+
         ep = [self._entry_point]
+        # Upper-layer greedy descent (ef=1, no filter — we need connectivity)
         for lc in range(self._max_level, 0, -1):
             W = self._search_layer(q, ep, ef=1, layer=lc)
             ep = [W[0][1]] if W else [self._entry_point]
 
-        W0 = self._search_layer(q, ep, ef=ef_actual, layer=0)
+        W0 = self._search_layer(q, ep, ef=ef_actual, layer=0, filter_fn=filter_fn)
 
         top_k = W0[:k]
         indices = np.array([nid for _, nid in top_k], dtype=np.int64)
@@ -348,6 +428,9 @@ class HNSWIndex:
             "levels": self._levels,
             "entry_point": self._entry_point,
             "max_level": self._max_level,
+            # v5.1.0
+            "metadata": self._metadata,
+            "deleted": self._deleted,
         }
         with open(path, "wb") as f:
             pickle.dump(payload, f, protocol=5)
@@ -378,6 +461,9 @@ class HNSWIndex:
         idx._levels = data["levels"]
         idx._entry_point = data["entry_point"]
         idx._max_level = data["max_level"]
+        # v5.1.0 — load gracefully from older saves
+        idx._metadata = data.get("metadata") or [None] * len(idx._vectors)
+        idx._deleted  = data.get("deleted")  or set()
         return idx
 
     # ------------------------------------------------------------------
@@ -389,10 +475,266 @@ class HNSWIndex:
 
     def __repr__(self) -> str:
         return (
-            f"HNSWIndex(n={len(self)}, M={self.M}, "
-            f"ef_construction={self.ef_construction}, "
+            f"HNSWIndex(n={len(self)}, deleted={len(self._deleted)}, "
+            f"M={self.M}, ef_construction={self.ef_construction}, "
             f"space={self.space!r}, max_level={self._max_level})"
         )
+
+    # ------------------------------------------------------------------
+    # v5.1.0 additions
+    # ------------------------------------------------------------------
+
+    def delete(self, node_id: int) -> None:
+        """Soft-delete a vector by ID.
+
+        The node is tombstoned in O(1) — it is excluded from all future
+        search results and metadata lookups but its graph links remain intact
+        so traversal connectivity is preserved.  Call :meth:`compact` to
+        reclaim memory and restore recall.
+
+        Parameters
+        ----------
+        node_id : int
+            ID returned by :meth:`add` or previously visible in search
+            results.
+
+        Raises
+        ------
+        IndexError
+            If *node_id* is out of range.
+        ValueError
+            If *node_id* has already been deleted.
+        """
+        if node_id < 0 or node_id >= len(self._vectors):
+            raise IndexError(f"node_id {node_id} out of range [0, {len(self._vectors)})")
+        if node_id in self._deleted:
+            raise ValueError(f"node_id {node_id} is already deleted")
+        self._deleted.add(node_id)
+
+    def stats(self) -> Dict[str, Any]:
+        """Return health and size statistics for the index.
+
+        Returns
+        -------
+        dict with keys:
+            ``n_total``       — total node count (including deleted)
+            ``n_alive``       — live (non-deleted) node count
+            ``n_deleted``     — soft-deleted node count
+            ``orphan_count``  — alive nodes with zero alive neighbours at layer 0
+            ``avg_degree_l0`` — mean live neighbour count at layer 0 (alive nodes)
+            ``max_level``     — highest layer in the graph
+            ``space``         — distance space
+        """
+        n_total   = len(self._vectors)
+        n_deleted = len(self._deleted)
+        n_alive   = n_total - n_deleted
+
+        orphan_count  = 0
+        total_degree  = 0
+        alive_counted = 0
+
+        for nid in range(n_total):
+            if nid in self._deleted:
+                continue
+            l0 = self._neighbors[nid][0] if self._neighbors[nid] else []
+            live_nbrs = [nb for nb in l0 if nb not in self._deleted]
+            total_degree  += len(live_nbrs)
+            alive_counted += 1
+            if not live_nbrs:
+                orphan_count += 1
+
+        avg_degree = total_degree / alive_counted if alive_counted > 0 else 0.0
+
+        return {
+            "n_total":       n_total,
+            "n_alive":       n_alive,
+            "n_deleted":     n_deleted,
+            "orphan_count":  orphan_count,
+            "avg_degree_l0": round(avg_degree, 2),
+            "max_level":     self._max_level,
+            "space":         self.space,
+        }
+
+    def compact(self) -> Dict[str, int]:
+        """Remove tombstoned nodes and reconnect orphaned live nodes.
+
+        Two passes:
+        1. **Tombstone removal** — strips deleted node IDs from all
+           neighbour lists and updates the entry point if it was deleted.
+        2. **Orphan repair** — any alive node with zero live neighbours at
+           layer 0 is reconnected via a graph search.
+
+        Returns
+        -------
+        dict with keys:
+            ``removed``  — number of tombstones cleared from neighbour lists
+            ``repaired`` — number of orphaned nodes reconnected
+        """
+        removed  = 0
+        repaired = 0
+
+        # Pass 1: strip tombstones from all neighbour lists.
+        for nid in range(len(self._vectors)):
+            if nid in self._deleted:
+                continue
+            for lc in range(len(self._neighbors[nid])):
+                before = self._neighbors[nid][lc]
+                after  = [nb for nb in before if nb not in self._deleted]
+                removed += len(before) - len(after)
+                self._neighbors[nid][lc] = after
+
+        # Fix entry point if it was deleted.
+        if self._entry_point in self._deleted:
+            for nid in range(len(self._vectors)):
+                if nid not in self._deleted:
+                    self._entry_point = nid
+                    break
+            else:
+                # All nodes deleted — reset to empty state.
+                self._entry_point = -1
+                self._max_level   = -1
+                self._deleted.clear()
+                return {"removed": removed, "repaired": 0}
+
+        # Pass 2: reconnect orphans.  A node is orphaned if it has no live
+        # neighbours at layer 0 (it can no longer be found by any traversal
+        # starting from a connected component).
+        for nid in range(len(self._vectors)):
+            if nid in self._deleted:
+                continue
+            l0 = self._neighbors[nid][0] if self._neighbors[nid] else []
+            if any(nb not in self._deleted for nb in l0):
+                continue  # already connected
+
+            # Search for new neighbours from the current entry point.
+            q       = self._vectors[nid]
+            results = self._search_layer(q, [self._entry_point],
+                                         ef=self.ef_construction, layer=0)
+            new_nbrs = [nb for _, nb in results if nb != nid][:self.M0]
+
+            if not self._neighbors[nid]:
+                self._neighbors[nid] = [[]]
+            self._neighbors[nid][0] = new_nbrs
+
+            # Bidirectional: add nid to each new neighbour's list.
+            for nb in new_nbrs:
+                if not self._neighbors[nb]:
+                    self._neighbors[nb] = [[]]
+                if nid not in self._neighbors[nb][0]:
+                    self._neighbors[nb][0].append(nid)
+                    if len(self._neighbors[nb][0]) > self.M0:
+                        nb_vec  = self._vectors[nb]
+                        cands   = [(self._distance(nb_vec, self._vectors[c]), c)
+                                   for c in self._neighbors[nb][0]]
+                        cands.sort()
+                        self._neighbors[nb][0] = [c for _, c in cands[:self.M0]]
+
+            repaired += 1
+
+        # Finally clear the tombstone set — nodes are no longer in any list.
+        self._deleted.clear()
+        return {"removed": removed, "repaired": repaired}
+
+    def estimate_recall(
+        self,
+        sample_size: int = 1000,
+        k: int = 10,
+        ef: int = 64,
+    ) -> Dict[str, Any]:
+        """Estimate Recall@k by comparing HNSW to brute-force on a random sample.
+
+        Mathematical guarantee
+        ----------------------
+        For each sampled query vector (drawn uniformly at random from the live
+        corpus), the exact k-nearest neighbours are computed via brute-force
+        cosine scan.  Recall@k is the fraction of exact neighbours that the
+        HNSW search also returns.
+
+        The 95% Wilson confidence interval is computed assuming a binomial
+        proportion (each of the ``sample_size * k`` individual neighbour
+        positions is a Bernoulli trial).
+
+        Parameters
+        ----------
+        sample_size : int
+            Number of random query vectors to sample from the live corpus.
+            Capped at the live node count.
+        k : int
+            Recall cut-off.
+        ef : int
+            HNSW search beam width used for the recall measurement.
+
+        Returns
+        -------
+        dict with keys:
+            ``recall``         — point estimate in [0, 1]
+            ``ci_95_lower``    — Wilson 95% lower bound
+            ``ci_95_upper``    — Wilson 95% upper bound
+            ``sample_size``    — actual number of queries used
+            ``k``              — recall cut-off
+            ``ef``             — beam width used
+            ``n_alive``        — live node count at time of call
+        """
+        alive_ids = [nid for nid in range(len(self._vectors))
+                     if nid not in self._deleted]
+        n = len(alive_ids)
+        if n < 2:
+            return {"recall": 1.0, "ci_95_lower": 1.0, "ci_95_upper": 1.0,
+                    "sample_size": 0, "k": k, "ef": ef, "n_alive": n}
+
+        k_eff   = min(k, n - 1)
+        actual  = min(sample_size, n)
+        rng     = np.random.default_rng(seed=0x5EED)
+        sample  = rng.choice(alive_ids, size=actual, replace=False)
+
+        # Build alive-only matrix for brute-force (shape: n_alive × d)
+        mat = np.stack([self._vectors[i] for i in alive_ids])   # (n, d)
+
+        hits  = 0
+        total = 0
+
+        for qid in sample:
+            q = self._vectors[qid]
+
+            # Brute-force exact k-NN (excluding the query itself)
+            if self.space == "cosine":
+                sims = mat @ q           # (n,) cosine similarities (unit vecs)
+            else:
+                sims = -np.sum((mat - q) ** 2, axis=1)   # negative L2² (higher=closer)
+            # Exclude query from its own result
+            q_pos_in_alive = alive_ids.index(int(qid))
+            sims[q_pos_in_alive] = -np.inf
+            gt_local = np.argpartition(sims, -k_eff)[-k_eff:]
+            gt_global = set(alive_ids[i] for i in gt_local)
+
+            # HNSW search
+            hnsw_ids, _ = self.search(q, k=k_eff, ef=ef)
+            hnsw_set    = set(int(i) for i in hnsw_ids)
+
+            hits  += len(hnsw_set & gt_global)
+            total += k_eff
+
+        recall = hits / total if total > 0 else 1.0
+
+        # Wilson score interval (z=1.96 for 95% CI)
+        z   = 1.96
+        n_t = float(total)
+        p   = recall
+        denom = 1 + z * z / n_t
+        centre = (p + z * z / (2 * n_t)) / denom
+        margin = (z / denom) * math.sqrt(p * (1 - p) / n_t + z * z / (4 * n_t * n_t))
+        ci_lo = max(0.0, centre - margin)
+        ci_hi = min(1.0, centre + margin)
+
+        return {
+            "recall":      round(recall, 6),
+            "ci_95_lower": round(ci_lo, 6),
+            "ci_95_upper": round(ci_hi, 6),
+            "sample_size": actual,
+            "k":           k_eff,
+            "ef":          ef,
+            "n_alive":     n,
+        }
 
 
 # ---------------------------------------------------------------------------

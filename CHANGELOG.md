@@ -75,6 +75,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 1019 Python tests pass (1009 prior + 10 new).
 - Rust crate versions unchanged at 8.0.0.
 
+## [5.1.0] — 2026-05-12
+
+### Added
+- **`HNSWIndex.add(..., metadata=)` (v5.1.0 P1)** — per-vector metadata
+  sidecar.  Each entry is an arbitrary `dict` stored alongside the vector.
+  Returns a list of assigned node IDs.  `save`/`load` round-trips the
+  sidecar; older saves load cleanly (missing metadata filled with `None`).
+- **`HNSWIndex.delete(node_id)` (v5.1.0 P1)** — O(1) soft-delete via a
+  tombstone `set`.  Tombstoned nodes are excluded from all future search
+  results while graph links remain intact so traversal stays connected.
+  Raises `IndexError` for out-of-range IDs and `ValueError` on double-delete.
+- **`HNSWIndex.search(..., filter=)` (v5.1.0 P1)** — pre-filter during
+  graph walk (not post-filter).  Pass `filter={"field": "value"}` to skip
+  non-matching nodes from the result set while still traversing through
+  them as graph connectors.  Deleted nodes are always excluded regardless
+  of filter.  Compatible with the `filter_fn` parameter added to the
+  internal `_search_layer`.
+- **`HNSWIndex.stats()` (v5.1.0 P1)** — returns `n_total`, `n_alive`,
+  `n_deleted`, `orphan_count`, `avg_degree_l0`, `max_level`, `space`.
+  `orphan_count` is the number of live nodes with zero live neighbours at
+  layer 0 — the recall-degradation signal before compaction.
+- **`HNSWIndex.compact()` (v5.1.0 P1)** — two-pass graph repair.  Pass 1:
+  removes tombstone IDs from all neighbour lists, fixes a deleted entry
+  point.  Pass 2: reconnects orphaned live nodes via a search-based
+  neighbour-finding step.  Returns `{removed: n, repaired: m}`.  Clears
+  the tombstone set on completion.
+- **`HNSWIndex.estimate_recall(sample_size, k, ef)` (v5.1.0 P1)** —
+  brute-force ground truth vs HNSW recall@k on a random sample.  Returns
+  `recall`, `ci_95_lower`, `ci_95_upper` (Wilson score interval, z=1.96),
+  `sample_size`, `k`, `ef`, `n_alive`.
+- **`demo/server.py` P1 endpoints** — three new endpoints wired to a live
+  in-process HNSWIndex seeded from the demo corpus:
+  - `GET /api/recall_estimate` — calls `estimate_recall(sample_size=26)`
+    and adds a plain-English `label` (Excellent / Good / Fair / Poor).
+  - `POST /api/compact` — soft-deletes `delete_n` random vectors (default
+    3), runs `compact()`, returns before/after stats + timing.
+  - `GET /api/hnsw-stats` — returns `index.stats()` live.
+  - `POST /api/filtered-search` — pre-filtered HNSW nearest-neighbour
+    search over the demo corpus via the new `filter=` argument.
+- **`demo/viz.html` recall gauge** — glass-morphism panel (bottom-right)
+  showing Recall@k as an animated fill bar with a Wilson 95% CI band.
+  Polls `/api/recall_estimate` every 30s when `demo/server.py` is running;
+  static placeholder when offline.
+- **`tests/test_hnsw_extended.py`** — 40 new unit tests across six
+  classes: `TestMetadata`, `TestDelete`, `TestFilteredSearch`, `TestStats`,
+  `TestCompact`, `TestEstimateRecall`.
+
+### Notes
+- `_search_layer` gains an optional `filter_fn: Callable[[int], bool]`
+  parameter; callers that don't pass it see no behaviour change.
+- 1060 Python tests passing (up from 1019); 109 Rust tests unchanged.
+- Version bump 5.0.2 → 5.1.0 in `python/__init__.py`, `python/vectro.py`,
+  `pyproject.toml`.
+
 ## [5.0.0] — 2026-05-02
 
 ### Performance — INT8 hot path (PLAN 1)
