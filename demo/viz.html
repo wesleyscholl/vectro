@@ -63,6 +63,60 @@
     z-index: 20; pointer-events: none; text-align: right; line-height: 1.7;
   }
 
+<<<<<<< HEAD
+=======
+  /* ── recall gauge ── */
+  #recall-panel {
+    position: fixed; bottom: 130px; right: 28px; width: 220px;
+    padding: 14px 16px;
+    background: rgba(14, 10, 28, 0.72);
+    border: 1px solid rgba(167,139,250,0.22);
+    border-radius: 12px;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    z-index: 20; pointer-events: none;
+    transition: opacity .4s;
+  }
+  #recall-panel .rp-head {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: rgba(255,255,255,0.35); margin-bottom: 8px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  #recall-panel .rp-live {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #4ade80;
+    box-shadow: 0 0 0 3px rgba(74,222,128,0.2);
+    animation: pulse 1.6s ease-in-out infinite;
+    display: none;
+  }
+  #recall-panel.online .rp-live { display: block; }
+  .gauge-track {
+    height: 8px; border-radius: 999px;
+    background: rgba(255,255,255,0.07);
+    position: relative; overflow: hidden; margin: 6px 0 10px;
+  }
+  .gauge-fill {
+    height: 100%; border-radius: 999px;
+    background: linear-gradient(90deg, #7c3aed, #22d3ee);
+    transition: width .8s cubic-bezier(0.23, 1, 0.32, 1);
+    box-shadow: 0 0 12px rgba(124,58,237,0.5);
+    width: 0%;
+  }
+  .gauge-ci {
+    position: absolute; top: 0; height: 100%;
+    background: rgba(255,255,255,0.12); border-radius: 999px;
+    transition: left .8s, width .8s;
+  }
+  .rp-row {
+    display: flex; justify-content: space-between;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11px; color: rgba(255,255,255,0.5); margin: 2px 0;
+  }
+  .rp-row .rp-val { color: rgba(255,255,255,0.85); }
+  .rp-label { font-size: 18px; font-weight: 800; letter-spacing: -0.02em;
+              color: #c4b5fd; display: block; margin-bottom: 2px; }
+
+>>>>>>> claude/crazy-fermat-5e6cd7
   /* ── glass-morphism tooltip ── */
   #tt {
     position: fixed; z-index: 30;
@@ -100,6 +154,26 @@
 
 <p id="hint">⇧ constellations · D resonance · drag to query · scroll to zoom</p>
 
+<<<<<<< HEAD
+=======
+<!-- recall gauge panel (live when demo/server.py is running) -->
+<div id="recall-panel">
+  <div class="rp-head">
+    <span>Recall@k</span>
+    <span class="rp-live"></span>
+  </div>
+  <span class="rp-label" id="rp-pct">—</span>
+  <div class="gauge-track">
+    <div class="gauge-ci" id="rp-ci"></div>
+    <div class="gauge-fill" id="rp-fill"></div>
+  </div>
+  <div class="rp-row"><span>label</span><span class="rp-val" id="rp-label">offline</span></div>
+  <div class="rp-row"><span>95% CI</span><span class="rp-val" id="rp-ci-txt">—</span></div>
+  <div class="rp-row"><span>k / ef</span><span class="rp-val" id="rp-kef">— / —</span></div>
+  <div class="rp-row"><span>n vectors</span><span class="rp-val" id="rp-n">—</span></div>
+</div>
+
+>>>>>>> claude/crazy-fermat-5e6cd7
 <!-- glass tooltip -->
 <div id="tt" class="hidden"></div>
 
@@ -1010,6 +1084,65 @@ document.getElementById("btn-res").addEventListener("click", () => {
   document.getElementById("s-mode").textContent = resonanceOn ? "◈ resonance" : "⊙ cosmos";
 });
 
+<<<<<<< HEAD
+=======
+// ── Recall gauge — polls /api/recall_estimate when server is live ──
+// Gracefully no-ops when demo/server.py isn't running.
+(function initRecallGauge() {
+  const BASE      = window.location.origin;
+  const rpPanel   = document.getElementById("recall-panel");
+  const rpPct     = document.getElementById("rp-pct");
+  const rpFill    = document.getElementById("rp-fill");
+  const rpCi      = document.getElementById("rp-ci");
+  const rpLabelEl = document.getElementById("rp-label");
+  const rpCiTxt   = document.getElementById("rp-ci-txt");
+  const rpKef     = document.getElementById("rp-kef");
+  const rpN       = document.getElementById("rp-n");
+
+  function updateGauge(r) {
+    const pct = Math.round(r.recall * 100);
+    rpPct.textContent   = pct + "%";
+    rpFill.style.width  = pct + "%";
+    rpLabelEl.textContent = r.label || "—";
+    rpCiTxt.textContent   =
+      "[" + (r.ci_95_lower * 100).toFixed(1) + ", " +
+             (r.ci_95_upper * 100).toFixed(1) + "]%";
+    rpKef.textContent = r.k + " / " + r.ef;
+    rpN.textContent   = r.n_alive;
+
+    // CI band
+    const lo = r.ci_95_lower * 100, hi = r.ci_95_upper * 100;
+    rpCi.style.left  = lo + "%";
+    rpCi.style.width = (hi - lo) + "%";
+
+    // Colour by quality
+    const c = pct >= 95 ? "#4ade80"
+            : pct >= 85 ? "#22d3ee"
+            : pct >= 70 ? "#facc15" : "#f87171";
+    rpPct.style.color          = c;
+    rpFill.style.background    = "linear-gradient(90deg," + c + "99," + c + ")";
+    rpFill.style.boxShadow     = "0 0 12px " + c + "66";
+    rpPanel.classList.add("online");
+  }
+
+  async function fetchRecall() {
+    try {
+      const r = await fetch(BASE + "/api/recall_estimate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sample_size: 26, k: 5, ef: 32 }),
+      });
+      if (!r.ok) return;
+      updateGauge(await r.json());
+    } catch (_) { /* server offline — gauge stays static */ }
+  }
+
+  // First fetch after 1s, then every 30s
+  setTimeout(fetchRecall, 1000);
+  setInterval(fetchRecall, 30000);
+})();
+
+>>>>>>> claude/crazy-fermat-5e6cd7
 // ── boot ───────────────────────────────────────────────────
 resize();
 initStars();

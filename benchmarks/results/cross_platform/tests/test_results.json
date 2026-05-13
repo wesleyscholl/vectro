@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-04-29T15:22:57.638885Z",
+  "timestamp": "2026-05-12T04:55:51.920083Z",
   "platform": {
     "os_type": "macOS",
     "os_version": "22.6.0",
@@ -16,9 +16,9 @@
     "mojo_available": false,
     "rust_available": false,
     "faiss_available": false,
-    "numpy_version": "2.0.2",
-    "python_version": "3.9.6",
-    "timestamp": "2026-04-29T19:22:52.453914Z"
+    "numpy_version": "2.4.4",
+    "python_version": "3.13.13",
+    "timestamp": "2026-05-12T08:55:49.988931Z"
   },
   "test_results": {
     "int8_throughput_floor_passed": true,

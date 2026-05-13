@@ -63,6 +63,7 @@ if "dspy" not in sys.modules:
 
 import python as vectro  # noqa: E402  (sys.path manipulation above)
 from python.integrations.dspy_integration import VectroDSPyRetriever  # noqa: E402
+from python.hnsw_api import HNSWIndex  # noqa: E402
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -350,14 +351,144 @@ def _api_health(_payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# v5.1.0 — P1 endpoints: recall estimator, compaction, metadata filter
+# ─────────────────────────────────────────────────────────────────────────
+#
+# A small in-process HNSWIndex is seeded once at startup from the CORPUS
+# embeddings so all three endpoints have a realistic index to operate on.
+# The index is intentionally separate from RETRIEVER so the user can
+# delete, compact, and re-estimate without affecting the search demo.
+
+print("[vectro-demo] building demo HNSW index for P1 endpoints ...", flush=True)
+_HNSW_LOCK = threading.Lock()
+_DEMO_HNSW: HNSWIndex = HNSWIndex(M=8, ef_construction=80)
+_t_hnsw0 = time.perf_counter()
+_demo_vecs = np.stack([_embed_text(item["text"]) for item in CORPUS], axis=0)
+_demo_meta = [{"category": item["tags"][0] if item["tags"] else "other",
+               "tags": item["tags"], "text": item["text"]}
+              for item in CORPUS]
+_DEMO_HNSW.add(_demo_vecs, metadata=_demo_meta)
+print(f"[vectro-demo] HNSW ready: {len(_DEMO_HNSW)} vectors, "
+      f"{(time.perf_counter() - _t_hnsw0)*1000:.1f} ms", flush=True)
+
+
+def _api_recall_estimate(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Estimate Recall@k against brute-force ground truth.
+
+    Body: ``{sample_size?: int, k?: int, ef?: int}``
+    Returns the full result dict from ``HNSWIndex.estimate_recall()``,
+    plus a plain-English ``label`` for the demo gauge.
+    """
+    sample_size = max(1, min(int(payload.get("sample_size", 50)), len(_DEMO_HNSW)))
+    k           = max(1, min(int(payload.get("k", 5)), len(_DEMO_HNSW) - 1))
+    ef          = max(k, int(payload.get("ef", 32)))
+    with _HNSW_LOCK:
+        result = _DEMO_HNSW.estimate_recall(sample_size=sample_size, k=k, ef=ef)
+    r = result["recall"]
+    label = "Excellent" if r >= 0.95 else "Good" if r >= 0.85 else "Fair" if r >= 0.70 else "Poor"
+    return {**result, "label": label}
+
+
+def _api_compact(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Run graph compaction — tombstone removal + orphan reconnection.
+
+    Optionally delete a random subset first (for demo effect).
+    Body: ``{delete_n?: int}`` — soft-delete up to *delete_n* random vectors
+    before compacting (default 3).
+    """
+    delete_n = max(0, min(int(payload.get("delete_n", 3)), len(_DEMO_HNSW) - 2))
+    with _HNSW_LOCK:
+        pre_stats = _DEMO_HNSW.stats()
+        # Soft-delete a few random live vectors
+        alive = [i for i in range(len(_DEMO_HNSW._vectors))
+                 if i not in _DEMO_HNSW._deleted]
+        rng = np.random.default_rng()
+        chosen = rng.choice(alive, size=min(delete_n, len(alive)), replace=False)
+        for nid in chosen:
+            _DEMO_HNSW.delete(int(nid))
+        stats_before = _DEMO_HNSW.stats()
+        t0 = time.perf_counter()
+        result = _DEMO_HNSW.compact()
+        elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
+        stats_after  = _DEMO_HNSW.stats()
+    return {
+        "deleted_count_before": stats_before["n_deleted"],
+        "orphan_count_before":  stats_before["orphan_count"],
+        "removed":              result["removed"],
+        "repaired":             result["repaired"],
+        "orphan_count_after":   stats_after["orphan_count"],
+        "timing_ms":            elapsed_ms,
+        "n_alive":              stats_after["n_alive"],
+    }
+
+
+def _api_hnsw_stats(_payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Return health stats for the demo HNSW index."""
+    with _HNSW_LOCK:
+        s = _DEMO_HNSW.stats()
+    return s
+
+
+def _api_filtered_search(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """HNSW pre-filtered nearest-neighbour search.
+
+    Body: ``{query_text: str, k?: int, filter?: {field: value}}``
+    Runs search on the demo HNSW index with optional metadata pre-filter.
+    """
+    query  = str(payload.get("query_text", "")).strip() or "capital"
+    k      = max(1, min(int(payload.get("k", 5)), len(_DEMO_HNSW)))
+    filt   = payload.get("filter") or None
+
+    # Validate filter dict
+    if filt is not None:
+        if not isinstance(filt, dict):
+            filt = None
+        else:
+            # Only allow simple string/number equality filters
+            filt = {str(fk): fv for fk, fv in filt.items()
+                    if isinstance(fv, (str, int, float, bool))}
+
+    q_vec = _embed_text(query)
+    t0 = time.perf_counter()
+    with _HNSW_LOCK:
+        indices, distances = _DEMO_HNSW.search(q_vec, k=k, ef=max(k, 32), filter=filt)
+    elapsed = time.perf_counter() - t0
+
+    results = []
+    for nid, dist in zip(indices.tolist(), distances.tolist()):
+        meta = _DEMO_HNSW._metadata[nid] if nid < len(_DEMO_HNSW._metadata) else {}
+        results.append({
+            "id":       int(nid),
+            "distance": round(float(dist), 4),
+            "similarity": round(max(0.0, 1.0 - float(dist)), 4),
+            "text":     (meta or {}).get("text", ""),
+            "category": (meta or {}).get("category", ""),
+            "tags":     (meta or {}).get("tags", []),
+        })
+
+    return {
+        "query":      query,
+        "filter":     filt,
+        "k":          k,
+        "results":    results,
+        "timing_ms":  round(elapsed * 1000, 3),
+    }
+
+
 ROUTES_POST: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
-    "/api/compress":  _api_compress,
-    "/api/search":    _api_search,
-    "/api/benchmark": _api_benchmark,
+    "/api/compress":         _api_compress,
+    "/api/search":           _api_search,
+    "/api/benchmark":        _api_benchmark,
+    "/api/compact":          _api_compact,
+    "/api/filtered-search":  _api_filtered_search,
+    "/api/recall_estimate":  _api_recall_estimate,
 }
 ROUTES_GET: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
-    "/api/index-stats": _api_index_stats,
-    "/api/health":      _api_health,
+    "/api/index-stats":  _api_index_stats,
+    "/api/hnsw-stats":   _api_hnsw_stats,
+    "/api/recall_estimate": lambda _: _api_recall_estimate({}),
+    "/api/health":       _api_health,
 }
 
 

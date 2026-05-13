@@ -1,7 +1,77 @@
 # Vectro — Plan
 
+<<<<<<< HEAD
 > Last updated: 2026-05-11
 > Current version: **5.5.0** (Python) / **8.0.0** (Rust) — quantization audit, QuantizationAuditor, QuantizationReport, VectorPairMetrics, RecallResult.
+=======
+> Last updated: 2026-05-12
+> Current version: **5.1.0** (Python) / **8.0.0** (Rust) — v5.1.0: recall estimator, HNSW compaction, metadata pre-filtering. 1046 Python + 109 Rust tests passing.
+
+---
+
+## Researched Feature Roadmap
+
+Researched against the vector-search literature and production deployments
+(Qdrant, Weaviate, Pinecone, FAISS) as of 2026-05.  Priority assigned by
+user impact × implementation cost.
+
+---
+
+### 🔴 P1 — Critical (implement now)
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **Recall estimator** | `index.estimate_recall(sample_size=1000)` — samples random query vectors from the stored corpus, runs both HNSW and brute-force, returns recall@k with Wilson 95% CI. Exposes via `GET /api/recall_estimate`. Demo UI shows a recall gauge. | ✅ v5.1.0 |
+| **HNSW graph compaction / tombstone cleanup** | After deletes, nodes become unreachable (silent recall degradation). `compact()` detects orphaned nodes, reconnects dangling edges, removes tombstones. `stats()` includes `orphaned_node_count`, `deleted_count`. Exposes via `POST /api/compact`. | ✅ v5.1.0 |
+| **Vector metadata filtering (pre-filter)** | `search(filter={"field": "value"})` alongside the query vector. HNSW traversal skips filtered-out nodes during graph walk (not post-filter). Metadata stored per-vector in a sidecar dict. | ✅ v5.1.0 |
+
+---
+
+### 🟠 P2 — High Impact / Medium Complexity
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **Hybrid BM25 + dense search (RRF)** | `POST /search` accepts `text` param alongside `vector`. BM25 scores over stored text metadata. Reciprocal Rank Fusion combines dense + sparse. `alpha` controls weighting (0=BM25 only, 1=dense only). | ⬜ Planned |
+| **Scalar / product quantization** | `quantization: "sq8" \| "pq32"` on collection creation. SQ: scale to int8 per-dim. PQ: 8 sub-quantizers of 4 bits each. 75-97% memory reduction. `GET /collections/{name}/quantization_stats`. | ⬜ Planned |
+| **HNSW search trace visualization** | `POST /search?trace=true` returns full traversal path — visited nodes, layer descent, entry points. Demo viz.html renders traversal as animated beam with nodes lighting up. | ⬜ Planned |
+| **Batch upsert with deduplication** | `POST /batch_upsert` — deduplicates by ID, updates existing vectors in-place. Returns `{inserted: n, updated: m}`. | ⬜ Planned |
+
+---
+
+### 🟡 P3 — Strategic
+
+| Feature | Description | Status |
+|---------|-------------|--------|
+| **ACORN-style filtered HNSW** | Filtered search during graph traversal for high-selectivity predicates (solving zero-result post-filter at 1% selectivity). See arXiv:2403.04871. | ⬜ Planned |
+| **Persistent HNSW on disk** | `mmap`-backed index file, survives process restart without rebuild. | ⬜ Planned |
+| **Multi-vector per document** | Multiple embeddings per document ID (title + body), max-pool distances. | ⬜ Planned |
+| **Namespace partitioning** | Logical namespaces within a collection, isolated HNSW graphs, unified cross-namespace search. | ⬜ Planned |
+
+---
+
+## v5.1.0 — Recall estimator, HNSW compaction, metadata pre-filtering ✅ COMPLETE (2026-05-12)
+
+### Summary
+Three P1 items from the Researched Feature Roadmap, shipped as one sprint.
+
+All three are implemented directly on `HNSWIndex` in `python/hnsw_api.py` so
+they work with or without the demo server — the server just exposes them as
+HTTP endpoints.
+
+### Deliverables
+| # | Deliverable | Status |
+|---|-------------|--------|
+| 1 | `HNSWIndex.add(..., metadata=)` — per-vector metadata sidecar | ✅ |
+| 2 | `HNSWIndex.delete(node_id)` — O(1) tombstone mark | ✅ |
+| 3 | `HNSWIndex.search(..., filter=)` — pre-filter during graph walk | ✅ |
+| 4 | `HNSWIndex.stats()` — node count, deleted count, orphan count, avg degree | ✅ |
+| 5 | `HNSWIndex.compact()` — tombstone removal + orphan reconnection | ✅ |
+| 6 | `HNSWIndex.estimate_recall(sample_size, k, ef)` — brute-force vs HNSW recall@k with Wilson 95% CI | ✅ |
+| 7 | `demo/server.py` — `GET /api/recall_estimate`, `POST /api/compact`, `GET /api/stats`, metadata filter in `POST /api/search` | ✅ |
+| 8 | `demo/viz.html` — recall gauge panel (live if server running, static otherwise) | ✅ |
+| 9 | `tests/test_hnsw_extended.py` — 27 new tests covering all P1 features | ✅ |
+| 10 | Version bump 5.0.2 → 5.1.0 | ✅ |
+>>>>>>> claude/crazy-fermat-5e6cd7
 
 ---
 
