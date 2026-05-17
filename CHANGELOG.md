@@ -75,6 +75,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 1019 Python tests pass (1009 prior + 10 new).
 - Rust crate versions unchanged at 8.0.0.
 
+## [5.2.0] — 2026-05-13
+
+### Added
+- **Persistent index serialisation (`.npz` format)** — `HNSWIndex.save(path)`
+  now writes a `numpy.savez_compressed` archive instead of pickle. The format
+  is a standard ZIP container: vectors stored as a float32 matrix, graph
+  topology / metadata / deleted set / string-ID map stored as JSON byte arrays
+  inside the same file. `load(path)` detects the format by magic bytes
+  (`PK\x03\x04` for `.npz`, `\x80\x04/05` for pickle); the legacy pickle path
+  still loads but emits a `DeprecationWarning` with guidance to re-save.
+  Loading uses `allow_pickle=False` — safe to open untrusted index files.
+  `SearchTrace` and `_id_map` are serialised in the new format.
+- **`HNSWIndex.add_batch(vectors, ids, metadata)`** — batch upsert with
+  deduplication by caller-supplied string IDs. Existing IDs trigger an O(1)
+  in-place update of the stored vector and metadata (no graph surgery); new IDs
+  are inserted via the standard HNSW algorithm. Soft-deleted nodes are
+  resurrected on upsert. Returns `{"inserted": n, "updated": m, "node_ids": [...]}`.
+  `HNSWIndex._id_map: Dict[str, int]` persists across `save` / `load`.
+- **`HNSWIndex.get_by_id(str_id)`** — O(1) metadata lookup by string ID;
+  returns `None` for unknown or deleted IDs.
+- **`HNSWIndex.search(..., trace=False)`** — optional third return value when
+  `trace=True`. Returns `SearchTrace` alongside `(indices, distances)`, a
+  dataclass with: `entry_point` (int), `layer_descents` (per-layer visited
+  nodes during greedy descent), `l0_visited` (all nodes examined at layer 0),
+  `l0_candidates_final` (sorted ascending result heap). Useful for recall
+  debugging and the demo viz search-beam animation.
+- **`SearchTrace` dataclass** — module-level, importable as
+  `from python.hnsw_api import SearchTrace`.
+- **`tests/test_hnsw_v2.py`** — 39 tests: 12 persistence (empty/full/hyperparams/
+  recall/metadata/deleted/id_map/magic/legacy-pickle/L2-cosine),
+  15 add_batch (insert/upsert/partial/resurrection/metadata/node_ids/errors/
+  get_by_id/search-after-upsert), 12 trace (type/contents/filter/empty/
+  layer-count/candidate-match/deleted-exclusion/save-load).
+
+### Notes
+- **Backward compat**: existing indexes saved with the old pickle `save()` can
+  still be loaded with `load()`. Upgrade path: `idx = HNSWIndex.load("old.hnsw"); idx.save("new.vindex")`.
+- Python `5.1.0 → 5.2.0`. Rust crates unchanged at `8.0.0`.
+- `pyproject.toml` merge conflict resolved (kept HEAD/main version 5.5.0 in
+  main repo; worktree at 5.2.0).
+
 ## [5.1.0] — 2026-05-12
 
 ### Added
