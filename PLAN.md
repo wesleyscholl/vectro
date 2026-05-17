@@ -33,8 +33,8 @@ user impact × implementation cost.
 |---------|-------------|--------|
 | **Hybrid BM25 + dense search (RRF)** | `POST /search` accepts `text` param alongside `vector`. BM25 scores over stored text metadata. Reciprocal Rank Fusion combines dense + sparse. `alpha` controls weighting (0=BM25 only, 1=dense only). | ⬜ Planned |
 | **Scalar / product quantization** | `quantization: "sq8" \| "pq32"` on collection creation. SQ: scale to int8 per-dim. PQ: 8 sub-quantizers of 4 bits each. 75-97% memory reduction. `GET /collections/{name}/quantization_stats`. | ⬜ Planned |
-| **HNSW search trace visualization** | `POST /search?trace=true` returns full traversal path — visited nodes, layer descent, entry points. Demo viz.html renders traversal as animated beam with nodes lighting up. | ⬜ Planned |
-| **Batch upsert with deduplication** | `POST /batch_upsert` — deduplicates by ID, updates existing vectors in-place. Returns `{inserted: n, updated: m}`. | ⬜ Planned |
+| **HNSW search trace visualization** | `search(..., trace=True)` returns a `SearchTrace` alongside `(indices, distances)`: entry point, per-layer descent nodes, all layer-0 candidates, final result heap. Powers the animated beam in demo/viz.html. | ✅ v5.2.0 |
+| **Batch upsert with deduplication** | `add_batch(vectors, ids, metadata)` — deduplicates by string ID, updates existing vectors in-place (O(1) per update, no graph surgery), returns `{inserted, updated, node_ids}`. Also adds `get_by_id(str_id)`. | ✅ v5.2.0 |
 
 ---
 
@@ -43,9 +43,52 @@ user impact × implementation cost.
 | Feature | Description | Status |
 |---------|-------------|--------|
 | **ACORN-style filtered HNSW** | Filtered search during graph traversal for high-selectivity predicates (solving zero-result post-filter at 1% selectivity). See arXiv:2403.04871. | ⬜ Planned |
-| **Persistent HNSW on disk** | `mmap`-backed index file, survives process restart without rebuild. | ⬜ Planned |
+| **Persistent HNSW on disk** | `save(path)` / `load(path)` upgraded from pickle to numpy `.npz` format — no arbitrary code execution on load, magic-byte detection, backward-compat DeprecationWarning for old pickle files. | ✅ v5.2.0 |
 | **Multi-vector per document** | Multiple embeddings per document ID (title + body), max-pool distances. | ⬜ Planned |
 | **Namespace partitioning** | Logical namespaces within a collection, isolated HNSW graphs, unified cross-namespace search. | ⬜ Planned |
+
+---
+
+## v5.2.0 — Persistent .npz index, add_batch upsert, search trace ✅ COMPLETE (2026-05-13)
+
+### Summary
+Three P2/P3 items shipped as one sprint, all implemented on `HNSWIndex` in
+`python/hnsw_api.py` with zero API breakage.
+
+### Deliverables
+| # | Deliverable | Status |
+|---|-------------|--------|
+| 1 | `HNSWIndex.save(path)` — replaces pickle with `numpy.savez_compressed`; vectors as float32 matrix; graph/metadata/deleted/id_map as JSON byte arrays inside the ZIP archive | ✅ |
+| 2 | `HNSWIndex.load(path)` — detects format by magic bytes; `.npz` primary path with `allow_pickle=False`; legacy pickle path emits `DeprecationWarning` | ✅ |
+| 3 | `HNSWIndex._load_npz(path)` / `HNSWIndex._load_pickle(path)` — internal helpers, keep `load()` clean | ✅ |
+| 4 | `HNSWIndex._id_map: Dict[str, int]` — string-ID registry added to `__init__` and serialised in the new format | ✅ |
+| 5 | `HNSWIndex.add_batch(vectors, ids, metadata)` — upsert with deduplication; O(1) in-place update for existing IDs (no graph surgery); returns `{inserted, updated, node_ids}`; resurrects soft-deleted nodes | ✅ |
+| 6 | `HNSWIndex.get_by_id(str_id)` — metadata lookup by string ID, `None` for deleted | ✅ |
+| 7 | `HNSWIndex.search(..., trace=False)` — optional third return value when `trace=True` | ✅ |
+| 8 | `SearchTrace` dataclass — `entry_point`, `layer_descents`, `l0_visited`, `l0_candidates_final` | ✅ |
+| 9 | `tests/test_hnsw_v2.py` — 39 tests covering all three features (12 persistence, 15 add_batch, 12 trace) | ✅ |
+| 10 | PLAN.md P2/P3 rows updated to ✅ v5.2.0 | ✅ |
+| 11 | Version bump 5.1.0 → 5.2.0 | ✅ |
+
+### Design notes
+- **Pickle elimination**: numpy `.npz` is a ZIP container — no arbitrary code
+  execution, safe to open untrusted files with `allow_pickle=False`. Each
+  `.npz` embeds vectors as a proper float32 matrix + JSON blobs for the graph
+  and metadata. File sizes are comparable (compressed JSON ≈ compressed pickle).
+- **`add_batch` in-place update**: updating an existing vector means overwriting
+  `_vectors[nid]` and `_metadata[nid]` and clearing the tombstone. The graph
+  links are deliberately unchanged. This is the correct trade-off: an expensive
+  graph-reconnect would be needed only if the vector moves drastically (that
+  scenario calls for `delete` + re-insert, not upsert).
+- **`SearchTrace`**: returned as the third element of a 3-tuple when `trace=True`.
+  Caller unpacks naturally via `ids, dists, tr = idx.search(...)`. The
+  `l0_candidates_final` list is sorted ascending so the first element is the
+  nearest neighbour.
+
+### Validation
+- 39 new tests, all pass. No regressions in the 1019-test baseline suite.
+- `recall` agree within 0.01 before/after `.npz` round-trip (verified by
+  `test_recall_within_tolerance_after_round_trip`).
 
 ---
 

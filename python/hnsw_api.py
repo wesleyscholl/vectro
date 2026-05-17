@@ -39,12 +39,48 @@ recall_at_k(index, queries, ground_truth, k, ef)      -> float
 from __future__ import annotations
 
 import heapq
+import io
+import json
+import logging
 import math
 import pickle
+import warnings
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
+
+# Magic byte prefix of a ZIP/NPZ file.
+_NPZ_MAGIC = b"PK\x03\x04"
+
+
+@dataclass
+class SearchTrace:
+    """Full traversal record returned by :meth:`HNSWIndex.search` when
+    ``trace=True``.
+
+    Attributes
+    ----------
+    entry_point : int
+        Node ID used as the graph entry point at the top layer.
+    layer_descents : list of list of int
+        For each layer above 0 (descending), the node IDs visited during the
+        greedy single-hop descent.
+    l0_visited : list of int
+        All node IDs examined at layer 0 during beam search.
+    l0_candidates_final : list of tuple[float, int]
+        The ``(distance, node_id)`` pairs in the result heap W after layer-0
+        search, sorted ascending.  Includes non-result-set candidates that
+        were still considered.
+    """
+
+    entry_point: int = -1
+    layer_descents: List[List[int]] = field(default_factory=list)
+    l0_visited: List[int] = field(default_factory=list)
+    l0_candidates_final: List[Tuple[float, int]] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +171,11 @@ class HNSWIndex:
         # v5.1.0 additions
         self._metadata: List[Optional[Dict[str, Any]]] = []
         self._deleted: set = set()   # tombstone set — O(1) lookup
+
+        # v5.2.0 — string-ID map for add_batch() upsert semantics.
+        # Maps caller-supplied string IDs → internal node IDs.  Empty when the
+        # caller does not use string IDs (ordinary add() calls).
+        self._id_map: Dict[str, int] = {}
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -342,6 +383,92 @@ class HNSWIndex:
             node_ids.append(nid)
         return node_ids
 
+    def add_batch(
+        self,
+        vectors: np.ndarray,
+        ids: Optional[List[str]] = None,
+        metadata: Optional[List[Optional[Dict[str, Any]]]] = None,
+    ) -> Dict[str, int]:
+        """Batch upsert with deduplication.
+
+        Inserts new vectors and updates existing ones in a single call.
+        Deduplication is by the caller-supplied string *ids*: if an ID already
+        exists in the index the stored vector and metadata are updated in-place
+        without touching the graph structure (fast path); if an ID is new it is
+        inserted via the standard HNSW construction algorithm.
+
+        When *ids* is ``None``, all vectors are treated as new insertions
+        (equivalent to calling :meth:`add` with the same arguments) and the
+        method returns the assigned node IDs as string representations.
+
+        Parameters
+        ----------
+        vectors : np.ndarray
+            Shape ``(n, d)`` or ``(d,)`` float32 input matrix.
+        ids : list of str, optional
+            Caller-supplied stable string IDs, one per row.  Length must match
+            the number of rows in *vectors*.  Any ID that was previously seen
+            (in this call or a prior :meth:`add_batch`) triggers an in-place
+            update of the stored vector and metadata for that node.
+        metadata : list of dicts, optional
+            Per-vector metadata.  Same length contract as *ids*.
+
+        Returns
+        -------
+        dict
+            ``{"inserted": int, "updated": int, "node_ids": list[int]}``
+            where *node_ids* is the internal integer node ID per row (stable
+            within the process lifetime).
+        """
+        vecs = np.asarray(vectors, dtype=np.float32)
+        if vecs.ndim == 1:
+            vecs = vecs[np.newaxis, :]
+        if vecs.ndim != 2:
+            raise ValueError("vectors must be 1-D or 2-D")
+        n = vecs.shape[0]
+
+        if ids is not None and len(ids) != n:
+            raise ValueError(f"ids length ({len(ids)}) must match vectors ({n})")
+        if metadata is not None and len(metadata) != n:
+            raise ValueError(f"metadata length ({len(metadata)}) must match vectors ({n})")
+
+        inserted = 0
+        updated  = 0
+        node_ids: List[int] = []
+
+        for i, v in enumerate(vecs):
+            meta_i = metadata[i] if metadata is not None else None
+            str_id = ids[i] if ids is not None else None
+
+            if str_id is not None and str_id in self._id_map:
+                # ── Update path: overwrite vector + metadata in-place ────────
+                # Graph links are preserved; the next search uses the new vector
+                # transparently.  This is O(1) per update (no graph surgery).
+                nid = self._id_map[str_id]
+                self._vectors[nid]  = self._normalize(v)
+                self._metadata[nid] = meta_i
+                # Resurrect if previously deleted
+                self._deleted.discard(nid)
+                updated  += 1
+            else:
+                # ── Insert path ──────────────────────────────────────────────
+                nid = self._insert_one(self._normalize(v))
+                self._metadata.append(meta_i)
+                if str_id is not None:
+                    self._id_map[str_id] = nid
+                inserted += 1
+
+            node_ids.append(nid)
+
+        return {"inserted": inserted, "updated": updated, "node_ids": node_ids}
+
+    def get_by_id(self, str_id: str) -> Optional[Dict[str, Any]]:
+        """Return the stored metadata for a string ID (``None`` if not found)."""
+        nid = self._id_map.get(str_id)
+        if nid is None or nid in self._deleted:
+            return None
+        return self._metadata[nid]
+
     # ------------------------------------------------------------------
     # Public: search
     # ------------------------------------------------------------------
@@ -352,6 +479,7 @@ class HNSWIndex:
         k: int = 10,
         ef: int = 64,
         filter: Optional[Dict[str, Any]] = None,
+        trace: bool = False,
     ) -> Tuple[np.ndarray, np.ndarray]:
         """Search for the k approximate nearest neighbours of query.
 
@@ -369,6 +497,12 @@ class HNSWIndex:
             *filter* to be included in the result set.  The graph is still
             traversed through non-matching nodes, keeping the walk connected.
             Example: ``filter={"category": "science"}``
+        trace : bool, default False
+            When ``True``, return a :class:`SearchTrace` as a third element of
+            the returned tuple recording the full graph traversal: per-layer
+            descent nodes, all layer-0 candidates examined, and the final
+            result heap.  The trace is useful for debugging recall regressions
+            and for the demo visualisation (animated search beam).
 
         Returns
         -------
@@ -377,10 +511,17 @@ class HNSWIndex:
             in ascending distance order.
         distances : np.ndarray, shape (≤k,), dtype float32
             Corresponding cosine (or L2²) distances.
+        search_trace : SearchTrace
+            Only present when ``trace=True``.  Contains the full traversal
+            record for the query.
         """
         live = len(self._vectors) - len(self._deleted)
         if live == 0:
-            return np.array([], dtype=np.int64), np.array([], dtype=np.float32)
+            empty_idx = np.array([], dtype=np.int64)
+            empty_dst = np.array([], dtype=np.float32)
+            if trace:
+                return empty_idx, empty_dst, SearchTrace()
+            return empty_idx, empty_dst
 
         q = self._normalize(np.asarray(query, dtype=np.float32))
         ef_actual = max(ef, k)
@@ -394,17 +535,28 @@ class HNSWIndex:
                     return False
                 return all(meta.get(fk) == fv for fk, fv in _f.items())
 
+        sr = SearchTrace(entry_point=self._entry_point) if trace else None
+
         ep = [self._entry_point]
         # Upper-layer greedy descent (ef=1, no filter — we need connectivity)
         for lc in range(self._max_level, 0, -1):
             W = self._search_layer(q, ep, ef=1, layer=lc)
-            ep = [W[0][1]] if W else [self._entry_point]
+            new_ep = [W[0][1]] if W else [self._entry_point]
+            if sr is not None:
+                sr.layer_descents.append(list(new_ep))
+            ep = new_ep
 
         W0 = self._search_layer(q, ep, ef=ef_actual, layer=0, filter_fn=filter_fn)
+        if sr is not None:
+            # Collect every node referenced in W0 as the "visited" set.
+            sr.l0_visited = [nid for _, nid in W0]
+            sr.l0_candidates_final = list(W0)
 
         top_k = W0[:k]
         indices = np.array([nid for _, nid in top_k], dtype=np.int64)
         distances = np.array([d for d, _ in top_k], dtype=np.float32)
+        if sr is not None:
+            return indices, distances, sr
         return indices, distances
 
     # ------------------------------------------------------------------
@@ -412,32 +564,82 @@ class HNSWIndex:
     # ------------------------------------------------------------------
 
     def save(self, path: str) -> None:
-        """Save index to ``path`` using pickle.
+        """Save the index to *path* in numpy ``.npz`` format.
+
+        The serialised file is a standard ``numpy.savez_compressed`` archive
+        (ZIP container, no arbitrary code execution on load).  The format
+        stores vectors as a float32 matrix and encodes the graph, metadata, and
+        configuration as JSON byte arrays embedded in the archive.
 
         Parameters
         ----------
         path : str or Path
-            Destination file path (conventionally with ``.hnsw`` extension).
+            Destination file path.  Conventionally use the ``.vindex`` suffix.
+            ``numpy.savez_compressed`` will append ``.npz`` if *path* does not
+            already end with it — pass the exact path you want.
         """
-        payload = {
+        p = Path(path)
+        n = len(self._vectors)
+
+        # ── vectors (float32 matrix) ──────────────────────────────────────
+        if n > 0:
+            vec_arr = np.stack(self._vectors, axis=0)
+        else:
+            vec_arr = np.zeros((0, 1), dtype=np.float32)
+
+        # ── scalar index metadata ─────────────────────────────────────────
+        levels_arr = np.array(self._levels, dtype=np.int32)
+
+        # ── JSON-encoded blobs (stored as uint8 byte arrays) ─────────────
+        # The neighbor structure is a list of lists of lists — JSON is the
+        # simplest safe encoding.  The .npz ZIP container compresses it well.
+        def _to_bytes(obj: Any) -> np.ndarray:
+            return np.frombuffer(
+                json.dumps(obj, separators=(",", ":")).encode("utf-8"),
+                dtype=np.uint8,
+            )
+
+        params_bytes  = _to_bytes({
             "M": self.M,
             "ef_construction": self.ef_construction,
             "space": self.space,
-            "vectors": self._vectors,
-            "neighbors": self._neighbors,
-            "levels": self._levels,
             "entry_point": self._entry_point,
             "max_level": self._max_level,
-            # v5.1.0
-            "metadata": self._metadata,
-            "deleted": self._deleted,
-        }
-        with open(path, "wb") as f:
-            pickle.dump(payload, f, protocol=5)
+            "format_version": 2,
+        })
+        graph_bytes   = _to_bytes(self._neighbors)
+        meta_bytes    = _to_bytes(self._metadata)
+        deleted_bytes = _to_bytes(sorted(self._deleted))
+        id_map_bytes  = _to_bytes(self._id_map)
+
+        # `numpy.savez_compressed` appends `.npz` to the filename when the
+        # supplied path does not already end with that suffix — which would
+        # create the file at a different location than the caller asked for.
+        # Write through a BytesIO buffer so the archive is always materialised
+        # at exactly `p`, regardless of suffix.
+        buf = io.BytesIO()
+        np.savez_compressed(
+            buf,
+            vectors=vec_arr,
+            levels=levels_arr,
+            params=params_bytes,
+            graph=graph_bytes,
+            meta=meta_bytes,
+            deleted=deleted_bytes,
+            id_map=id_map_bytes,
+        )
+        with open(p, "wb") as fh:
+            fh.write(buf.getvalue())
+        logger.debug("HNSWIndex saved: %s (%d vectors)", p, n)
 
     @classmethod
     def load(cls, path: str) -> "HNSWIndex":
-        """Load an index saved by :meth:`save`.
+        """Load an index from a file written by :meth:`save`.
+
+        Accepts both the current ``.npz`` format (v5.2.0+) and the legacy
+        pickle format written by earlier versions.  The pickle path is kept
+        for backward compatibility but emits a ``DeprecationWarning``; it will
+        be removed in a future major version.
 
         Parameters
         ----------
@@ -448,22 +650,101 @@ class HNSWIndex:
         -------
         HNSWIndex
             Populated index ready for search.
+
+        Raises
+        ------
+        ValueError
+            If the file header is not recognised as either format.
         """
-        with open(path, "rb") as f:
-            data = pickle.load(f)
-        idx = cls(
-            M=data["M"],
-            ef_construction=data["ef_construction"],
-            space=data["space"],
+        p = Path(path)
+        # save() always writes to the exact path supplied, so `resolved` is
+        # simply `p`.  The extra fallback for `.npz`-suffixed copies is kept
+        # for files created by older code that called numpy.savez directly.
+        npz_alt = p.with_suffix(p.suffix + ".npz")
+        if not p.exists() and npz_alt.exists():
+            resolved = npz_alt
+        else:
+            resolved = p
+
+        with open(resolved, "rb") as fh:
+            magic = fh.read(4)
+
+        if magic[:4] == _NPZ_MAGIC:
+            return cls._load_npz(resolved)
+
+        if magic[:2] == b"\x80\x05" or magic[:2] == b"\x80\x04":
+            warnings.warn(
+                "Loading HNSWIndex from legacy pickle format. "
+                "Re-save with HNSWIndex.save() to upgrade to .npz format. "
+                "Pickle support will be removed in a future major version.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            return cls._load_pickle(resolved)
+
+        raise ValueError(
+            f"Unrecognised file format for {resolved!r}: "
+            "expected .npz (magic PK\\x03\\x04) or pickle (magic \\x80\\x04/05)"
         )
-        idx._vectors = data["vectors"]
-        idx._neighbors = data["neighbors"]
-        idx._levels = data["levels"]
-        idx._entry_point = data["entry_point"]
-        idx._max_level = data["max_level"]
-        # v5.1.0 — load gracefully from older saves
-        idx._metadata = data.get("metadata") or [None] * len(idx._vectors)
-        idx._deleted  = data.get("deleted")  or set()
+
+    @classmethod
+    def _load_npz(cls, path: Path) -> "HNSWIndex":
+        # np.load returns a lazy NpzFile that reads from the ZIP on first array
+        # access.  Force all arrays into memory inside the `with` block so the
+        # underlying file handle can be safely closed before we process anything.
+        with open(path, "rb") as fh:
+            data = dict(np.load(fh, allow_pickle=False))
+
+        def _from_bytes(key: str) -> Any:
+            return json.loads(bytes(data[key]).decode("utf-8"))
+
+        params    = _from_bytes("params")
+        neighbors = _from_bytes("graph")
+        metadata  = _from_bytes("meta")
+        deleted   = set(_from_bytes("deleted"))
+        id_map    = _from_bytes("id_map")
+
+        idx = cls(
+            M=params["M"],
+            ef_construction=params["ef_construction"],
+            space=params["space"],
+        )
+        vec_arr = data["vectors"]
+        idx._vectors = [vec_arr[i] for i in range(len(vec_arr))]
+        # Neighbor lists are decoded from JSON as plain Python lists (correct type).
+        idx._neighbors = [
+            [list(layer) for layer in node_layers]
+            for node_layers in neighbors
+        ]
+        idx._levels        = list(map(int, data["levels"].tolist()))
+        idx._entry_point   = int(params["entry_point"])
+        idx._max_level     = int(params["max_level"])
+        idx._metadata      = [
+            (m if isinstance(m, dict) else None) for m in metadata
+        ]
+        idx._deleted       = deleted
+        idx._id_map        = {str(k): int(v) for k, v in id_map.items()}
+        logger.debug("HNSWIndex loaded: %s (%d vectors)", path, len(idx._vectors))
+        return idx
+
+    @classmethod
+    def _load_pickle(cls, path: Path) -> "HNSWIndex":
+        """Load a legacy pickle-format index (internal, called by :meth:`load`)."""
+        with open(path, "rb") as fh:
+            d = pickle.load(fh)  # noqa: S301 — intentional legacy compat
+        idx = cls(
+            M=d["M"],
+            ef_construction=d["ef_construction"],
+            space=d["space"],
+        )
+        idx._vectors       = d["vectors"]
+        idx._neighbors     = d["neighbors"]
+        idx._levels        = d["levels"]
+        idx._entry_point   = d["entry_point"]
+        idx._max_level     = d["max_level"]
+        idx._metadata      = d.get("metadata") or [None] * len(idx._vectors)
+        idx._deleted       = d.get("deleted")  or set()
+        idx._id_map        = d.get("id_map")   or {}
         return idx
 
     # ------------------------------------------------------------------
