@@ -1,11 +1,7 @@
 # Vectro — Plan
 
-<<<<<<< HEAD
-> Last updated: 2026-05-11
+> Last updated: 2026-05-19
 > Current version: **5.5.0** (Python) / **8.0.0** (Rust) — quantization audit, QuantizationAuditor, QuantizationReport, VectorPairMetrics, RecallResult.
-=======
-> Last updated: 2026-05-12
-> Current version: **5.1.0** (Python) / **8.0.0** (Rust) — v5.1.0: recall estimator, HNSW compaction, metadata pre-filtering. 1046 Python + 109 Rust tests passing.
 
 ---
 
@@ -33,8 +29,8 @@ user impact × implementation cost.
 |---------|-------------|--------|
 | **Hybrid BM25 + dense search (RRF)** | `POST /search` accepts `text` param alongside `vector`. BM25 scores over stored text metadata. Reciprocal Rank Fusion combines dense + sparse. `alpha` controls weighting (0=BM25 only, 1=dense only). | ⬜ Planned |
 | **Scalar / product quantization** | `quantization: "sq8" \| "pq32"` on collection creation. SQ: scale to int8 per-dim. PQ: 8 sub-quantizers of 4 bits each. 75-97% memory reduction. `GET /collections/{name}/quantization_stats`. | ⬜ Planned |
-| **HNSW search trace visualization** | `search(..., trace=True)` returns a `SearchTrace` alongside `(indices, distances)`: entry point, per-layer descent nodes, all layer-0 candidates, final result heap. Powers the animated beam in demo/viz.html. | ✅ v5.2.0 |
-| **Batch upsert with deduplication** | `add_batch(vectors, ids, metadata)` — deduplicates by string ID, updates existing vectors in-place (O(1) per update, no graph surgery), returns `{inserted, updated, node_ids}`. Also adds `get_by_id(str_id)`. | ✅ v5.2.0 |
+| **HNSW search trace visualization** | `search(..., trace=True)` returns a `SearchTrace` alongside `(indices, distances)`: entry point, per-layer descent nodes, all layer-0 candidates, final result heap. Powers the animated beam in demo/viz.html. | ✅ v5.2.0 (HNSW) |
+| **Batch upsert with deduplication** | `add_batch(vectors, ids, metadata)` — deduplicates by string ID, updates existing vectors in-place (O(1) per update, no graph surgery), returns `{inserted, updated, node_ids}`. Also adds `get_by_id(str_id)`. | ✅ v5.2.0 (HNSW) |
 
 ---
 
@@ -43,13 +39,13 @@ user impact × implementation cost.
 | Feature | Description | Status |
 |---------|-------------|--------|
 | **ACORN-style filtered HNSW** | Filtered search during graph traversal for high-selectivity predicates (solving zero-result post-filter at 1% selectivity). See arXiv:2403.04871. | ⬜ Planned |
-| **Persistent HNSW on disk** | `save(path)` / `load(path)` upgraded from pickle to numpy `.npz` format — no arbitrary code execution on load, magic-byte detection, backward-compat DeprecationWarning for old pickle files. | ✅ v5.2.0 |
+| **Persistent HNSW on disk** | `save(path)` / `load(path)` upgraded from pickle to numpy `.npz` format — no arbitrary code execution on load, magic-byte detection, backward-compat DeprecationWarning for old pickle files. | ✅ v5.2.0 (HNSW) |
 | **Multi-vector per document** | Multiple embeddings per document ID (title + body), max-pool distances. | ⬜ Planned |
 | **Namespace partitioning** | Logical namespaces within a collection, isolated HNSW graphs, unified cross-namespace search. | ⬜ Planned |
 
 ---
 
-## v5.2.0 — Persistent .npz index, add_batch upsert, search trace ✅ COMPLETE (2026-05-13)
+## v5.2.0 (HNSW) — Persistent .npz index, add_batch upsert, search trace ✅ COMPLETE (2026-05-13)
 
 ### Summary
 Three P2/P3 items shipped as one sprint, all implemented on `HNSWIndex` in
@@ -92,7 +88,7 @@ Three P2/P3 items shipped as one sprint, all implemented on `HNSWIndex` in
 
 ---
 
-## v5.1.0 — Recall estimator, HNSW compaction, metadata pre-filtering ✅ COMPLETE (2026-05-12)
+## v5.1.0 (HNSW) — Recall estimator, HNSW compaction, metadata pre-filtering ✅ COMPLETE (2026-05-12)
 
 ### Summary
 Three P1 items from the Researched Feature Roadmap, shipped as one sprint.
@@ -114,7 +110,6 @@ HTTP endpoints.
 | 8 | `demo/viz.html` — recall gauge panel (live if server running, static otherwise) | ✅ |
 | 9 | `tests/test_hnsw_extended.py` — 27 new tests covering all P1 features | ✅ |
 | 10 | Version bump 5.0.2 → 5.1.0 | ✅ |
->>>>>>> claude/crazy-fermat-5e6cd7
 
 ---
 
