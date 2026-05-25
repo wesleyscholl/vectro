@@ -168,3 +168,24 @@ environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
 [tool.cibuildwheel.windows]
 archs = ["AMD64"]
 before-build = "rustup target add x86_64-pc-windows-msvc"
+
+[tool.ruff]
+line-length = 200
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# konjo tooling scripts use intentionally compact single-line style
+".konjo/scripts/*.py" = ["E701", "E702", "E741"]
+# Demo, example, and benchmark files import conditionally after sys.path setup
+"demo/**/*.py" = ["E402"]
+"demos/**/*.py" = ["E402"]
+"examples/**/*.py" = ["E402"]
+"benchmarks/**/*.py" = ["E402"]
+"tests/**/*.py" = ["E402"]
+# Jupyter notebooks embed imports inside cells; intermediate vars are for inspection
+"*.ipynb" = ["E402", "F401", "F841"]
+# Scripts may import after conditional sys.path manipulation
+"scripts/**/*.py" = ["E402"]

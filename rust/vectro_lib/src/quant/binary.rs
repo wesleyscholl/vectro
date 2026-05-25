@@ -32,7 +32,7 @@ impl BinaryVector {
     /// when `normalize` is true.
     pub fn encode(v: &[f32], normalize: bool) -> Self {
         let dim = v.len();
-        let bytes_per_vec = (dim + 7) / 8;
+        let bytes_per_vec = dim.div_ceil(8);
         let mut packed = vec![0u8; bytes_per_vec];
 
         // Use f64 for the norm to avoid f32 overflow on extreme-valued vectors.

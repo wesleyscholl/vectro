@@ -1,14 +1,14 @@
 """Type stubs for llamaindex_integration."""
+
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
-
-import numpy as np
 
 def _apply_meta_filters(
     node_ids: List[str],
     node_store: Dict[str, tuple],
     filters: Any,
 ) -> List[int]: ...
+
 class VectroVectorStore:
     stores_text: bool
     is_embedding_query: bool

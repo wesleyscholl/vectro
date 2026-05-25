@@ -6,12 +6,10 @@ API:
  - reconstruct_embeddings(result: QuantizationResult) -> np.ndarray
  - mean_cosine_similarity(orig, recon) -> float
 """
+
 from __future__ import annotations
 import importlib
 import numpy as np
-import os
-import subprocess
-import tempfile
 from typing import NamedTuple
 
 from . import _mojo_bridge
@@ -19,10 +17,11 @@ from . import _mojo_bridge
 
 class QuantizationResult(NamedTuple):
     """Result of quantization operation."""
+
     quantized: np.ndarray  # int8 array, shape (n, d)
-    scales: np.ndarray     # float32 array, shape (n,)
-    dims: int             # dimension d
-    n: int                # number of vectors
+    scales: np.ndarray  # float32 array, shape (n,)
+    dims: int  # dimension d
+    n: int  # number of vectors
     precision_mode: str = "int8"  # int8 | int4
     group_size: int = 0
 
@@ -67,7 +66,7 @@ def _quantize_with_squish(embeddings: np.ndarray, group_size: int = 0) -> Quanti
     n, d = emb.shape
 
     if group_size <= 0 or group_size >= d:
-        q, scales = _squish_quant.quantize_int8_f32(emb)       # scales: (n,)
+        q, scales = _squish_quant.quantize_int8_f32(emb)  # scales: (n,)
     else:
         q, scales = _squish_quant.quantize_int8_grouped(emb, group_size)  # scales: (n, n_groups)
 
@@ -180,8 +179,8 @@ def _quantize_vectorized(embeddings: np.ndarray, group_size: int = 0) -> Quantiz
 
     if group_size <= 0 or group_size >= d:
         # ---- per-row -------------------------------------------------------
-        row_max = np.max(np.abs(emb), axis=1)          # (n,)
-        scales  = np.where(row_max == 0, 1.0, row_max / 127.0).astype(np.float32)
+        row_max = np.max(np.abs(emb), axis=1)  # (n,)
+        scales = np.where(row_max == 0, 1.0, row_max / 127.0).astype(np.float32)
         q = np.clip(np.round(emb / scales[:, None]), -127, 127).astype(np.int8)
         return QuantizationResult(quantized=q, scales=scales, dims=d, n=n)
     else:
@@ -193,11 +192,9 @@ def _quantize_vectorized(embeddings: np.ndarray, group_size: int = 0) -> Quantiz
         n_groups = emb.shape[1] // group_size
         # Reshape to (n * n_groups, group_size) for vectorized scale computation.
         grouped = emb.reshape(n * n_groups, group_size)
-        gmax   = np.max(np.abs(grouped), axis=1)       # (n*n_groups,)
+        gmax = np.max(np.abs(grouped), axis=1)  # (n*n_groups,)
         gscale = np.where(gmax == 0, 1.0, gmax / 127.0).astype(np.float32)
-        q_groups = np.clip(
-            np.round(grouped / gscale[:, None]), -127, 127
-        ).astype(np.int8)
+        q_groups = np.clip(np.round(grouped / gscale[:, None]), -127, 127).astype(np.int8)
         # Trim padding, return flat (n, d) int8 + (n, n_groups) scales
         q = q_groups.reshape(n, -1)[:, :d]
         scales = gscale.reshape(n, n_groups).astype(np.float32)
@@ -276,7 +273,7 @@ def quantize_embeddings(
             backend = "cython"
         else:
             backend = "numpy"
-    
+
     # Use selected backend
     if backend == "squish_quant" and _squish_quant is not None:
         return _quantize_with_squish(embeddings)
@@ -318,7 +315,7 @@ def reconstruct_embeddings(result: QuantizationResult, backend: str = "auto") ->
             backend = "cython"
         else:
             backend = "numpy"
-    
+
     # Use selected backend
     if backend == "squish_quant" and _squish_quant is not None:
         return _dequantize_with_squish(result)
@@ -378,7 +375,7 @@ def mean_cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
 
     # handle zero-vector cases: if both are zero, define cosine = 1.0; if one is zero, define cosine = 0.0
     both_zero = (norms_a == 0) & (norms_b == 0)
-    one_zero = ((norms_a == 0) ^ (norms_b == 0))
+    one_zero = (norms_a == 0) ^ (norms_b == 0)
     dots[both_zero] = 1.0
     dots[one_zero] = 0.0
 
@@ -395,7 +392,7 @@ if __name__ == "__main__":
         status = "✓" if available else "✗"
         print(f"  {status} {name}")
     print()
-    
+
     # simple demo
     rng = np.random.default_rng(0)
     emb = rng.standard_normal((100, 768)).astype(np.float32)

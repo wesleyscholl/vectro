@@ -45,10 +45,7 @@ class ChromaConnector(VectorDBConnector):
             try:
                 chroma_mod = importlib.import_module("chromadb")
             except ImportError as exc:
-                raise RuntimeError(
-                    "chromadb is required for ChromaConnector. "
-                    "Install with: pip install chromadb"
-                ) from exc
+                raise RuntimeError("chromadb is required for ChromaConnector. Install with: pip install chromadb") from exc
             client = chroma_mod.EphemeralClient()
 
         # Acquire / create collection with no automatic embedding function so
@@ -79,9 +76,7 @@ class ChromaConnector(VectorDBConnector):
                 other types are silently skipped).
         """
         if len(ids) != len(quantized) or len(ids) != len(scales):
-            raise ValueError(
-                "ids, quantized rows, and scales rows must have matching lengths"
-            )
+            raise ValueError("ids, quantized rows, and scales rows must have matching lengths")
 
         payload_meta = metadata or {}
         all_ids: List[str] = []
@@ -95,9 +90,7 @@ class ChromaConnector(VectorDBConnector):
             vector_dim = int(q_row.shape[0] * (2 if q_row.dtype == np.uint8 else 1))
 
             row_meta: Dict[str, Any] = {
-                _KEY_QUANTIZED: base64.b64encode(
-                    np.ascontiguousarray(q_row).tobytes()
-                ).decode(),
+                _KEY_QUANTIZED: base64.b64encode(np.ascontiguousarray(q_row).tobytes()).decode(),
                 _KEY_SCALES: json.dumps(s_row.tolist()),
                 _KEY_VECTOR_DIM: vector_dim,
                 _KEY_DTYPE: str(q_row.dtype),
@@ -164,7 +157,7 @@ class ChromaConnector(VectorDBConnector):
             # Restore user metadata (remove prefix).
             for k, v in meta.items():
                 if k.startswith(_KEY_META_PREFIX):
-                    user_metadata[k[len(_KEY_META_PREFIX):]] = v
+                    user_metadata[k[len(_KEY_META_PREFIX) :]] = v
 
         quantized_arr = np.vstack(quantized_rows)
         scales_arr = np.asarray(scales_rows, dtype=np.float32)

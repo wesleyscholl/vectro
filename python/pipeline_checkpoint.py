@@ -14,6 +14,7 @@ load_pipeline()      — deserialises JSON and reconstructs a
 checkpoint_info()    — reads checkpoint metadata without constructing
                        any pipeline object.
 """
+
 from __future__ import annotations
 
 import json
@@ -81,9 +82,7 @@ def save_pipeline(
     from .async_pipeline import CompressionPipeline  # local import avoids circularity
 
     if not isinstance(pipeline, CompressionPipeline):
-        raise TypeError(
-            f"save_pipeline expects a CompressionPipeline, got {type(pipeline).__name__}"
-        )
+        raise TypeError(f"save_pipeline expects a CompressionPipeline, got {type(pipeline).__name__}")
 
     dest = Path(path)
     dest.parent.mkdir(parents=True, exist_ok=True)

@@ -1,4 +1,5 @@
 """Tests for LoRA adapter compression — lora_api.py"""
+
 import unittest
 import warnings
 
@@ -45,6 +46,7 @@ B_LARGE = RNG.standard_normal((OUT_FEATURES, RANK_LARGE)).astype(np.float32)
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestLoRANF4OutputShapes(unittest.TestCase):
     def test_result_fields(self):
         result = compress_lora(A_SMALL, B_SMALL, profile="lora-nf4", target_module="q_proj")
@@ -81,16 +83,10 @@ class TestLoRANF4RoundtripQuality(unittest.TestCase):
         self.assertEqual(self.B_r.shape, B_SMALL.shape)
 
     def test_cosine_sim_A(self):
-        self.assertGreaterEqual(
-            self.result.cosine_sim_A, 0.97,
-            f"cosine_sim_A={self.result.cosine_sim_A:.4f} < 0.97"
-        )
+        self.assertGreaterEqual(self.result.cosine_sim_A, 0.97, f"cosine_sim_A={self.result.cosine_sim_A:.4f} < 0.97")
 
     def test_cosine_sim_B(self):
-        self.assertGreaterEqual(
-            self.result.cosine_sim_B, 0.97,
-            f"cosine_sim_B={self.result.cosine_sim_B:.4f} < 0.97"
-        )
+        self.assertGreaterEqual(self.result.cosine_sim_B, 0.97, f"cosine_sim_B={self.result.cosine_sim_B:.4f} < 0.97")
 
     def test_no_nan_inf(self):
         self.assertFalse(np.isnan(self.A_r).any(), "NaN in A reconstruction")
@@ -108,16 +104,10 @@ class TestLoRAInt8RoundtripQuality(unittest.TestCase):
         self.assertEqual(self.result.profile, "lora-int8")
 
     def test_cosine_sim_A(self):
-        self.assertGreaterEqual(
-            self.result.cosine_sim_A, 0.99,
-            f"cosine_sim_A={self.result.cosine_sim_A:.4f} < 0.99"
-        )
+        self.assertGreaterEqual(self.result.cosine_sim_A, 0.99, f"cosine_sim_A={self.result.cosine_sim_A:.4f} < 0.99")
 
     def test_cosine_sim_B(self):
-        self.assertGreaterEqual(
-            self.result.cosine_sim_B, 0.99,
-            f"cosine_sim_B={self.result.cosine_sim_B:.4f} < 0.99"
-        )
+        self.assertGreaterEqual(self.result.cosine_sim_B, 0.99, f"cosine_sim_B={self.result.cosine_sim_B:.4f} < 0.99")
 
     def test_dtype_contract(self):
         self.assertEqual(self.A_r.dtype, np.float32)
@@ -151,10 +141,7 @@ class TestLoRARQFullRank(unittest.TestCase):
             warnings.simplefilter("always")
             result = compress_lora(A_LARGE, B_LARGE, profile="lora-rq")
         self.assertEqual(result.profile, "lora-rq")
-        self.assertFalse(
-            any("lora-nf4" in str(warning.message) for warning in w),
-            "Unexpected fallback warning for large-rank RQ"
-        )
+        self.assertFalse(any("lora-nf4" in str(warning.message) for warning in w), "Unexpected fallback warning for large-rank RQ")
 
     def test_rq_roundtrip_quality(self):
         result = compress_lora(A_LARGE, B_LARGE, profile="lora-rq")

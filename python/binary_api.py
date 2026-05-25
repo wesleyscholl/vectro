@@ -13,15 +13,15 @@ Supports:
 from __future__ import annotations
 
 import numpy as np
-from typing import Tuple, List, Optional
+from typing import Tuple, List
 
 try:
     from . import _mojo_bridge
 except ImportError:
-    import importlib.util as _ilu, pathlib as _pl
-    _spec = _ilu.spec_from_file_location(
-        "_mojo_bridge", _pl.Path(__file__).parent / "_mojo_bridge.py"
-    )
+    import importlib.util as _ilu
+    import pathlib as _pl
+
+    _spec = _ilu.spec_from_file_location("_mojo_bridge", _pl.Path(__file__).parent / "_mojo_bridge.py")
     _mojo_bridge = _ilu.module_from_spec(_spec)  # type: ignore[assignment]
     _spec.loader.exec_module(_mojo_bridge)  # type: ignore[union-attr]
 
@@ -113,8 +113,8 @@ def hamming_distance_batch(
         Integer array of shape (n,) with Hamming distances.
     """
     query_packed = np.ascontiguousarray(query_packed, dtype=np.uint8).ravel()
-    xor = db_packed ^ query_packed[np.newaxis]               # (n, B)
-    bits = np.unpackbits(xor, axis=1, bitorder="little")     # (n, B*8)
+    xor = db_packed ^ query_packed[np.newaxis]  # (n, B)
+    bits = np.unpackbits(xor, axis=1, bitorder="little")  # (n, B*8)
     return bits.sum(axis=1).astype(np.int32)
 
 

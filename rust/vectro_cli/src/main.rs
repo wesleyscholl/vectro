@@ -21,6 +21,9 @@ use vectro_cli::{compress_stream, compress_pq, compress_nf4, compress_rq, compre
 
 use serde_json::Value;
 
+/// Benchmark row: (benchmark name, median ns, throughput vec/s, notes)
+type BenchRow = (String, Option<f64>, Option<f64>, Option<String>);
+
 pub mod server;
 pub mod pipeline;
 
@@ -304,7 +307,7 @@ fn main() -> anyhow::Result<()> {
                     if summary {
                         // parse JSON summaries in target/criterion/*/new/*.json and present a clean table
                         if let Ok(entries) = fs::read_dir(&crit_dir) {
-                            let mut rows: Vec<(String, Option<f64>, Option<f64>, Option<String>)> = Vec::new();
+                            let mut rows: Vec<BenchRow> = Vec::new();
                             for e in entries.flatten() {
                                 let p = e.path();
                                 if p.is_dir() {
@@ -584,6 +587,7 @@ fn get_estimate(v: &Value, key: &str) -> Option<f64> {
     // common shapes: { "estimates": { "median": {"point_estimate": 0.1 } } } or direct
     if let Some(direct) = find_number_in_json(v, key) { return Some(direct); }
     // try path: estimates -> key -> point_estimate
+    #[allow(clippy::collapsible_match)]
     if let Value::Object(map) = v {
         if let Some(est) = map.get("estimates") {
             if let Value::Object(est_map) = est {
@@ -616,7 +620,7 @@ fn get_bench_name(v: &Value) -> Option<String> {
 }
 
 /// Generate a compact HTML summary from benchmark results
-fn generate_html_summary(rows: &[(String, Option<f64>, Option<f64>, Option<String>)], history: &std::collections::HashMap<String, f64>) -> String {
+fn generate_html_summary(rows: &[BenchRow], history: &std::collections::HashMap<String, f64>) -> String {
     let mut html = String::from(r#"<!DOCTYPE html>
 <html>
 <head>

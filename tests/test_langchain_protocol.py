@@ -3,14 +3,14 @@
 Covers: add_documents, from_documents, similarity_search_by_vector,
         metadata filter= kwarg on all search methods, async variants.
 """
+
 from __future__ import annotations
 
 import asyncio
 import sys
 import types
 import unittest
-import uuid
-from typing import Any, List, Optional
+from typing import List, Optional
 
 import numpy as np
 
@@ -73,8 +73,8 @@ def _build_store(n: int = 10, dim: int = 64, tags: Optional[List[str]] = None):
 # add_documents / from_documents
 # ---------------------------------------------------------------------------
 
-class TestAddDocuments(unittest.TestCase):
 
+class TestAddDocuments(unittest.TestCase):
     def setUp(self):
         self.emb = _FakeEmbeddings()
         self.store = VectroVectorStore(embedding=self.emb)
@@ -121,8 +121,8 @@ class TestAddDocuments(unittest.TestCase):
 # similarity_search_by_vector
 # ---------------------------------------------------------------------------
 
-class TestSearchByVector(unittest.TestCase):
 
+class TestSearchByVector(unittest.TestCase):
     def setUp(self):
         self.dim = 64
         self.store = _build_store(n=10, dim=self.dim)
@@ -171,8 +171,8 @@ class TestSearchByVector(unittest.TestCase):
 # Metadata filter= support
 # ---------------------------------------------------------------------------
 
-class TestMetadataFilter(unittest.TestCase):
 
+class TestMetadataFilter(unittest.TestCase):
     def setUp(self):
         self.store = _build_store(n=12, tags=["A", "B", "C"])
 
@@ -202,9 +202,7 @@ class TestMetadataFilter(unittest.TestCase):
             self.assertEqual(doc.metadata["tag"], "A")
 
     def test_filter_mmr_search(self):
-        docs = self.store.max_marginal_relevance_search(
-            "query", k=3, fetch_k=8, filter={"tag": "B"}
-        )
+        docs = self.store.max_marginal_relevance_search("query", k=3, fetch_k=8, filter={"tag": "B"})
         for doc in docs:
             self.assertEqual(doc.metadata["tag"], "B")
 

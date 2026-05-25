@@ -4,10 +4,10 @@ from enum import Enum
 from typing import Any
 
 class CompressionStrategy(Enum):
-    FAST = 'fast'
-    BALANCED = 'balanced'
-    QUALITY = 'quality'
-    CUSTOM = 'custom'
+    FAST = "fast"
+    BALANCED = "balanced"
+    QUALITY = "quality"
+    CUSTOM = "custom"
 
 @dataclass
 class CompressionProfile:
@@ -61,7 +61,7 @@ class ProfileComparison:
     @staticmethod
     def compare_profiles(vectors: np.ndarray, profile_names: list[str] = None) -> dict[str, dict[str, float]]: ...
     @staticmethod
-    def generate_comparison_report(comparison_results: dict[str, dict[str, float]], title: str = 'Profile Comparison Report') -> str: ...
+    def generate_comparison_report(comparison_results: dict[str, dict[str, float]], title: str = "Profile Comparison Report") -> str: ...
 
 def get_compression_profile(name: str) -> CompressionProfile: ...
 def create_custom_profile(name: str, quantization_bits: int = 8, range_factor: float = 0.95, **kwargs) -> CompressionProfile: ...

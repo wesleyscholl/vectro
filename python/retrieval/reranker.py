@@ -34,6 +34,7 @@ For LangChain ``BaseDocumentCompressor`` duck-typing::
     reranker = LangChainReranker(store, embedding=embedder, top_k=5)
     docs = reranker.compress_documents(initial_docs, "refined query")
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -45,6 +46,7 @@ import numpy as np
 # ---------------------------------------------------------------------------
 # Core re-scoring helpers
 # ---------------------------------------------------------------------------
+
 
 def _cosine_rerank(
     query_vec: np.ndarray,
@@ -112,6 +114,7 @@ def _rrf_rerank(
 # VectroReranker
 # ---------------------------------------------------------------------------
 
+
 class VectroReranker:
     """Re-rank retrieved results using Vectro-compressed embeddings.
 
@@ -148,12 +151,7 @@ class VectroReranker:
                 return np.zeros((0, 1), dtype=np.float32), {}
             mat = compressed.reconstruct_batch()
             # LangChain uses _ids; LlamaIndex uses _node_ids; Haystack uses _doc_ids
-            ids: List[str] = (
-                getattr(store, "_ids", None)
-                or getattr(store, "_node_ids", None)
-                or getattr(store, "_doc_ids", None)
-                or []
-            )
+            ids: List[str] = getattr(store, "_ids", None) or getattr(store, "_node_ids", None) or getattr(store, "_doc_ids", None) or []
             return mat, {did: i for i, did in enumerate(ids)}
 
         if lock is not None:
@@ -199,10 +197,9 @@ class VectroReranker:
     ) -> List[Tuple[str, Any, float]]:
         """Async variant of :meth:`rerank` — runs in a thread-pool executor."""
         import asyncio
+
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: self.rerank(query_embedding, candidates, top_k)
-        )
+        return await loop.run_in_executor(None, lambda: self.rerank(query_embedding, candidates, top_k))
 
     def __repr__(self) -> str:
         return f"VectroReranker(strategy={self._strategy!r}, rrf_k={self._rrf_k})"
@@ -211,6 +208,7 @@ class VectroReranker:
 # ---------------------------------------------------------------------------
 # LangChainReranker — duck-typed BaseDocumentCompressor
 # ---------------------------------------------------------------------------
+
 
 class LangChainReranker:
     """LangChain ``BaseDocumentCompressor``-compatible re-ranker.
@@ -262,9 +260,7 @@ class LangChainReranker:
         """
         if not documents:
             return []
-        q_vec = np.asarray(
-            self._embedding.embed_query(query), dtype=np.float32
-        )
+        q_vec = np.asarray(self._embedding.embed_query(query), dtype=np.float32)
 
         # Build candidates: (doc_id, document, score=0.0 as placeholder)
         ids = _extract_ids(self._store, documents)
@@ -281,21 +277,15 @@ class LangChainReranker:
     ) -> List[Any]:
         """Async variant of :meth:`compress_documents`."""
         import asyncio
+
         loop = asyncio.get_running_loop()
         q_vec = np.asarray(
-            await loop.run_in_executor(
-                None, lambda: self._embedding.embed_query(query)
-            ),
+            await loop.run_in_executor(None, lambda: self._embedding.embed_query(query)),
             dtype=np.float32,
         )
         ids = _extract_ids(self._store, documents)
         candidates = [(ids[i], documents[i], 0.0) for i in range(len(documents))]
-        return [
-            doc
-            for _did, doc, _score in await self._reranker.arerank(
-                q_vec, candidates, top_k=self._top_k
-            )
-        ]
+        return [doc for _did, doc, _score in await self._reranker.arerank(q_vec, candidates, top_k=self._top_k)]
 
     def invoke(self, input: Any, config: Any = None, **kwargs: Any) -> List[Any]:
         """LangChain ``Runnable.invoke`` compatibility shim."""
@@ -310,15 +300,13 @@ class LangChainReranker:
         return await self.acompress_documents(docs, query)
 
     def __repr__(self) -> str:
-        return (
-            f"LangChainReranker(top_k={self._top_k}, "
-            f"strategy={self._reranker._strategy!r})"
-        )
+        return f"LangChainReranker(top_k={self._top_k}, strategy={self._reranker._strategy!r})"
 
 
 # ---------------------------------------------------------------------------
 # HaystackReranker — duck-typed Haystack 2.x component
 # ---------------------------------------------------------------------------
+
 
 class HaystackReranker:
     """Haystack 2.x component duck-type for re-ranking retrieved Documents.
@@ -380,30 +368,22 @@ class HaystackReranker:
     ) -> Dict[str, List[Any]]:
         """Async variant of :meth:`run`."""
         import asyncio
+
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: self.run(query_embedding, documents, top_k)
-        )
+        return await loop.run_in_executor(None, lambda: self.run(query_embedding, documents, top_k))
 
     def __repr__(self) -> str:
-        return (
-            f"HaystackReranker(top_k={self._top_k}, "
-            f"strategy={self._reranker._strategy!r})"
-        )
+        return f"HaystackReranker(top_k={self._top_k}, strategy={self._reranker._strategy!r})"
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _extract_ids(store: Any, documents: List[Any]) -> List[str]:
     """Map LangChain *documents* to store-internal ids, falling back to positional."""
-    ids: List[str] = (
-        getattr(store, "_ids", None)
-        or getattr(store, "_node_ids", None)
-        or getattr(store, "_doc_ids", None)
-        or []
-    )
+    ids: List[str] = getattr(store, "_ids", None) or getattr(store, "_node_ids", None) or getattr(store, "_doc_ids", None) or []
     id_set = set(ids)
     result = []
     for i, doc in enumerate(documents):

@@ -22,11 +22,11 @@ Standard library only: ``http.server`` + ``socketserver``.  No Flask,
 no FastAPI, no extra installs.  Vectro itself is the only third-party
 dependency, and it's resolved from the repo root via ``sys.path``.
 """
+
 from __future__ import annotations
 
 import argparse
 import json
-import os
 import platform
 import re
 import socketserver
@@ -58,6 +58,7 @@ if "dspy" not in sys.modules:
     class _Prediction:
         def __init__(self, **kw):
             self.__dict__.update(kw)
+
     _stub.Prediction = _Prediction
     sys.modules["dspy"] = _stub
 
@@ -73,35 +74,35 @@ from python.hnsw_api import HNSWIndex  # noqa: E402
 
 CORPUS: List[Dict[str, Any]] = [
     # Geography
-    {"text": "Paris is the capital of France",         "tags": ["paris", "france", "capital"]},
-    {"text": "Berlin is the capital of Germany",       "tags": ["berlin", "germany", "capital"]},
-    {"text": "Tokyo is the capital of Japan",          "tags": ["tokyo", "japan", "capital"]},
-    {"text": "Athens is the capital of Greece",        "tags": ["athens", "greece", "capital"]},
-    {"text": "Rome is the capital of Italy",           "tags": ["rome", "italy", "capital"]},
-    {"text": "Madrid is the capital of Spain",         "tags": ["madrid", "spain", "capital"]},
-    {"text": "London is the capital of the UK",        "tags": ["london", "uk", "capital"]},
+    {"text": "Paris is the capital of France", "tags": ["paris", "france", "capital"]},
+    {"text": "Berlin is the capital of Germany", "tags": ["berlin", "germany", "capital"]},
+    {"text": "Tokyo is the capital of Japan", "tags": ["tokyo", "japan", "capital"]},
+    {"text": "Athens is the capital of Greece", "tags": ["athens", "greece", "capital"]},
+    {"text": "Rome is the capital of Italy", "tags": ["rome", "italy", "capital"]},
+    {"text": "Madrid is the capital of Spain", "tags": ["madrid", "spain", "capital"]},
+    {"text": "London is the capital of the UK", "tags": ["london", "uk", "capital"]},
     # Climate
-    {"text": "Berlin gets cold and wet in winter",     "tags": ["berlin", "weather", "cold"]},
-    {"text": "Tokyo summers are humid and rainy",      "tags": ["tokyo", "weather", "summer"]},
+    {"text": "Berlin gets cold and wet in winter", "tags": ["berlin", "weather", "cold"]},
+    {"text": "Tokyo summers are humid and rainy", "tags": ["tokyo", "weather", "summer"]},
     {"text": "Athens has a mild Mediterranean climate", "tags": ["athens", "weather"]},
-    {"text": "Cairo is hot and arid year round",       "tags": ["cairo", "weather", "hot"]},
-    {"text": "Moscow has long snowy winters",          "tags": ["moscow", "weather", "snow"]},
+    {"text": "Cairo is hot and arid year round", "tags": ["cairo", "weather", "hot"]},
+    {"text": "Moscow has long snowy winters", "tags": ["moscow", "weather", "snow"]},
     # Food
     {"text": "French cuisine emphasises butter and wine", "tags": ["france", "food"]},
-    {"text": "Italian pasta carbonara comes from Rome",   "tags": ["rome", "italy", "food"]},
-    {"text": "Japanese ramen has many regional styles",   "tags": ["japan", "food"]},
-    {"text": "Greek salad is a Mediterranean staple",     "tags": ["greece", "food"]},
-    {"text": "Sushi originated in Japan",                  "tags": ["japan", "food", "history"]},
+    {"text": "Italian pasta carbonara comes from Rome", "tags": ["rome", "italy", "food"]},
+    {"text": "Japanese ramen has many regional styles", "tags": ["japan", "food"]},
+    {"text": "Greek salad is a Mediterranean staple", "tags": ["greece", "food"]},
+    {"text": "Sushi originated in Japan", "tags": ["japan", "food", "history"]},
     # Transit
     {"text": "Trains in France connect Paris to Marseille at 320 km/h", "tags": ["france", "trains"]},
-    {"text": "The Tokyo subway carries 8 million riders per day",       "tags": ["tokyo", "transit"]},
-    {"text": "Italy's high-speed rail spans Milan to Naples",           "tags": ["italy", "trains"]},
-    {"text": "Berlin's U-Bahn is one of Europe's oldest",               "tags": ["berlin", "transit"]},
+    {"text": "The Tokyo subway carries 8 million riders per day", "tags": ["tokyo", "transit"]},
+    {"text": "Italy's high-speed rail spans Milan to Naples", "tags": ["italy", "trains"]},
+    {"text": "Berlin's U-Bahn is one of Europe's oldest", "tags": ["berlin", "transit"]},
     # Landmarks
-    {"text": "The Eiffel Tower is in Paris",            "tags": ["paris", "landmark"]},
-    {"text": "Mount Fuji is a volcano on Honshu",       "tags": ["japan", "landmark"]},
-    {"text": "Acropolis sits above Athens",             "tags": ["athens", "landmark"]},
-    {"text": "Colosseum is an amphitheatre in Rome",    "tags": ["rome", "landmark"]},
+    {"text": "The Eiffel Tower is in Paris", "tags": ["paris", "landmark"]},
+    {"text": "Mount Fuji is a volcano on Honshu", "tags": ["japan", "landmark"]},
+    {"text": "Acropolis sits above Athens", "tags": ["athens", "landmark"]},
+    {"text": "Colosseum is an amphitheatre in Rome", "tags": ["rome", "landmark"]},
     {"text": "Brandenburg Gate stands in central Berlin", "tags": ["berlin", "landmark"]},
 ]
 
@@ -116,11 +117,57 @@ _VOCAB_BASIS: Dict[str, np.ndarray] = {}
 
 
 _STOPWORDS = {
-    "a", "an", "and", "are", "as", "at", "be", "by", "do", "for", "from", "has",
-    "have", "in", "is", "it", "its", "of", "on", "or", "that", "the", "they",
-    "this", "to", "was", "were", "where", "which", "with", "what", "who", "how",
-    "many", "much", "do", "does", "i", "you", "we", "us", "our", "your", "their",
-    "would", "should", "could", "can", "will", "may", "one",
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "do",
+    "for",
+    "from",
+    "has",
+    "have",
+    "in",
+    "is",
+    "it",
+    "its",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "they",
+    "this",
+    "to",
+    "was",
+    "were",
+    "where",
+    "which",
+    "with",
+    "what",
+    "who",
+    "how",
+    "many",
+    "much",
+    "do",
+    "does",
+    "i",
+    "you",
+    "we",
+    "us",
+    "our",
+    "your",
+    "their",
+    "would",
+    "should",
+    "could",
+    "can",
+    "will",
+    "may",
+    "one",
 }
 
 
@@ -184,14 +231,13 @@ _corpus_texts = [item["text"] for item in CORPUS]
 _corpus_embs = np.stack([_embed_text(t) for t in _corpus_texts], axis=0)
 
 RETRIEVER = VectroDSPyRetriever(
-    embed_fn=embed_fn, k=5, compression_profile="balanced",
+    embed_fn=embed_fn,
+    k=5,
+    compression_profile="balanced",
 )
-RETRIEVER.add_texts(_corpus_texts, embeddings=_corpus_embs,
-                    metadatas=[{"i": i, **item} for i, item in enumerate(CORPUS)])
+RETRIEVER.add_texts(_corpus_texts, embeddings=_corpus_embs, metadatas=[{"i": i, **item} for i, item in enumerate(CORPUS)])
 _t1 = time.perf_counter()
-print(f"[vectro-demo] retriever ready: {len(CORPUS)} passages, "
-      f"dim={EMBED_DIM}, profile=balanced, {(_t1 - _t0) * 1000:.1f} ms",
-      flush=True)
+print(f"[vectro-demo] retriever ready: {len(CORPUS)} passages, dim={EMBED_DIM}, profile=balanced, {(_t1 - _t0) * 1000:.1f} ms", flush=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -206,20 +252,20 @@ def _api_compress(payload: Dict[str, Any]) -> Dict[str, Any]:
     requested mode, return *measured* memory + timing.
     """
     n_vecs = max(1, int(payload.get("n_vecs", 10_000)))
-    dim    = max(1, int(payload.get("dim",    128)))
-    mode   = str(payload.get("mode", "balanced"))
+    dim = max(1, int(payload.get("dim", 128)))
+    mode = str(payload.get("mode", "balanced"))
 
     # Cap to keep request latency reasonable on tiny machines.
     n_vecs = min(n_vecs, 200_000)
-    dim    = min(dim, 4096)
+    dim = min(dim, 4096)
 
     profile_map = {
-        "int8":     "balanced",
-        "fast":     "fast",
+        "int8": "balanced",
+        "fast": "fast",
         "balanced": "balanced",
-        "quality":  "quality",
-        "nf4":      "quality",     # NF4 ships under the "quality" profile
-        "binary":   "binary",
+        "quality": "quality",
+        "nf4": "quality",  # NF4 ships under the "quality" profile
+        "binary": "binary",
     }
     profile = profile_map.get(mode, "balanced")
 
@@ -240,19 +286,19 @@ def _api_compress(payload: Dict[str, Any]) -> Dict[str, Any]:
     throughput = (n_vecs / elapsed) if elapsed > 0 else float("inf")
 
     return {
-        "n_vecs":              n_vecs,
-        "dim":                 dim,
-        "mode":                mode,
-        "profile":             profile,
-        "original_bytes":      original_bytes,
-        "compressed_bytes":    compressed_bytes,
-        "original_mb":         round(original_bytes  / (1024 ** 2), 4),
-        "compressed_mb":       round(compressed_bytes / (1024 ** 2), 4),
-        "ratio":               round(ratio, 3),
-        "saved_bytes":         original_bytes - compressed_bytes,
-        "timing_ms":           round(elapsed * 1000, 3),
+        "n_vecs": n_vecs,
+        "dim": dim,
+        "mode": mode,
+        "profile": profile,
+        "original_bytes": original_bytes,
+        "compressed_bytes": compressed_bytes,
+        "original_mb": round(original_bytes / (1024**2), 4),
+        "compressed_mb": round(compressed_bytes / (1024**2), 4),
+        "ratio": round(ratio, 3),
+        "saved_bytes": original_bytes - compressed_bytes,
+        "timing_ms": round(elapsed * 1000, 3),
         "throughput_vec_per_s": round(throughput, 1),
-        "throughput_M_vec_s":   round(throughput / 1_000_000, 3),
+        "throughput_M_vec_s": round(throughput / 1_000_000, 3),
     }
 
 
@@ -266,16 +312,16 @@ def _api_search(payload: Dict[str, Any]) -> Dict[str, Any]:
     elapsed = time.perf_counter() - t0
 
     passages = list(getattr(out, "passages", []) or [])
-    scores   = list(getattr(out, "scores",   []) or [])
-    indices  = list(getattr(out, "indices",  []) or [])
+    scores = list(getattr(out, "scores", []) or [])
+    indices = list(getattr(out, "indices", []) or [])
 
     return {
-        "query":     query,
-        "k":         k,
-        "passages":  passages,
-        "scores":    [round(float(s), 4) for s in scores],
-        "indices":   [int(i) for i in indices],
-        "tags":      [list(CORPUS[i]["tags"]) for i in indices] if indices else [],
+        "query": query,
+        "k": k,
+        "passages": passages,
+        "scores": [round(float(s), 4) for s in scores],
+        "indices": [int(i) for i in indices],
+        "tags": [list(CORPUS[i]["tags"]) for i in indices] if indices else [],
         "timing_ms": round(elapsed * 1000, 3),
     }
 
@@ -283,8 +329,8 @@ def _api_search(payload: Dict[str, Any]) -> Dict[str, Any]:
 def _api_benchmark(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Measure real INT8 encode throughput at the requested shape."""
     n_vecs = max(1000, min(int(payload.get("n_vecs", 50_000)), 200_000))
-    dim    = max(64,   min(int(payload.get("dim",    768)),   4096))
-    reps   = max(1,    min(int(payload.get("reps",   3)),     8))
+    dim = max(64, min(int(payload.get("dim", 768)), 4096))
+    reps = max(1, min(int(payload.get("reps", 3)), 8))
 
     rng = np.random.default_rng(seed=0xBEEF)
     data = rng.standard_normal((n_vecs, dim)).astype(np.float32)
@@ -308,45 +354,45 @@ def _api_benchmark(payload: Dict[str, Any]) -> Dict[str, Any]:
     median_throughput = n_vecs / (median_ms / 1000.0)
 
     return {
-        "n_vecs":               n_vecs,
-        "dim":                  dim,
-        "reps":                 reps,
-        "samples_ms":           [round(s, 3) for s in samples_ms],
-        "best_ms":              round(best_ms, 3),
-        "median_ms":            round(median_ms, 3),
-        "best_throughput_vec_s":   round(best_throughput, 1),
+        "n_vecs": n_vecs,
+        "dim": dim,
+        "reps": reps,
+        "samples_ms": [round(s, 3) for s in samples_ms],
+        "best_ms": round(best_ms, 3),
+        "median_ms": round(median_ms, 3),
+        "best_throughput_vec_s": round(best_throughput, 1),
         "median_throughput_vec_s": round(median_throughput, 1),
-        "best_M_vec_s":         round(best_throughput / 1_000_000, 3),
-        "median_M_vec_s":       round(median_throughput / 1_000_000, 3),
-        "compressed_mb":        round(result.total_compressed_bytes / (1024 ** 2), 4),
-        "ratio":                round(float(result.compression_ratio), 3),
-        "platform":             f"{platform.system()} / {platform.machine()}",
-        "python":               platform.python_version(),
+        "best_M_vec_s": round(best_throughput / 1_000_000, 3),
+        "median_M_vec_s": round(median_throughput / 1_000_000, 3),
+        "compressed_mb": round(result.total_compressed_bytes / (1024**2), 4),
+        "ratio": round(float(result.compression_ratio), 3),
+        "platform": f"{platform.system()} / {platform.machine()}",
+        "python": platform.python_version(),
     }
 
 
 def _api_index_stats(_payload: Dict[str, Any]) -> Dict[str, Any]:
     s = RETRIEVER.compression_stats
     return {
-        "version":              vectro.__version__,
-        "platform":             f"{platform.system()} / {platform.machine()}",
-        "python":               platform.python_version(),
-        "n_passages":           int(s.get("n_passages", 0)),
-        "dimensions":           int(s.get("dimensions", EMBED_DIM)),
-        "profile":              str(s.get("compression_profile", "balanced")),
-        "original_mb":          float(s.get("original_mb", 0.0)),
-        "compressed_mb":        float(s.get("compressed_mb", 0.0)),
-        "memory_saved_mb":      float(s.get("memory_saved_mb", 0.0)),
-        "compression_ratio":    float(s.get("compression_ratio", 1.0)),
+        "version": vectro.__version__,
+        "platform": f"{platform.system()} / {platform.machine()}",
+        "python": platform.python_version(),
+        "n_passages": int(s.get("n_passages", 0)),
+        "dimensions": int(s.get("dimensions", EMBED_DIM)),
+        "profile": str(s.get("compression_profile", "balanced")),
+        "original_mb": float(s.get("original_mb", 0.0)),
+        "compressed_mb": float(s.get("compressed_mb", 0.0)),
+        "memory_saved_mb": float(s.get("memory_saved_mb", 0.0)),
+        "compression_ratio": float(s.get("compression_ratio", 1.0)),
     }
 
 
 def _api_health(_payload: Dict[str, Any]) -> Dict[str, Any]:
     return {
-        "ok":       True,
-        "version":  vectro.__version__,
+        "ok": True,
+        "version": vectro.__version__,
         "platform": f"{platform.system()} / {platform.machine()}",
-        "python":   platform.python_version(),
+        "python": platform.python_version(),
         "uptime_s": round(time.monotonic(), 2),
     }
 
@@ -365,12 +411,9 @@ _HNSW_LOCK = threading.Lock()
 _DEMO_HNSW: HNSWIndex = HNSWIndex(M=8, ef_construction=80)
 _t_hnsw0 = time.perf_counter()
 _demo_vecs = np.stack([_embed_text(item["text"]) for item in CORPUS], axis=0)
-_demo_meta = [{"category": item["tags"][0] if item["tags"] else "other",
-               "tags": item["tags"], "text": item["text"]}
-              for item in CORPUS]
+_demo_meta = [{"category": item["tags"][0] if item["tags"] else "other", "tags": item["tags"], "text": item["text"]} for item in CORPUS]
 _DEMO_HNSW.add(_demo_vecs, metadata=_demo_meta)
-print(f"[vectro-demo] HNSW ready: {len(_DEMO_HNSW)} vectors, "
-      f"{(time.perf_counter() - _t_hnsw0)*1000:.1f} ms", flush=True)
+print(f"[vectro-demo] HNSW ready: {len(_DEMO_HNSW)} vectors, {(time.perf_counter() - _t_hnsw0) * 1000:.1f} ms", flush=True)
 
 
 def _api_recall_estimate(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -381,8 +424,8 @@ def _api_recall_estimate(payload: Dict[str, Any]) -> Dict[str, Any]:
     plus a plain-English ``label`` for the demo gauge.
     """
     sample_size = max(1, min(int(payload.get("sample_size", 50)), len(_DEMO_HNSW)))
-    k           = max(1, min(int(payload.get("k", 5)), len(_DEMO_HNSW) - 1))
-    ef          = max(k, int(payload.get("ef", 32)))
+    k = max(1, min(int(payload.get("k", 5)), len(_DEMO_HNSW) - 1))
+    ef = max(k, int(payload.get("ef", 32)))
     with _HNSW_LOCK:
         result = _DEMO_HNSW.estimate_recall(sample_size=sample_size, k=k, ef=ef)
     r = result["recall"]
@@ -399,10 +442,8 @@ def _api_compact(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     delete_n = max(0, min(int(payload.get("delete_n", 3)), len(_DEMO_HNSW) - 2))
     with _HNSW_LOCK:
-        pre_stats = _DEMO_HNSW.stats()
         # Soft-delete a few random live vectors
-        alive = [i for i in range(len(_DEMO_HNSW._vectors))
-                 if i not in _DEMO_HNSW._deleted]
+        alive = [i for i in range(len(_DEMO_HNSW._vectors)) if i not in _DEMO_HNSW._deleted]
         rng = np.random.default_rng()
         chosen = rng.choice(alive, size=min(delete_n, len(alive)), replace=False)
         for nid in chosen:
@@ -411,15 +452,15 @@ def _api_compact(payload: Dict[str, Any]) -> Dict[str, Any]:
         t0 = time.perf_counter()
         result = _DEMO_HNSW.compact()
         elapsed_ms = round((time.perf_counter() - t0) * 1000, 2)
-        stats_after  = _DEMO_HNSW.stats()
+        stats_after = _DEMO_HNSW.stats()
     return {
         "deleted_count_before": stats_before["n_deleted"],
-        "orphan_count_before":  stats_before["orphan_count"],
-        "removed":              result["removed"],
-        "repaired":             result["repaired"],
-        "orphan_count_after":   stats_after["orphan_count"],
-        "timing_ms":            elapsed_ms,
-        "n_alive":              stats_after["n_alive"],
+        "orphan_count_before": stats_before["orphan_count"],
+        "removed": result["removed"],
+        "repaired": result["repaired"],
+        "orphan_count_after": stats_after["orphan_count"],
+        "timing_ms": elapsed_ms,
+        "n_alive": stats_after["n_alive"],
     }
 
 
@@ -436,9 +477,9 @@ def _api_filtered_search(payload: Dict[str, Any]) -> Dict[str, Any]:
     Body: ``{query_text: str, k?: int, filter?: {field: value}}``
     Runs search on the demo HNSW index with optional metadata pre-filter.
     """
-    query  = str(payload.get("query_text", "")).strip() or "capital"
-    k      = max(1, min(int(payload.get("k", 5)), len(_DEMO_HNSW)))
-    filt   = payload.get("filter") or None
+    query = str(payload.get("query_text", "")).strip() or "capital"
+    k = max(1, min(int(payload.get("k", 5)), len(_DEMO_HNSW)))
+    filt = payload.get("filter") or None
 
     # Validate filter dict
     if filt is not None:
@@ -446,8 +487,7 @@ def _api_filtered_search(payload: Dict[str, Any]) -> Dict[str, Any]:
             filt = None
         else:
             # Only allow simple string/number equality filters
-            filt = {str(fk): fv for fk, fv in filt.items()
-                    if isinstance(fv, (str, int, float, bool))}
+            filt = {str(fk): fv for fk, fv in filt.items() if isinstance(fv, (str, int, float, bool))}
 
     q_vec = _embed_text(query)
     t0 = time.perf_counter()
@@ -458,37 +498,39 @@ def _api_filtered_search(payload: Dict[str, Any]) -> Dict[str, Any]:
     results = []
     for nid, dist in zip(indices.tolist(), distances.tolist()):
         meta = _DEMO_HNSW._metadata[nid] if nid < len(_DEMO_HNSW._metadata) else {}
-        results.append({
-            "id":       int(nid),
-            "distance": round(float(dist), 4),
-            "similarity": round(max(0.0, 1.0 - float(dist)), 4),
-            "text":     (meta or {}).get("text", ""),
-            "category": (meta or {}).get("category", ""),
-            "tags":     (meta or {}).get("tags", []),
-        })
+        results.append(
+            {
+                "id": int(nid),
+                "distance": round(float(dist), 4),
+                "similarity": round(max(0.0, 1.0 - float(dist)), 4),
+                "text": (meta or {}).get("text", ""),
+                "category": (meta or {}).get("category", ""),
+                "tags": (meta or {}).get("tags", []),
+            }
+        )
 
     return {
-        "query":      query,
-        "filter":     filt,
-        "k":          k,
-        "results":    results,
-        "timing_ms":  round(elapsed * 1000, 3),
+        "query": query,
+        "filter": filt,
+        "k": k,
+        "results": results,
+        "timing_ms": round(elapsed * 1000, 3),
     }
 
 
 ROUTES_POST: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
-    "/api/compress":         _api_compress,
-    "/api/search":           _api_search,
-    "/api/benchmark":        _api_benchmark,
-    "/api/compact":          _api_compact,
-    "/api/filtered-search":  _api_filtered_search,
-    "/api/recall_estimate":  _api_recall_estimate,
+    "/api/compress": _api_compress,
+    "/api/search": _api_search,
+    "/api/benchmark": _api_benchmark,
+    "/api/compact": _api_compact,
+    "/api/filtered-search": _api_filtered_search,
+    "/api/recall_estimate": _api_recall_estimate,
 }
 ROUTES_GET: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
-    "/api/index-stats":  _api_index_stats,
-    "/api/hnsw-stats":   _api_hnsw_stats,
+    "/api/index-stats": _api_index_stats,
+    "/api/hnsw-stats": _api_hnsw_stats,
     "/api/recall_estimate": lambda _: _api_recall_estimate({}),
-    "/api/health":       _api_health,
+    "/api/health": _api_health,
 }
 
 
@@ -504,9 +546,7 @@ ROUTES_GET: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
 # Identical math to api/app.py — both share api.store.
 
 VIZ_STORE = IndexStore()
-_VIZ_PATH_RE = re.compile(
-    r"^/index/(?P<name>[A-Za-z0-9_.\-]{1,64})(?:/(?P<action>[a-z]+))?$"
-)
+_VIZ_PATH_RE = re.compile(r"^/index/(?P<name>[A-Za-z0-9_.\-]{1,64})(?:/(?P<action>[a-z]+))?$")
 
 
 def _viz_summary(name: str) -> Dict[str, Any]:
@@ -538,9 +578,7 @@ def _viz_add(name: str, body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
     except KeyError:
         idx = VIZ_STORE.create(name, dim_new)
     if dim_new != idx.dim:
-        return 400, {
-            "error": f"dim mismatch: payload {dim_new} vs index {idx.dim}"
-        }
+        return 400, {"error": f"dim mismatch: payload {dim_new} vs index {idx.dim}"}
     ids = body.get("ids") or []
     metadata = body.get("metadata") or []
     base = len(idx)
@@ -560,18 +598,13 @@ def _viz_search(name: str, body: Dict[str, Any]) -> Tuple[int, Dict[str, Any]]:
     if len(idx) == 0:
         return 200, {"name": name, "k": k, "results": []}
     try:
-        top = cosine_topk(
-            idx.matrix(), np.asarray(body.get("query", []), dtype=np.float32), k
-        )
+        top = cosine_topk(idx.matrix(), np.asarray(body.get("query", []), dtype=np.float32), k)
     except ValueError as exc:
         return 400, {"error": str(exc)}
     return 200, {
         "name": name,
         "k": k,
-        "results": [
-            {"id": idx.ids[h["index"]], "score": h["score"], "index": h["index"]}
-            for h in top
-        ],
+        "results": [{"id": idx.ids[h["index"]], "score": h["score"], "index": h["index"]} for h in top],
     }
 
 
@@ -601,17 +634,15 @@ def _viz_delete(name: str) -> Tuple[int, Dict[str, Any]]:
 
 
 _VIZ_POST: Dict[str, Callable[[str, Dict[str, Any]], Tuple[int, Dict[str, Any]]]] = {
-    "":         _viz_create,   # POST /index/{name}
-    "add":      _viz_add,
-    "search":   _viz_search,
-    "project":  _viz_project,
-    "cluster":  _viz_cluster,
+    "": _viz_create,  # POST /index/{name}
+    "add": _viz_add,
+    "search": _viz_search,
+    "project": _viz_project,
+    "cluster": _viz_cluster,
 }
 
 
-def _viz_dispatch(
-    method: str, path: str, body: Dict[str, Any]
-) -> Optional[Tuple[int, Dict[str, Any]]]:
+def _viz_dispatch(method: str, path: str, body: Dict[str, Any]) -> Optional[Tuple[int, Dict[str, Any]]]:
     """Handle /index/{name}/... routes.  Returns ``None`` if the path
     does not match — caller falls through to the legacy demo routes."""
     m = _VIZ_PATH_RE.match(path)
@@ -653,12 +684,10 @@ class Handler(BaseHTTPRequestHandler):
 
     # quiet down the default access log a bit
     def log_message(self, fmt: str, *args: Any) -> None:
-        sys.stderr.write(
-            f"  {self.address_string()}  {fmt % args}\n"
-        )
+        sys.stderr.write(f"  {self.address_string()}  {fmt % args}\n")
 
     def _send_cors(self) -> None:
-        self.send_header("Access-Control-Allow-Origin",  "*")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
@@ -681,7 +710,7 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_OPTIONS(self) -> None:        # noqa: N802
+    def do_OPTIONS(self) -> None:  # noqa: N802
         self.send_response(204)
         self._send_cors()
         self.end_headers()
@@ -694,7 +723,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:
             return None, f"bad json: {exc}"
 
-    def do_GET(self) -> None:            # noqa: N802
+    def do_GET(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
         if path == "/" or path == "/index.html":
             self._send_html(INDEX_HTML)
@@ -718,7 +747,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._send_json({"error": f"not found: {path}"}, status=404)
 
-    def do_POST(self) -> None:           # noqa: N802
+    def do_POST(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
         body, err = self._read_body()
         if err is not None:
@@ -741,7 +770,7 @@ class Handler(BaseHTTPRequestHandler):
 
         self._send_json({"error": f"not found: {path}"}, status=404)
 
-    def do_DELETE(self) -> None:         # noqa: N802
+    def do_DELETE(self) -> None:  # noqa: N802
         path = self.path.split("?", 1)[0]
         viz = _viz_dispatch("DELETE", path, {})
         if viz is not None:
@@ -765,16 +794,16 @@ def main() -> int:
     httpd = ThreadingServer((args.host, args.port), Handler)
     url = f"http://{args.host}:{args.port}/"
     print()
-    print(f"  ╔════════════════════════════════════════════════════╗")
+    print("  ╔════════════════════════════════════════════════════╗")
     print(f"  ║  Vectro live demo — v{vectro.__version__:<8}                      ║")
-    print(f"  ║                                                    ║")
+    print("  ║                                                    ║")
     print(f"  ║  open: {url:<43}║")
     print(f"  ║  viz:  {url + 'viz':<43}║")
     print(f"  ║  api:  {url + 'api/health':<43}║")
-    print(f"  ║                                                    ║")
-    print(f"  ║  every number on the page is measured here, now    ║")
-    print(f"  ╚════════════════════════════════════════════════════╝")
-    print(f"  Ctrl-C to stop", flush=True)
+    print("  ║                                                    ║")
+    print("  ║  every number on the page is measured here, now    ║")
+    print("  ╚════════════════════════════════════════════════════╝")
+    print("  Ctrl-C to stop", flush=True)
     print()
     try:
         httpd.serve_forever()

@@ -36,7 +36,6 @@ Runtime inference example (requires onnxruntime)::
 
 from __future__ import annotations
 
-import numpy as np
 
 # Lazy import so users without onnx installed can still import vectro.
 try:
@@ -80,37 +79,25 @@ def to_onnx_model(result: object) -> "onnx.ModelProto":  # type: ignore[name-def
         If *result* has ``precision_mode == "int4"``.
     """
     if not _HAVE_ONNX:
-        raise RuntimeError(
-            "onnx is required for ONNX export. "
-            "Install with: pip install 'onnx>=1.14'"
-        )
+        raise RuntimeError("onnx is required for ONNX export. Install with: pip install 'onnx>=1.14'")
 
     precision_mode = getattr(result, "precision_mode", "int8")
     if precision_mode == "int4":
-        raise ValueError(
-            "INT4 results are not supported by the ONNX exporter. "
-            "Pass an int8 result instead."
-        )
+        raise ValueError("INT4 results are not supported by the ONNX exporter. Pass an int8 result instead.")
 
     # ------------------------------------------------------------------
     # Graph inputs
     # ------------------------------------------------------------------
     # quantized: INT8   [N, D]
     # scales:    FLOAT  [N]
-    quantized_input = _oh.make_tensor_value_info(
-        "quantized", onnx.TensorProto.INT8, ["N", "D"]
-    )
-    scales_input = _oh.make_tensor_value_info(
-        "scales", onnx.TensorProto.FLOAT, ["N"]
-    )
+    quantized_input = _oh.make_tensor_value_info("quantized", onnx.TensorProto.INT8, ["N", "D"])
+    scales_input = _oh.make_tensor_value_info("scales", onnx.TensorProto.FLOAT, ["N"])
 
     # ------------------------------------------------------------------
     # Graph output
     # ------------------------------------------------------------------
     # reconstructed: FLOAT [N, D]
-    reconstructed_output = _oh.make_tensor_value_info(
-        "reconstructed", onnx.TensorProto.FLOAT, ["N", "D"]
-    )
+    reconstructed_output = _oh.make_tensor_value_info("reconstructed", onnx.TensorProto.FLOAT, ["N", "D"])
 
     # ------------------------------------------------------------------
     # axes initialiser — Unsqueeze in opset 13+ requires axes as a tensor
@@ -161,11 +148,7 @@ def to_onnx_model(result: object) -> "onnx.ModelProto":  # type: ignore[name-def
         opset_imports=[_oh.make_opsetid(_OPSET_DOMAIN, _OPSET_VERSION)],
         ir_version=8,
     )
-    model.doc_string = (
-        "Vectro INT8 dequantization — opset 17. "
-        "Inputs: quantized (INT8 [N,D]), scales (FLOAT [N]). "
-        "Output: reconstructed (FLOAT [N,D])."
-    )
+    model.doc_string = "Vectro INT8 dequantization — opset 17. Inputs: quantized (INT8 [N,D]), scales (FLOAT [N]). Output: reconstructed (FLOAT [N,D])."
 
     onnx.checker.check_model(model)
     return model

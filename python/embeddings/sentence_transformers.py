@@ -5,6 +5,7 @@ The underlying model already does its own internal batching, but we still
 chunk by ``batch_size`` so cache lookups stay coherent and progress reporting
 is per-chunk.
 """
+
 from __future__ import annotations
 
 from typing import Any, List, Optional
@@ -14,10 +15,7 @@ import numpy as np
 from .base import BaseEmbeddingProvider
 
 
-_ST_HINT = (
-    "sentence-transformers is required for SentenceTransformersEmbeddings.  "
-    "Install with: pip install sentence-transformers"
-)
+_ST_HINT = "sentence-transformers is required for SentenceTransformersEmbeddings.  Install with: pip install sentence-transformers"
 
 
 class SentenceTransformersEmbeddings(BaseEmbeddingProvider):

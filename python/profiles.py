@@ -46,9 +46,7 @@ class QuantProfile:
     def __post_init__(self) -> None:
         valid_methods = {"int8", "nf4", "auto"}
         if self.method not in valid_methods:
-            raise ValueError(
-                f"QuantProfile.method must be one of {valid_methods}, got {self.method!r}"
-            )
+            raise ValueError(f"QuantProfile.method must be one of {valid_methods}, got {self.method!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -73,8 +71,7 @@ _FAMILY_TABLE: list[tuple[frozenset[str], str, str]] = [
     # Qwen2 embedding models (L2-normalized output → INT8 is lossless)
     (frozenset({"Qwen2Model", "Qwen2_5Model", "Qwen2ForSequenceClassification"}), "qwen2", "int8"),
     # DeBERTa family (unnormalized contextual embeddings → NF4 preserves outliers)
-    (frozenset({"DebertaModel", "DebertaV2Model", "DebertaForSequenceClassification",
-                "DebertaV2ForSequenceClassification"}), "deberta", "nf4"),
+    (frozenset({"DebertaModel", "DebertaV2Model", "DebertaForSequenceClassification", "DebertaV2ForSequenceClassification"}), "deberta", "nf4"),
     # Classic BERT (bert-base/large, all-MiniLM-*, etc.)
     (frozenset({"BertModel"}), "bert", "nf4"),
 ]

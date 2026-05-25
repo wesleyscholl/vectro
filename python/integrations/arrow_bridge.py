@@ -16,18 +16,16 @@ Install with::
 from __future__ import annotations
 
 import importlib
-import io
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 import numpy as np
 
-from ..interface import QuantizationResult, reconstruct_embeddings
+from ..interface import QuantizationResult
 from ..batch_api import BatchQuantizationResult
 
 if TYPE_CHECKING:  # pragma: no cover
     import pyarrow as pa
-    import pyarrow.parquet as pq
 
 
 def _pa() -> Any:
@@ -35,10 +33,7 @@ def _pa() -> Any:
     try:
         return importlib.import_module("pyarrow")
     except ImportError as exc:
-        raise RuntimeError(
-            "pyarrow>=12.0 is required for Arrow/Parquet support. "
-            "Install with: pip install 'pyarrow>=12.0'"
-        ) from exc
+        raise RuntimeError("pyarrow>=12.0 is required for Arrow/Parquet support. Install with: pip install 'pyarrow>=12.0'") from exc
 
 
 # ---------------------------------------------------------------------------
@@ -155,14 +150,8 @@ def table_to_result(table: "pa.Table") -> BatchQuantizationResult:
 
     q_dtype = np.uint8 if precision_mode == "int4" else np.int8
 
-    q_rows = [
-        np.frombuffer(table.column("quantized")[i].as_py(), dtype=q_dtype)
-        for i in range(n)
-    ]
-    s_rows = [
-        np.frombuffer(table.column("scales")[i].as_py(), dtype=np.float32)
-        for i in range(n)
-    ]
+    q_rows = [np.frombuffer(table.column("quantized")[i].as_py(), dtype=q_dtype) for i in range(n)]
+    s_rows = [np.frombuffer(table.column("scales")[i].as_py(), dtype=np.float32) for i in range(n)]
 
     q_arr = np.vstack(q_rows)
     s_arr = np.asarray(s_rows, dtype=np.float32)

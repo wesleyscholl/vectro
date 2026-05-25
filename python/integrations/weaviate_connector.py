@@ -50,10 +50,7 @@ class WeaviateConnector(VectorDBConnector):
             try:
                 weaviate_mod = importlib.import_module("weaviate")
             except ImportError as exc:
-                raise RuntimeError(
-                    "weaviate-client>=4.0 is required for WeaviateConnector. "
-                    "Install with: pip install 'weaviate-client>=4.0'"
-                ) from exc
+                raise RuntimeError("weaviate-client>=4.0 is required for WeaviateConnector. Install with: pip install 'weaviate-client>=4.0'") from exc
             self._client = weaviate_mod.connect_to_local(host=host, port=port)
 
         self._collection = self._client.collections.get(collection_name)

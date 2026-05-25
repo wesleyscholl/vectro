@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import argparse
 import math
-import os
 import sys
 from pathlib import Path
 
@@ -40,8 +39,7 @@ try:
     import vectro_py
 except ImportError:
     print(
-        "error: vectro_py is not installed.\n"
-        "Run:  maturin develop --release -m rust/vectro_py/Cargo.toml",
+        "error: vectro_py is not installed.\nRun:  maturin develop --release -m rust/vectro_py/Cargo.toml",
         file=sys.stderr,
     )
     sys.exit(2)
@@ -63,6 +61,7 @@ _FIXTURES_DIR = _REPO_ROOT / "tests" / "fixtures"
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _cosine(a: list[float], b: list[float]) -> float:
     """Cosine similarity between two dense vectors."""
     dot = sum(x * y for x, y in zip(a, b))
@@ -76,6 +75,7 @@ def _cosine(a: list[float], b: list[float]) -> float:
 def _random_vectors(n: int, dim: int, seed: int = 42) -> list[list[float]]:
     """Generate reproducible pseudo-random unit vectors."""
     import random
+
     rng = random.Random(seed)
     vecs: list[list[float]] = []
     for _ in range(n):
@@ -115,6 +115,7 @@ def _encode_decode(method: str, vecs: list[list[float]]) -> list[list[float]]:
 # Evaluation
 # ---------------------------------------------------------------------------
 
+
 def _eval_fixture(
     fixture_path: Path,
     n: int,
@@ -137,11 +138,7 @@ def _eval_fixture(
 
     if not quiet:
         status = "PASS" if passed else "FAIL"
-        print(
-            f"  {fixture_path.name:<12}  family={profile.family:<8}  "
-            f"method={profile.method:<5}  cosine={mean_cos:.6f}  "
-            f"gate={gate:.4f}  [{status}]"
-        )
+        print(f"  {fixture_path.name:<12}  family={profile.family:<8}  method={profile.method:<5}  cosine={mean_cos:.6f}  gate={gate:.4f}  [{status}]")
     return fixture_path.name, profile, mean_cos, gate, passed
 
 
@@ -149,12 +146,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Evaluate vectro quantization profiles against cosine gates.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=(
-            "Examples:\n"
-            "  python scripts/eval_profiles.py\n"
-            "  python scripts/eval_profiles.py --dim 384 --n 200\n"
-            "  python scripts/eval_profiles.py --quiet\n"
-        ),
+        epilog=("Examples:\n  python scripts/eval_profiles.py\n  python scripts/eval_profiles.py --dim 384 --n 200\n  python scripts/eval_profiles.py --quiet\n"),
     )
     parser.add_argument(
         "--dim",

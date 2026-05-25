@@ -28,11 +28,12 @@ Memory comparison (768-dim, 1M vectors):
     float32 baseline  : 3 072 MB
     INT8  (balanced)  :   784 MB  (3.9× reduction)
 """
+
 from __future__ import annotations
 
 import threading
 import uuid
-from typing import Any, Dict, List, Optional, Sequence, cast
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
@@ -41,6 +42,7 @@ from ..retrieval.mmr import cosine_scores as _cosine_scores_fn, mmr_select
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _apply_meta_filters(
     node_ids: List[str],
@@ -83,10 +85,7 @@ def _apply_meta_filters(
     return keep
 
 
-_LLAMAINDEX_ERROR = (
-    "llama-index-core is required for VectroVectorStore (LlamaIndex). "
-    "Install with: pip install llama-index-core"
-)
+_LLAMAINDEX_ERROR = "llama-index-core is required for VectroVectorStore (LlamaIndex). Install with: pip install llama-index-core"
 
 
 class VectroVectorStore:
@@ -124,7 +123,7 @@ class VectroVectorStore:
         self._node_store: Dict[str, tuple] = {}
         # Ordered list of node_ids matching rows in self._compressed
         self._node_ids: List[str] = []
-        self._compressed: Any = None   # BatchQuantizationResult | None
+        self._compressed: Any = None  # BatchQuantizationResult | None
         self._n_dims: int = 0
 
     # ------------------------------------------------------------------
@@ -134,16 +133,12 @@ class VectroVectorStore:
     def _rebuild(self, new_embs: np.ndarray) -> None:
         """Append *new_embs* to the compressed store (caller holds lock)."""
         if self._compressed is None:
-            self._compressed = self._vectro.compress(
-                new_embs, profile=self._profile, model_dir=self._model_dir
-            )
+            self._compressed = self._vectro.compress(new_embs, profile=self._profile, model_dir=self._model_dir)
             self._n_dims = new_embs.shape[1]
         else:
             existing = self._compressed.reconstruct_batch()
             combined = np.vstack([existing, new_embs])
-            self._compressed = self._vectro.compress(
-                combined, profile=self._profile, model_dir=self._model_dir
-            )
+            self._compressed = self._vectro.compress(combined, profile=self._profile, model_dir=self._model_dir)
 
     def _cosine_scores(self, query_emb: np.ndarray) -> np.ndarray:
         return _cosine_scores_fn(query_emb, self._compressed.reconstruct_batch())
@@ -170,10 +165,7 @@ class VectroVectorStore:
         for node in nodes:
             emb = getattr(node, "embedding", None)
             if emb is None:
-                raise ValueError(
-                    f"Node {node.node_id!r} has no embedding. "
-                    "Run an embedding pipeline before calling add()."
-                )
+                raise ValueError(f"Node {node.node_id!r} has no embedding. Run an embedding pipeline before calling add().")
             embeddings.append(np.asarray(emb, dtype=np.float32))
             node_id = getattr(node, "node_id", None) or str(uuid.uuid4())
             ids.append(node_id)
@@ -193,11 +185,7 @@ class VectroVectorStore:
     def delete(self, ref_doc_id: str, **delete_kwargs: Any) -> None:
         """Remove all nodes with ``ref_doc_id`` in their metadata."""
         with self._lock:
-            keep_idx = [
-                i for i, nid in enumerate(self._node_ids)
-                if self._node_store.get(nid, ({}, {}))[1].get("doc_id") != ref_doc_id
-                and nid != ref_doc_id
-            ]
+            keep_idx = [i for i, nid in enumerate(self._node_ids) if self._node_store.get(nid, ({}, {}))[1].get("doc_id") != ref_doc_id and nid != ref_doc_id]
             if len(keep_idx) == len(self._node_ids):
                 return  # nothing to delete
 
@@ -208,14 +196,11 @@ class VectroVectorStore:
                 return
 
             kept_embs = self._compressed.reconstruct_batch()[keep_idx]
-            removed_ids = {self._node_ids[i] for i in range(len(self._node_ids))
-                           if i not in set(keep_idx)}
+            removed_ids = {self._node_ids[i] for i in range(len(self._node_ids)) if i not in set(keep_idx)}
             for rid in removed_ids:
                 self._node_store.pop(rid, None)
             self._node_ids = [self._node_ids[i] for i in keep_idx]
-            self._compressed = self._vectro.compress(
-                kept_embs, profile=self._profile, model_dir=self._model_dir
-            )
+            self._compressed = self._vectro.compress(kept_embs, profile=self._profile, model_dir=self._model_dir)
 
     def query(
         self,
@@ -332,6 +317,7 @@ class VectroVectorStore:
     ) -> List[str]:
         """Non-blocking variant of :meth:`add` — delegates to a thread-pool."""
         import asyncio
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, lambda: self.add(nodes))
 
@@ -342,6 +328,7 @@ class VectroVectorStore:
     ) -> Any:
         """Non-blocking variant of :meth:`query` — delegates to a thread-pool."""
         import asyncio
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, lambda: self.query(query))
 
@@ -370,10 +357,7 @@ class VectroVectorStore:
             else:
                 mat = self._compressed.reconstruct_batch()
             node_ids = list(self._node_ids)
-            node_store_serial = {
-                nid: {"text": v[0], "meta": v[1]}
-                for nid, v in self._node_store.items()
-            }
+            node_store_serial = {nid: {"text": v[0], "meta": v[1]} for nid, v in self._node_store.items()}
 
         np.save(os.path.join(path, "vectors.npy"), mat)
         meta = {
@@ -402,9 +386,7 @@ class VectroVectorStore:
             meta = json.load(fh)
 
         if meta.get("store_type") != "llamaindex":
-            raise ValueError(
-                f"meta.json store_type={meta.get('store_type')!r} is not 'llamaindex'."
-            )
+            raise ValueError(f"meta.json store_type={meta.get('store_type')!r} is not 'llamaindex'.")
 
         store = cls(
             compression_profile=meta["profile"],
@@ -421,9 +403,7 @@ class VectroVectorStore:
                     store._node_store[nid] = (entry["text"], entry["meta"])
                     store._node_ids.append(nid)
                 store._n_dims = meta["n_dims"]
-                store._compressed = store._vectro.compress(
-                    mat, profile=meta["profile"], model_dir=meta.get("model_dir")
-                )
+                store._compressed = store._vectro.compress(mat, profile=meta["profile"], model_dir=meta.get("model_dir"))
 
         return store
 
@@ -438,8 +418,8 @@ class VectroVectorStore:
             if n == 0 or self._compressed is None:
                 return {"n_nodes": 0, "compression_ratio": 1.0}
             d = self._n_dims
-            original_mb = n * d * 4 / (1024 ** 2)
-            compressed_mb = self._compressed.total_compressed_bytes / (1024 ** 2)
+            original_mb = n * d * 4 / (1024**2)
+            compressed_mb = self._compressed.total_compressed_bytes / (1024**2)
             return {
                 "n_nodes": n,
                 "dimensions": d,
@@ -454,7 +434,4 @@ class VectroVectorStore:
         return len(self._node_ids)
 
     def __repr__(self) -> str:
-        return (
-            f"VectroVectorStore[LlamaIndex](n={len(self)}, "
-            f"profile={self._profile!r}, dims={self._n_dims})"
-        )
+        return f"VectroVectorStore[LlamaIndex](n={len(self)}, profile={self._profile!r}, dims={self._n_dims})"

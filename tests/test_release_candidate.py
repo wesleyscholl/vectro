@@ -13,9 +13,7 @@ Covers all 7 verification gates from the Phase 5 plan:
 
 from __future__ import annotations
 
-import importlib
 import json
-import os
 import time
 from pathlib import Path
 
@@ -30,9 +28,9 @@ EXPECTED_VERSION = "5.5.0"
 # Quality and compression floors per profile
 # (used in gate 1 and gate 2)
 PROFILE_GATES = {
-    "fast":     {"min_cosine": 0.95, "min_ratio": 3.5},
+    "fast": {"min_cosine": 0.95, "min_ratio": 3.5},
     "balanced": {"min_cosine": 0.97, "min_ratio": 3.5},
-    "quality":  {"min_cosine": 0.97, "min_ratio": 3.5},
+    "quality": {"min_cosine": 0.97, "min_ratio": 3.5},
 }
 
 # Throughput floor: vectors/second (gate 3)
@@ -53,6 +51,7 @@ def embeddings() -> np.ndarray:
 @pytest.fixture(scope="module")
 def vectro():
     from python.vectro import Vectro
+
     return Vectro()
 
 
@@ -64,23 +63,15 @@ class TestQualityAndCompressionGates:
 
     @pytest.mark.parametrize("profile_name,gates", list(PROFILE_GATES.items()))
     def test_quality_and_compression(self, embeddings, vectro, profile_name, gates, tmp_path):
-        from python.profiles_api import get_compression_profile
         from python import decompress_vectors
         from python.interface import mean_cosine_similarity
 
-        profile = get_compression_profile(profile_name)
         result = vectro.compress(embeddings, profile=profile_name)
         restored = decompress_vectors(result)
 
         cos_sim = mean_cosine_similarity(embeddings, restored)
-        assert cos_sim >= gates["min_cosine"], (
-            f"[{profile_name}] quality gate failed: "
-            f"cosine_sim={cos_sim:.4f} < threshold={gates['min_cosine']}"
-        )
-        assert result.compression_ratio >= gates["min_ratio"], (
-            f"[{profile_name}] compression gate failed: "
-            f"ratio={result.compression_ratio:.2f}× < threshold={gates['min_ratio']}"
-        )
+        assert cos_sim >= gates["min_cosine"], f"[{profile_name}] quality gate failed: cosine_sim={cos_sim:.4f} < threshold={gates['min_cosine']}"
+        assert result.compression_ratio >= gates["min_ratio"], f"[{profile_name}] compression gate failed: ratio={result.compression_ratio:.2f}× < threshold={gates['min_ratio']}"
 
     def test_int8_default_profile_passes(self, embeddings, vectro):
         from python import decompress_vectors
@@ -109,9 +100,7 @@ class TestPerformanceGates:
         elapsed = time.perf_counter() - t0
 
         throughput = N / elapsed
-        assert throughput >= THROUGHPUT_FLOOR, (
-            f"Throughput {throughput:,.0f} vec/s < floor {THROUGHPUT_FLOOR:,} vec/s"
-        )
+        assert throughput >= THROUGHPUT_FLOOR, f"Throughput {throughput:,.0f} vec/s < floor {THROUGHPUT_FLOOR:,} vec/s"
 
     def test_streaming_throughput(self, embeddings, vectro):
         from python import StreamingDecompressor
@@ -123,9 +112,7 @@ class TestPerformanceGates:
 
         assert total == N
         throughput = total / elapsed
-        assert throughput >= THROUGHPUT_FLOOR, (
-            f"Streaming throughput {throughput:,.0f} vec/s < floor"
-        )
+        assert throughput >= THROUGHPUT_FLOOR, f"Streaming throughput {throughput:,.0f} vec/s < floor"
 
 
 # ── Gate 4: Compatibility (v1 → v2 migration) ──────────────────────────────
@@ -234,9 +221,9 @@ class TestIntegrationGates:
 
     def test_in_memory_connector_round_trip(self, embeddings):
         from python.integrations import InMemoryVectorDBConnector
-        from python import decompress_vectors
 
         from python.vectro import Vectro
+
         result = Vectro().compress(embeddings[:50])
 
         store = InMemoryVectorDBConnector()
@@ -285,7 +272,6 @@ class TestIntegrationGates:
 
     def test_streaming_full_reconstruction(self, embeddings, vectro):
         from python import StreamingDecompressor, decompress_vectors
-        from python.interface import mean_cosine_similarity
 
         result = vectro.compress(embeddings)
 
@@ -312,7 +298,6 @@ class TestIntegrationGates:
         out = tmp_path / "report.json"
         report.save(str(out))
         assert out.exists()
-        import json
         data = json.loads(out.read_text())
         assert isinstance(data, (dict, list))
 
@@ -325,37 +310,59 @@ class TestDistributionGates:
 
     EXPECTED_SYMBOLS = [
         # Core
-        "Vectro", "compress_vectors", "decompress_vectors",
-        "analyze_compression_quality", "generate_compression_report",
+        "Vectro",
+        "compress_vectors",
+        "decompress_vectors",
+        "analyze_compression_quality",
+        "generate_compression_report",
         # Interface
-        "QuantizationResult", "quantize_embeddings", "reconstruct_embeddings",
-        "mean_cosine_similarity", "get_backend_info",
+        "QuantizationResult",
+        "quantize_embeddings",
+        "reconstruct_embeddings",
+        "mean_cosine_similarity",
+        "get_backend_info",
         # Batch
-        "VectroBatchProcessor", "BatchQuantizationResult",
+        "VectroBatchProcessor",
+        "BatchQuantizationResult",
         "quantize_embeddings_batch",
         # Quality
-        "VectroQualityAnalyzer", "QualityMetrics",
+        "VectroQualityAnalyzer",
+        "QualityMetrics",
         "evaluate_quantization_quality",
         # Profiles
-        "ProfileManager", "CompressionProfile",
-        "get_compression_profile", "create_custom_profile",
+        "ProfileManager",
+        "CompressionProfile",
+        "get_compression_profile",
+        "create_custom_profile",
         # Integrations
-        "InMemoryVectorDBConnector", "QdrantConnector", "WeaviateConnector",
-        "compress_tensor", "reconstruct_tensor", "HuggingFaceCompressor",
-        "result_to_table", "table_to_result",
-        "write_parquet", "read_parquet",
-        "to_arrow_bytes", "from_arrow_bytes",
+        "InMemoryVectorDBConnector",
+        "QdrantConnector",
+        "WeaviateConnector",
+        "compress_tensor",
+        "reconstruct_tensor",
+        "HuggingFaceCompressor",
+        "result_to_table",
+        "table_to_result",
+        "write_parquet",
+        "read_parquet",
+        "to_arrow_bytes",
+        "from_arrow_bytes",
         # Streaming / quantization extras
         "StreamingDecompressor",
-        "quantize_int2", "dequantize_int2", "quantize_adaptive",
+        "quantize_int2",
+        "dequantize_int2",
+        "quantize_adaptive",
         # Migration
-        "inspect_artifact", "upgrade_artifact", "validate_artifact",
+        "inspect_artifact",
+        "upgrade_artifact",
+        "validate_artifact",
         # Utility
         "get_version_info",
     ]
 
     def test_all_expected_symbols_importable(self):
         import python as pkg
+
         missing = [sym for sym in self.EXPECTED_SYMBOLS if not hasattr(pkg, sym)]
         assert not missing, f"Missing public symbols: {missing}"
 
@@ -381,20 +388,24 @@ class TestDistributionGates:
 
     def test_version_python_init(self):
         import python as pkg
+
         assert pkg.__version__ == EXPECTED_VERSION
 
     def test_version_vectro_py(self):
         # Read the module's own __version__ attribute
         import python.vectro as m
+
         assert m.__version__ == EXPECTED_VERSION
 
     def test_version_info_returns_dict(self):
         import python as pkg
+
         vi = pkg.get_version_info()
         assert isinstance(vi, dict)
 
     def test_get_backend_info_returns_dict(self):
         import python as pkg
+
         bi = pkg.get_backend_info()
         assert isinstance(bi, dict)
         assert "numpy" in bi or "mojo" in bi

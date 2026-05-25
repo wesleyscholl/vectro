@@ -135,8 +135,9 @@ unsafe fn encode_avx2(v: &[f32]) -> Int8Vector {
         _mm_storel_epi64(out_ptr.add(base) as *mut __m128i, i8s);
     }
     // Scalar tail
-    for i in chunks8 * 8..n {
-        *out_ptr.add(i) = (v[i] * inv).round().clamp(-127.0, 127.0) as i8;
+    let tail_start = chunks8 * 8;
+    for (offset, &val) in v[tail_start..n].iter().enumerate() {
+        *out_ptr.add(tail_start + offset) = (val * inv).round().clamp(-127.0, 127.0) as i8;
     }
 
     Int8Vector { codes, scale }
@@ -378,8 +379,9 @@ unsafe fn encode_avx2_into(v: &[f32], out: &mut [i8]) -> f32 {
         _mm_storel_epi64(out_ptr.add(base) as *mut __m128i, i8s);
     }
     // scalar tail
-    for i in chunks8 * 8..n {
-        *out_ptr.add(i) = (v[i] * inv).round().clamp(-127.0, 127.0) as i8;
+    let tail_start = chunks8 * 8;
+    for (offset, &val) in v[tail_start..n].iter().enumerate() {
+        *out_ptr.add(tail_start + offset) = (val * inv).round().clamp(-127.0, 127.0) as i8;
     }
 
     scale
@@ -556,8 +558,8 @@ pub fn cosine_int8(query: &[f32], encoded: &Int8Vector) -> f32 {
 /// * `input`      — flat f32 slice, length = `n * d`
 /// * `n`, `d`     — number of vectors and dimension
 /// * `codes_out`  — caller-allocated i8 slice, length = `n * d` (written in-place)
-/// * `scales_out` — caller-allocated f32 slice, length = `n`  
-///                  stores `abs_max / 127.0` per row (direct dequant factor)
+/// * `scales_out` — caller-allocated f32 slice, length = `n`;
+///   stores `abs_max / 127.0` per row (direct dequant factor)
 ///
 /// Uses rayon for row-parallel execution; each worker thread calls
 /// `encode_fast_into` which dispatches to the NEON (AArch64) or AVX2 (x86-64)
@@ -776,8 +778,9 @@ unsafe fn encode_normalized_avx2(v: &[f32], out: &mut [i8]) {
         let i8s  = _mm_packs_epi16(i16s, i16s);
         _mm_storel_epi64(out_ptr.add(base) as *mut __m128i, i8s);
     }
-    for i in chunks8 * 8..n {
-        *out_ptr.add(i) = (v[i] * 127.0_f32).round().clamp(-127.0, 127.0) as i8;
+    let tail_start = chunks8 * 8;
+    for (offset, &val) in v[tail_start..n].iter().enumerate() {
+        *out_ptr.add(tail_start + offset) = (val * 127.0_f32).round().clamp(-127.0, 127.0) as i8;
     }
 }
 
@@ -936,8 +939,9 @@ unsafe fn encode_avx2_fused_into(v: &[f32], out: &mut [i8]) -> f32 {
         let i8s = _mm_packs_epi16(i16s, i16s);
         _mm_storel_epi64(out_ptr.add(base) as *mut __m128i, i8s);
     }
-    for i in chunks8 * 8..n {
-        *out_ptr.add(i) = (buf[i] * inv).round().clamp(-127.0, 127.0) as i8;
+    let tail_start = chunks8 * 8;
+    for (offset, &val) in buf[tail_start..n].iter().enumerate() {
+        *out_ptr.add(tail_start + offset) = (val * inv).round().clamp(-127.0, 127.0) as i8;
     }
     scale
 }

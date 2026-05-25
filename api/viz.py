@@ -17,6 +17,7 @@ Originally `api/main.py` in V7 (commit 3e5d4d6).  Relocated to its own
 router during the V6 rebase so the V6 HNSW REST endpoints could occupy
 ``/index/{name}/*`` without colliding with V7's flat-numpy ``INDICES``.
 """
+
 from __future__ import annotations
 
 from typing import List
@@ -62,9 +63,7 @@ def add_vectors(name: str, req: AddRequest) -> dict:
     if name in INDICES:
         existing = INDICES[name]
         if existing.shape[1] != arr.shape[1]:
-            raise HTTPException(
-                400, f"dim mismatch: existing={existing.shape[1]} new={arr.shape[1]}"
-            )
+            raise HTTPException(400, f"dim mismatch: existing={existing.shape[1]} new={arr.shape[1]}")
         INDICES[name] = np.vstack([existing, arr])
     else:
         INDICES[name] = arr
@@ -97,10 +96,7 @@ def project(name: str) -> List[ProjectedPoint]:
         if k == 1:
             proj = np.column_stack([proj[:, 0], np.zeros(n)])
         coords = proj
-    return [
-        ProjectedPoint(id=i, x=float(coords[i, 0]), y=float(coords[i, 1]), label=str(i))
-        for i in range(n)
-    ]
+    return [ProjectedPoint(id=i, x=float(coords[i, 0]), y=float(coords[i, 1]), label=str(i)) for i in range(n)]
 
 
 def _kmeans_pp_init(X: np.ndarray, k: int, rng: np.random.Generator) -> np.ndarray:
@@ -134,11 +130,7 @@ def _kmeans(X: np.ndarray, k: int, max_iter: int, seed: int) -> np.ndarray:
     labels = np.zeros(n, dtype=np.int64)
     for _ in range(max_iter):
         # squared euclidean: ||x - c||^2 = ||x||^2 - 2 x·c + ||c||^2
-        d = (
-            (X * X).sum(axis=1, keepdims=True)
-            - 2.0 * (X @ centers.T)
-            + (centers * centers).sum(axis=1)[None, :]
-        )
+        d = (X * X).sum(axis=1, keepdims=True) - 2.0 * (X @ centers.T) + (centers * centers).sum(axis=1)[None, :]
         new_labels = d.argmin(axis=1)
         if np.array_equal(new_labels, labels):
             labels = new_labels

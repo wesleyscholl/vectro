@@ -45,10 +45,7 @@ class PineconeConnector(VectorDBConnector):
             try:
                 pinecone_mod = importlib.import_module("pinecone")
             except ImportError as exc:
-                raise RuntimeError(
-                    "pinecone-client is required for PineconeConnector. "
-                    "Install with: pip install 'pinecone-client>=3.0'"
-                ) from exc
+                raise RuntimeError("pinecone-client is required for PineconeConnector. Install with: pip install 'pinecone-client>=3.0'") from exc
             pc = pinecone_mod.Pinecone(api_key=api_key)
             self._index = pc.Index(index_name, host=host)
 
@@ -72,9 +69,7 @@ class PineconeConnector(VectorDBConnector):
             metadata: Optional user-level metadata dict applied to every row.
         """
         if len(ids) != len(quantized) or len(ids) != len(scales):
-            raise ValueError(
-                "ids, quantized rows, and scales rows must have matching lengths"
-            )
+            raise ValueError("ids, quantized rows, and scales rows must have matching lengths")
 
         payload_meta = metadata or {}
         vectors: List[Dict[str, Any]] = []
@@ -86,9 +81,7 @@ class PineconeConnector(VectorDBConnector):
             meta: Dict[str, Any] = {
                 "vectro_quantized": q_row.tolist(),
                 "vectro_scales": s_row.tolist(),
-                "vectro_vector_dim": int(
-                    q_row.shape[0] * (2 if q_row.dtype == np.uint8 else 1)
-                ),
+                "vectro_vector_dim": int(q_row.shape[0] * (2 if q_row.dtype == np.uint8 else 1)),
                 "vectro_quantized_dtype": str(q_row.dtype),
                 "vectro_precision_mode": "int4" if q_row.dtype == np.uint8 else "int8",
                 "vectro_metadata": payload_meta,

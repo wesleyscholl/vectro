@@ -1,8 +1,7 @@
 """Type stubs for haystack_integration."""
+
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
-
-import numpy as np
 
 def _require_haystack() -> Any: ...
 

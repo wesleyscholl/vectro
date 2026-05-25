@@ -89,7 +89,7 @@ fn kmeans_lloyd(
     max_iter: usize,
     seed: u64,
 ) -> Vec<f32> {
-    let n = data.len();
+    let _n = data.len();
     let mut centroids = kmeans_pp_init(data, k, d, seed);
 
     for _ in 0..max_iter {

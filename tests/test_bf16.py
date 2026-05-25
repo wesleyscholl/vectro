@@ -8,7 +8,6 @@ Coverage:
 - failure case: no bindings
 """
 
-import math
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -24,12 +23,12 @@ except ImportError:
 # Unit tests — mocked bindings
 # ---------------------------------------------------------------------------
 
+
 class TestBf16EncoderUnit:
     """Pure unit tests — mocked _PyBf16Encoder."""
 
     def _make_encoder(self) -> tuple:
-        with patch("python.bf16_api._BINDINGS_AVAILABLE", True), \
-             patch("python.bf16_api._PyBf16Encoder") as MockClass:
+        with patch("python.bf16_api._BINDINGS_AVAILABLE", True), patch("python.bf16_api._PyBf16Encoder") as MockClass:
             mock_instance = MagicMock()
             MockClass.return_value = mock_instance
             enc = Bf16Encoder.__new__(Bf16Encoder)
@@ -87,6 +86,7 @@ class TestBf16EncoderUnit:
 # Import-guard failure test
 # ---------------------------------------------------------------------------
 
+
 class TestBf16EncoderGuard:
     def test_raises_without_bindings(self):
         with patch("python.bf16_api._BINDINGS_AVAILABLE", False):
@@ -142,18 +142,9 @@ class TestBf16EncoderIntegration:
         # FP32 pairwise cosine similarity for a sample
         for i in range(0, min(self.N, 20)):
             for j in range(i + 1, min(self.N, 21)):
-                fp32_sim = float(
-                    np.dot(vecs[i], vecs[j])
-                    / (np.linalg.norm(vecs[i]) * np.linalg.norm(vecs[j]) + 1e-9)
-                )
-                bf16_sim = float(
-                    np.dot(decoded[i], decoded[j])
-                    / (np.linalg.norm(decoded[i]) * np.linalg.norm(decoded[j]) + 1e-9)
-                )
-                assert abs(fp32_sim - bf16_sim) < 0.01, (
-                    f"BF16 cosine precision failure at ({i},{j}): "
-                    f"fp32={fp32_sim:.6f}, bf16={bf16_sim:.6f}"
-                )
+                fp32_sim = float(np.dot(vecs[i], vecs[j]) / (np.linalg.norm(vecs[i]) * np.linalg.norm(vecs[j]) + 1e-9))
+                bf16_sim = float(np.dot(decoded[i], decoded[j]) / (np.linalg.norm(decoded[i]) * np.linalg.norm(decoded[j]) + 1e-9))
+                assert abs(fp32_sim - bf16_sim) < 0.01, f"BF16 cosine precision failure at ({i},{j}): fp32={fp32_sim:.6f}, bf16={bf16_sim:.6f}"
 
     def test_cosine_dist_symmetry(self):
         vecs = self._random_unit_vecs()

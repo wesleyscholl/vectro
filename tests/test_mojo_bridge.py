@@ -3,6 +3,7 @@ Tests for python/_mojo_bridge.py — verifies that all quantization hot paths
 actually dispatch to the compiled Mojo binary rather than falling through to
 NumPy.
 """
+
 from __future__ import annotations
 
 import pathlib
@@ -30,6 +31,7 @@ RNG = np.random.default_rng(0xDEADBEEF)
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
+
 def _rand_vecs(n: int, d: int) -> np.ndarray:
     return RNG.standard_normal((n, d)).astype(np.float32)
 
@@ -52,6 +54,7 @@ def _supports_pq_pipe() -> bool:
 
 # ── is_available / binary_path ────────────────────────────────────────────────
 
+
 def test_is_available():
     assert mb.is_available() is True
 
@@ -63,6 +66,7 @@ def test_binary_path_is_executable():
 
 
 # ── INT8 ──────────────────────────────────────────────────────────────────────
+
 
 class TestInt8:
     def test_shapes(self):
@@ -114,6 +118,7 @@ class TestInt8:
 
 # ── NF4 ───────────────────────────────────────────────────────────────────────
 
+
 class TestNf4:
     def test_shapes(self):
         vecs = _rand_vecs(10, 64)
@@ -154,6 +159,7 @@ class TestNf4:
 
 
 # ── Binary ────────────────────────────────────────────────────────────────────
+
 
 class TestBinary:
     def test_shapes(self):
@@ -207,6 +213,7 @@ class TestBinary:
 
 # ── Product Quantization (PQ) ───────────────────────────────────────────────
 
+
 class TestPQ:
     @pytest.mark.skipif(not _supports_pq_pipe(), reason="vectro_quantizer binary does not expose pq pipe commands")
     def test_pq_encode_shape(self):
@@ -244,11 +251,13 @@ class TestPQ:
 
 # ── end-to-end via high-level API ─────────────────────────────────────────────
 
+
 class TestHighLevelDispatch:
     """Verify that high-level Python APIs route through the Mojo binary."""
 
     def test_interface_quantize_uses_mojo(self):
         from python.interface import quantize_embeddings, reconstruct_embeddings
+
         vecs = _rand_vecs(8, 32)
         result = quantize_embeddings(vecs, backend="mojo")
         assert result.quantized.dtype == np.int8
@@ -258,6 +267,7 @@ class TestHighLevelDispatch:
     def test_interface_auto_selects_mojo_without_squish(self):
         """When squish_quant is absent, 'auto' should fall to Mojo."""
         from python import interface
+
         if interface._squish_quant is not None:
             pytest.skip("squish_quant is installed; Mojo is not the auto choice")
         vecs = _rand_vecs(8, 32)
@@ -266,6 +276,7 @@ class TestHighLevelDispatch:
 
     def test_nf4_api_uses_mojo(self):
         from python.nf4_api import quantize_nf4, dequantize_nf4
+
         vecs = _rand_vecs(8, 32)
         packed, scales = quantize_nf4(vecs)
         recon = dequantize_nf4(packed, scales, 32)
@@ -273,6 +284,7 @@ class TestHighLevelDispatch:
 
     def test_binary_api_uses_mojo(self):
         from python.binary_api import quantize_binary, dequantize_binary
+
         vecs = _rand_vecs(8, 32)
         packed = quantize_binary(vecs, normalize=False)
         recon = dequantize_binary(packed, 32)
@@ -280,6 +292,7 @@ class TestHighLevelDispatch:
 
     def test_batch_processor_mojo_backend(self):
         from python.batch_api import VectroBatchProcessor
+
         proc = VectroBatchProcessor(backend="mojo")
         vecs = _rand_vecs(16, 64)
         result = proc.quantize_batch(vecs)

@@ -26,9 +26,7 @@ class QdrantConnector(VectorDBConnector):
             try:
                 qdrant_mod = importlib.import_module("qdrant_client")
             except ImportError as exc:
-                raise RuntimeError(
-                    "qdrant-client is required for QdrantConnector. Install with: pip install qdrant-client"
-                ) from exc
+                raise RuntimeError("qdrant-client is required for QdrantConnector. Install with: pip install qdrant-client") from exc
             self.client = qdrant_mod.QdrantClient(":memory:")
 
     def upsert_compressed(
@@ -81,7 +79,6 @@ class QdrantConnector(VectorDBConnector):
 
         for record in records:
             payload = record.payload or {}
-            q_dtype = payload.get("vectro_quantized_dtype", "int8")
             precision_mode = payload.get("vectro_precision_mode", "int8")
             q_arr = np.asarray(
                 payload.get("vectro_quantized", []),

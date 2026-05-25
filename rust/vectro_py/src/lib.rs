@@ -1,3 +1,4 @@
+#![allow(non_local_definitions)]
 use pyo3::prelude::*;
 use pyo3::types::{PyList, PyTuple};
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
@@ -182,7 +183,7 @@ impl PySearchIndex {
         let indices_array: &PyArray1<usize> = Array1::from(indices).into_pyarray(py);
         let similarities_array: &PyArray1<f32> = Array1::from(similarities).into_pyarray(py);
         
-        Ok(PyTuple::new(py, &[indices_array.as_ref(), similarities_array.as_ref()]).into())
+        Ok(PyTuple::new(py, [indices_array.as_ref(), similarities_array.as_ref()]).into())
     }
 
     fn batch_search(&self, py: Python<'_>, queries: PyReadonlyArray2<f32>, top_k: usize) -> PyResult<Py<PyList>> {
@@ -205,7 +206,7 @@ impl PySearchIndex {
             
             let indices_array: &PyArray1<usize> = Array1::from(indices).into_pyarray(py);
             let similarities_array: &PyArray1<f32> = Array1::from(similarities).into_pyarray(py);
-            let result_tuple = PyTuple::new(py, &[indices_array.as_ref(), similarities_array.as_ref()]);
+            let result_tuple = PyTuple::new(py, [indices_array.as_ref(), similarities_array.as_ref()]);
             
             all_results.push(result_tuple);
         }
@@ -215,7 +216,7 @@ impl PySearchIndex {
 
     fn __repr__(&self) -> String {
         // We can't access private fields, so use a simpler representation
-        format!("PySearchIndex")
+        "PySearchIndex".to_string()
     }
 }
 
@@ -264,7 +265,7 @@ impl PyQuantizedIndex {
         let indices_array: &PyArray1<usize> = Array1::from(indices).into_pyarray(py);
         let similarities_array: &PyArray1<f32> = Array1::from(similarities).into_pyarray(py);
         
-        Ok(PyTuple::new(py, &[indices_array.as_ref(), similarities_array.as_ref()]).into())
+        Ok(PyTuple::new(py, [indices_array.as_ref(), similarities_array.as_ref()]).into())
     }
 
     fn compression_ratio(&self) -> f32 {
@@ -817,7 +818,7 @@ impl PyIvfIndex {
     fn train(&mut self, vectors: Vec<Vec<f32>>, max_iter: usize, seed: u64) -> PyResult<()> {
         self.inner
             .train(&vectors, max_iter, seed)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+            .map_err(pyo3::exceptions::PyValueError::new_err)
     }
 
     /// Zero-copy train from a numpy array (shape [N, D]).
@@ -829,7 +830,7 @@ impl PyIvfIndex {
             None => arr.rows().into_iter().map(|r| r.iter().copied().collect()).collect(),
         };
         self.inner.train(&vecs, max_iter, seed)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+            .map_err(pyo3::exceptions::PyValueError::new_err)
     }
 
     /// Add a single vector; returns its global id.
@@ -955,7 +956,7 @@ impl PyIvfPqIndex {
     ) -> PyResult<()> {
         self.inner
             .train(&vectors, n_subspaces, n_centroids, max_iter, seed)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+            .map_err(pyo3::exceptions::PyValueError::new_err)
     }
 
     /// Zero-copy train from a numpy array (shape [N, D]).
@@ -974,7 +975,7 @@ impl PyIvfPqIndex {
             None => arr.rows().into_iter().map(|r| r.iter().copied().collect()).collect(),
         };
         self.inner.train(&vecs, n_subspaces, n_centroids, max_iter, seed)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+            .map_err(pyo3::exceptions::PyValueError::new_err)
     }
 
     /// Add a single vector; returns its global id.

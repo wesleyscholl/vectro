@@ -4,12 +4,12 @@ Verifies that supplying model_dir to auto_quantize() and Vectro.compress()
 correctly skips the statistical heuristic and applies the family-registered
 quantization method.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import numpy as np
-import pytest
 
 try:
     from tests._path_setup import ensure_repo_root_on_path
@@ -19,8 +19,7 @@ except ModuleNotFoundError:
 ensure_repo_root_on_path()
 
 from python.auto_quantize_api import auto_quantize  # noqa: E402
-from python.vectro import Vectro                    # noqa: E402
-from python.profiles import get_profile             # noqa: E402
+from python.vectro import Vectro  # noqa: E402
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
@@ -34,6 +33,7 @@ def _random_batch(n: int = 64, d: int = 128) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # auto_quantize() routing via model_dir
 # ---------------------------------------------------------------------------
+
 
 class TestAutoQuantizeModelDir:
     """auto_quantize(model_dir=...) must short-circuit the heuristic."""
@@ -88,9 +88,7 @@ class TestAutoQuantizeModelDir:
         """Registry-routed INT8 must meet the INT8 cosine floor (≥ 0.9999)."""
         vecs = _random_batch(n=128, d=384)
         result = auto_quantize(vecs, model_dir=FIXTURE_DIR / "gte")
-        assert result["cosine_sim"] >= 0.999, (
-            f"INT8 cosine {result['cosine_sim']:.6f} < 0.999 floor"
-        )
+        assert result["cosine_sim"] >= 0.999, f"INT8 cosine {result['cosine_sim']:.6f} < 0.999 floor"
 
     def test_tried_list_has_one_entry_for_known_family(self):
         """Fast path must produce exactly one entry in 'tried' (no wasted attempts)."""
@@ -102,6 +100,7 @@ class TestAutoQuantizeModelDir:
 # ---------------------------------------------------------------------------
 # Vectro.compress() routing via model_dir
 # ---------------------------------------------------------------------------
+
 
 class TestVectroCompressModelDir:
     """Vectro.compress(model_dir=...) must select the family-recommended method."""
@@ -152,7 +151,9 @@ class TestVectroCompressModelDir:
 # Public API export check
 # ---------------------------------------------------------------------------
 
+
 def test_get_profile_importable_from_package():
     from python import get_profile, QuantProfile  # noqa: F401
+
     assert callable(get_profile)
     assert isinstance(QuantProfile, type)

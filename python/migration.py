@@ -89,9 +89,7 @@ def inspect_artifact(path: Union[str, Path]) -> Dict[str, Any]:
     fields = list(data.files)
 
     format_version = int(data["storage_format_version"]) if "storage_format_version" in fields else 1
-    artifact_type = str(data["artifact_type"]) if "artifact_type" in fields else (
-        "batch" if "batch_size" in fields else "single"
-    )
+    artifact_type = str(data["artifact_type"]) if "artifact_type" in fields else ("batch" if "batch_size" in fields else "single")
 
     if artifact_type == "batch":
         n_vectors = int(data["batch_size"])
@@ -175,29 +173,20 @@ def validate_artifact(path: Union[str, Path]) -> Dict[str, Any]:
         if q.ndim != 2:
             errors.append(f"Expected quantized.ndim==2, got {q.ndim}")
         if q.shape[0] != info["n_vectors"]:
-            errors.append(
-                f"quantized rows ({q.shape[0]}) != batch_size ({info['n_vectors']})"
-            )
+            errors.append(f"quantized rows ({q.shape[0]}) != batch_size ({info['n_vectors']})")
     else:
         if q.ndim != 2:
             errors.append(f"Expected quantized.ndim==2, got {q.ndim}")
         if q.shape[0] != info["n_vectors"]:
-            errors.append(
-                f"quantized rows ({q.shape[0]}) != n ({info['n_vectors']})"
-            )
+            errors.append(f"quantized rows ({q.shape[0]}) != n ({info['n_vectors']})")
 
     if s.ndim not in (1, 2):
         errors.append(f"Unexpected scales.ndim={s.ndim}; expected 1 or 2")
     if s.ndim == 1 and s.shape[0] != info["n_vectors"]:
-        errors.append(
-            f"scales length ({s.shape[0]}) != n_vectors ({info['n_vectors']})"
-        )
+        errors.append(f"scales length ({s.shape[0]}) != n_vectors ({info['n_vectors']})")
 
     if info["format_version"] > _CURRENT_FORMAT_VERSION:
-        errors.append(
-            f"format_version {info['format_version']} exceeds current "
-            f"{_CURRENT_FORMAT_VERSION}; upgrade your Vectro installation."
-        )
+        errors.append(f"format_version {info['format_version']} exceeds current {_CURRENT_FORMAT_VERSION}; upgrade your Vectro installation.")
 
     return {"valid": len(errors) == 0, "errors": errors}
 
@@ -236,6 +225,7 @@ def upgrade_artifact(
     if not info["needs_upgrade"]:
         if not dry_run:
             import shutil
+
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
         return {
@@ -258,9 +248,7 @@ def upgrade_artifact(
     if "storage_format" not in arrays:
         arrays["storage_format"] = np.array(_STORAGE_FORMAT_NAME)
     if "artifact_type" not in arrays:
-        arrays["artifact_type"] = np.array(
-            "batch" if "batch_size" in arrays else "single"
-        )
+        arrays["artifact_type"] = np.array("batch" if "batch_size" in arrays else "single")
 
     migration_record = {
         "migrated_from_version": src_version,
@@ -306,8 +294,7 @@ def _cmd_inspect(args: list) -> int:
         description="Inspect a Vectro compressed artifact.",
     )
     parser.add_argument("path", help="Path to .npz artifact")
-    parser.add_argument("--json", action="store_true",
-                        help="Output machine-readable JSON")
+    parser.add_argument("--json", action="store_true", help="Output machine-readable JSON")
     ns = parser.parse_args(args)
 
     try:
@@ -346,8 +333,7 @@ def _cmd_upgrade(args: list) -> int:
     )
     parser.add_argument("src", help="Source artifact path")
     parser.add_argument("dst", help="Destination artifact path")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Validate without writing output")
+    parser.add_argument("--dry-run", action="store_true", help="Validate without writing output")
     ns = parser.parse_args(args)
 
     try:
@@ -363,11 +349,7 @@ def _cmd_upgrade(args: list) -> int:
     else:
         tag = " (already current)"
 
-    print(
-        f"{'Upgraded' if result['upgraded'] else 'Copied'}"
-        f" v{result['src_version']} → v{result['dst_version']}"
-        f"{tag}: {result['dst']}"
-    )
+    print(f"{'Upgraded' if result['upgraded'] else 'Copied'} v{result['src_version']} → v{result['dst_version']}{tag}: {result['dst']}")
     return 0
 
 
@@ -394,8 +376,7 @@ def _cmd_validate(args: list) -> int:
 def _main(argv: Optional[list] = None) -> None:
     argv = argv if argv is not None else sys.argv[1:]
     if not argv:
-        print("Usage: python -m python.migration <inspect|upgrade|validate> ...",
-              file=sys.stderr)
+        print("Usage: python -m python.migration <inspect|upgrade|validate> ...", file=sys.stderr)
         sys.exit(1)
 
     subcommand = argv[0]
@@ -407,8 +388,7 @@ def _main(argv: Optional[list] = None) -> None:
         "validate": _cmd_validate,
     }
     if subcommand not in dispatch:
-        print(f"Unknown subcommand: {subcommand!r}. "
-              "Choose from: inspect, upgrade, validate.", file=sys.stderr)
+        print(f"Unknown subcommand: {subcommand!r}. Choose from: inspect, upgrade, validate.", file=sys.stderr)
         sys.exit(1)
 
     sys.exit(dispatch[subcommand](rest))

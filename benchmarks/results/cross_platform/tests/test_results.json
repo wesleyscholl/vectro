@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-05-24T17:07:23.964319Z",
+  "timestamp": "2026-05-25T03:19:31.813906Z",
   "platform": {
     "os_type": "Linux",
     "os_version": "6.18.5",
     "architecture": "x86_64",
-    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
     "cpu_cores": 4,
-    "cpu_frequency_ghz": 2.799998,
+    "cpu_frequency_ghz": 2.1,
     "cpu_generation": null,
     "memory_gb": 15.7037353515625,
     "simd_capabilities": [
@@ -21,7 +21,7 @@
     "faiss_available": false,
     "numpy_version": "2.4.6",
     "python_version": "3.11.15",
-    "timestamp": "2026-05-24T17:07:22.808173Z"
+    "timestamp": "2026-05-25T03:19:30.876808Z"
   },
   "test_results": {
     "int8_throughput_floor_passed": true,

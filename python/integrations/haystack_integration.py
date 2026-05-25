@@ -34,6 +34,7 @@ Memory comparison (768-dim, 1M documents):
     INT8  (balanced)  :   784 MB  (3.9× reduction)
     NF4   (quality)   :   416 MB  (7.4× reduction)
 """
+
 from __future__ import annotations
 
 import threading
@@ -44,15 +45,13 @@ import numpy as np
 
 from ..retrieval.mmr import cosine_scores as _cosine_scores_fn, mmr_select as _mmr_select
 
-_HAYSTACK_ERROR = (
-    "haystack-ai is required for VectroDocumentStore. "
-    "Install with: pip install haystack-ai"
-)
+_HAYSTACK_ERROR = "haystack-ai is required for VectroDocumentStore. Install with: pip install haystack-ai"
 
 
 def _require_haystack() -> Any:
     try:
         from haystack.dataclasses import Document
+
         return Document
     except ImportError as exc:
         raise ImportError(_HAYSTACK_ERROR) from exc
@@ -103,16 +102,12 @@ class VectroDocumentStore:
     def _rebuild(self, new_embs: np.ndarray) -> None:
         """Append *new_embs* rows to the compressed store (caller holds lock)."""
         if self._compressed is None:
-            self._compressed = self._vectro.compress(
-                new_embs, profile=self._profile, model_dir=self._model_dir
-            )
+            self._compressed = self._vectro.compress(new_embs, profile=self._profile, model_dir=self._model_dir)
             self._n_dims = new_embs.shape[1]
         else:
             existing = self._compressed.reconstruct_batch()
             combined = np.vstack([existing, new_embs])
-            self._compressed = self._vectro.compress(
-                combined, profile=self._profile, model_dir=self._model_dir
-            )
+            self._compressed = self._vectro.compress(combined, profile=self._profile, model_dir=self._model_dir)
 
     def _cosine_scores(self, query_emb: np.ndarray) -> np.ndarray:
         return _cosine_scores_fn(query_emb, self._compressed.reconstruct_batch())
@@ -184,10 +179,7 @@ class VectroDocumentStore:
 
             if exists:
                 if policy == "fail":
-                    raise ValueError(
-                        f"Document with id={doc_id!r} already exists "
-                        "and policy='fail'."
-                    )
+                    raise ValueError(f"Document with id={doc_id!r} already exists and policy='fail'.")
                 if policy == "overwrite":
                     self._remove_by_id(doc_id)
                 else:  # "none" — skip
@@ -239,9 +231,7 @@ class VectroDocumentStore:
             for did in ids_set:
                 self._doc_store.pop(did, None)
             self._doc_ids = [self._doc_ids[i] for i in keep_idx]
-            self._compressed = self._vectro.compress(
-                kept_embs, profile=self._profile, model_dir=self._model_dir
-            )
+            self._compressed = self._vectro.compress(kept_embs, profile=self._profile, model_dir=self._model_dir)
 
     def get_documents_by_id(self, ids: List[str]) -> List[Any]:
         """Retrieve documents by id."""
@@ -284,10 +274,7 @@ class VectroDocumentStore:
             mat = self._compressed.reconstruct_batch() if return_embedding else None
 
         # Apply metadata filters before ranking
-        filtered_idx = [
-            i for i, did in enumerate(doc_ids)
-            if _matches_filters(doc_store.get(did), filters)
-        ]
+        filtered_idx = [i for i, did in enumerate(doc_ids) if _matches_filters(doc_store.get(did), filters)]
         if not filtered_idx:
             return []
 
@@ -348,19 +335,14 @@ class VectroDocumentStore:
             doc_ids = list(self._doc_ids)
             doc_store = dict(self._doc_store)
 
-        filtered_idx = [
-            i for i, did in enumerate(doc_ids)
-            if _matches_filters(doc_store.get(did), filters)
-        ]
+        filtered_idx = [i for i, did in enumerate(doc_ids) if _matches_filters(doc_store.get(did), filters)]
         if not filtered_idx:
             return []
 
         filtered_arr = np.array(filtered_idx)
         filtered_mat = mat[filtered_arr]
 
-        mmr_local = _mmr_select(
-            filtered_mat, q_arr, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult
-        )
+        mmr_local = _mmr_select(filtered_mat, q_arr, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult)
         mmr_global = filtered_arr[mmr_local]
         return [doc_store[doc_ids[i]] for i in mmr_global]
 
@@ -374,12 +356,16 @@ class VectroDocumentStore:
     ) -> List[Any]:
         """Non-blocking variant of :meth:`max_marginal_relevance_search`."""
         import asyncio
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
             lambda: self.max_marginal_relevance_search(
-                query_embedding, k=k, fetch_k=fetch_k,
-                lambda_mult=lambda_mult, filters=filters,
+                query_embedding,
+                k=k,
+                fetch_k=fetch_k,
+                lambda_mult=lambda_mult,
+                filters=filters,
             ),
         )
 
@@ -409,9 +395,7 @@ class VectroDocumentStore:
                 mat = self._compressed.reconstruct_batch()
 
             doc_ids = list(self._doc_ids)
-            docs_serial = {
-                did: _doc_to_dict(self._doc_store[did]) for did in doc_ids
-            }
+            docs_serial = {did: _doc_to_dict(self._doc_store[did]) for did in doc_ids}
 
         np.save(os.path.join(path, "vectors.npy"), mat)
         meta = {
@@ -441,9 +425,7 @@ class VectroDocumentStore:
             meta = json.load(fh)
 
         if meta.get("store_type") != "haystack":
-            raise ValueError(
-                f"meta.json store_type={meta.get('store_type')!r} is not 'haystack'."
-            )
+            raise ValueError(f"meta.json store_type={meta.get('store_type')!r} is not 'haystack'.")
 
         store = cls(
             compression_profile=meta["profile"],
@@ -459,9 +441,7 @@ class VectroDocumentStore:
                     store._doc_store[did] = _doc_from_dict(docs_serial[did])
                     store._doc_ids.append(did)
                 store._n_dims = meta["n_dims"]
-                store._compressed = store._vectro.compress(
-                    mat, profile=meta["profile"], model_dir=meta.get("model_dir")
-                )
+                store._compressed = store._vectro.compress(mat, profile=meta["profile"], model_dir=meta.get("model_dir"))
 
         return store
 
@@ -482,12 +462,11 @@ class VectroDocumentStore:
         asyncio event loop — safe for use in FastAPI / AIOHTTP handlers.
         """
         import asyncio
+
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
-            lambda: self.embedding_retrieval(
-                query_embedding, top_k, filters, return_embedding
-            ),
+            lambda: self.embedding_retrieval(query_embedding, top_k, filters, return_embedding),
         )
 
     async def async_write_documents(
@@ -501,10 +480,9 @@ class VectroDocumentStore:
             Number of documents successfully written.
         """
         import asyncio
+
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: self.write_documents(documents, policy)
-        )
+        return await loop.run_in_executor(None, lambda: self.write_documents(documents, policy))
 
     # ------------------------------------------------------------------
     # Vectro-specific helpers
@@ -518,8 +496,8 @@ class VectroDocumentStore:
             if n == 0 or self._compressed is None:
                 return {"n_documents": 0, "compression_ratio": 1.0}
             d = self._n_dims
-            original_mb = n * d * 4 / (1024 ** 2)
-            compressed_mb = self._compressed.total_compressed_bytes / (1024 ** 2)
+            original_mb = n * d * 4 / (1024**2)
+            compressed_mb = self._compressed.total_compressed_bytes / (1024**2)
             return {
                 "n_documents": n,
                 "dimensions": d,
@@ -538,23 +516,23 @@ class VectroDocumentStore:
         return len(self._doc_ids)
 
     def __repr__(self) -> str:
-        return (
-            f"VectroDocumentStore(n={len(self)}, profile={self._profile!r}, "
-            f"dims={self._n_dims})"
-        )
+        return f"VectroDocumentStore(n={len(self)}, profile={self._profile!r}, dims={self._n_dims})"
 
 
 # ---------------------------------------------------------------------------
 # Private helpers for Document manipulation without hard importing haystack
 # ---------------------------------------------------------------------------
 
+
 def _strip_embedding(doc: Any) -> Any:
     """Return a copy of *doc* with the embedding set to None."""
     try:
-        return doc.__class__(**{
-            **{k: getattr(doc, k) for k in doc.__dataclass_fields__},
-            "embedding": None,
-        })
+        return doc.__class__(
+            **{
+                **{k: getattr(doc, k) for k in doc.__dataclass_fields__},
+                "embedding": None,
+            }
+        )
     except Exception:
         return doc
 
@@ -562,10 +540,12 @@ def _strip_embedding(doc: Any) -> Any:
 def _clone_with_score(doc: Any, score: float) -> Any:
     """Return a copy of *doc* with the score set."""
     try:
-        return doc.__class__(**{
-            **{k: getattr(doc, k) for k in doc.__dataclass_fields__},
-            "score": score,
-        })
+        return doc.__class__(
+            **{
+                **{k: getattr(doc, k) for k in doc.__dataclass_fields__},
+                "score": score,
+            }
+        )
     except Exception:
         return doc
 
@@ -573,10 +553,12 @@ def _clone_with_score(doc: Any, score: float) -> Any:
 def _clone_with_embedding(doc: Any, embedding: List[float]) -> Any:
     """Return a copy of *doc* with the embedding set."""
     try:
-        return doc.__class__(**{
-            **{k: getattr(doc, k) for k in doc.__dataclass_fields__},
-            "embedding": embedding,
-        })
+        return doc.__class__(
+            **{
+                **{k: getattr(doc, k) for k in doc.__dataclass_fields__},
+                "embedding": embedding,
+            }
+        )
     except Exception:
         return doc
 
@@ -602,6 +584,7 @@ def _doc_from_dict(d: dict) -> Any:
     """Deserialize a Document from a plain dict."""
     try:
         from haystack.dataclasses import Document
+
         return Document(**{k: v for k, v in d.items() if k != "embedding"})
     except ImportError:
         return type("_Doc", (), d)()

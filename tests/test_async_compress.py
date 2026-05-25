@@ -1,10 +1,10 @@
 """Tests for Vectro.compress_async() and Vectro.decompress_async()."""
+
 from __future__ import annotations
 
 import asyncio
 
 import numpy as np
-import pytest
 
 try:
     from tests._path_setup import ensure_repo_root_on_path
@@ -13,9 +13,9 @@ except ModuleNotFoundError:
 
 ensure_repo_root_on_path()
 
-from python.vectro import Vectro                            # noqa: E402
-from python.batch_api import BatchQuantizationResult        # noqa: E402
-from python.interface import QuantizationResult             # noqa: E402
+from python.vectro import Vectro  # noqa: E402
+from python.batch_api import BatchQuantizationResult  # noqa: E402
+from python.interface import QuantizationResult  # noqa: E402
 
 RNG = np.random.default_rng(42)
 
@@ -31,6 +31,7 @@ def _single(d: int = 128) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # compress_async
 # ---------------------------------------------------------------------------
+
 
 class TestCompressAsync:
     def test_batch_compress_async(self):
@@ -92,6 +93,7 @@ class TestCompressAsync:
 
     def test_async_model_dir_forwarded(self):
         from pathlib import Path
+
         vectro = Vectro()
         vectors = _batch(n=16, d=64)
         model_dir = str(Path(__file__).parent / "fixtures" / "gte")
@@ -108,9 +110,7 @@ class TestCompressAsync:
         batches = [_batch(n=16, d=32) for _ in range(4)]
 
         async def _run():
-            return await asyncio.gather(*[
-                vectro.compress_async(b) for b in batches
-            ])
+            return await asyncio.gather(*[vectro.compress_async(b) for b in batches])
 
         results = asyncio.run(_run())
         assert len(results) == 4
@@ -122,6 +122,7 @@ class TestCompressAsync:
 # ---------------------------------------------------------------------------
 # decompress_async
 # ---------------------------------------------------------------------------
+
 
 class TestDecompressAsync:
     def test_batch_decompress_async(self):
@@ -164,9 +165,7 @@ class TestDecompressAsync:
         norms_a = np.linalg.norm(vectors, axis=1, keepdims=True) + 1e-10
         norms_b = np.linalg.norm(restored, axis=1, keepdims=True) + 1e-10
         cosines = ((vectors / norms_a) * (restored / norms_b)).sum(axis=1)
-        assert float(cosines.mean()) >= 0.9999, (
-            f"INT8 async roundtrip cosine {cosines.mean():.6f} < 0.9999 floor"
-        )
+        assert float(cosines.mean()) >= 0.9999, f"INT8 async roundtrip cosine {cosines.mean():.6f} < 0.9999 floor"
 
     def test_concurrent_compress_and_decompress(self):
         vectro = Vectro()

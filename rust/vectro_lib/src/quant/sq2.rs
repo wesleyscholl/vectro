@@ -43,7 +43,7 @@ impl Sq2Vector {
         let scale = if abs_max == 0.0 { 1.0 } else { abs_max };
         let inv = 1.0 / scale;
 
-        let n_bytes = (dim + 3) / 4;
+        let n_bytes = dim.div_ceil(4);
         let mut packed = vec![0u8; n_bytes];
 
         for (i, &x) in v.iter().enumerate() {

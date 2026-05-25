@@ -109,10 +109,7 @@ class HuggingFaceCompressor:
         try:
             transformers = importlib.import_module("transformers")
         except ImportError as exc:
-            raise RuntimeError(
-                "transformers is required for HuggingFaceCompressor. "
-                "Install with: pip install transformers"
-            ) from exc
+            raise RuntimeError("transformers is required for HuggingFaceCompressor. Install with: pip install transformers") from exc
 
         torch = importlib.import_module("torch")
 

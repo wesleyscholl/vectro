@@ -119,11 +119,11 @@ fn kmeans_lloyd(data: &[&[f32]], k: usize, d: usize, max_iter: usize, seed: u64)
             }
             counts[ki] += 1;
         }
-        for ki in 0..k {
-            if counts[ki] == 0 {
+        for (ki, &count) in counts[..k].iter().enumerate() {
+            if count == 0 {
                 continue;
             }
-            let inv = 1.0 / counts[ki] as f32;
+            let inv = 1.0 / count as f32;
             let start = ki * d;
             for s in &mut cents[start..start + d] {
                 *s *= 0.0; // reset

@@ -19,7 +19,7 @@ See also:
 from __future__ import annotations
 
 import platform
-from typing import Optional, Tuple
+from typing import Tuple
 
 import numpy as np
 
@@ -41,6 +41,7 @@ def simd_tier() -> str:
         return "neon"
     if "x86_64" in arch or "amd64" in arch:
         import platform as _p
+
         os_type = _p.system()
         if os_type == "Linux":
             try:
@@ -58,6 +59,7 @@ def simd_tier() -> str:
                 pass
         elif os_type == "Darwin":
             import subprocess
+
             for flag, name in [("hw.optional.avx512f", "avx512"), ("hw.optional.avx2_0", "avx2")]:
                 try:
                     r = subprocess.run(["sysctl", "-n", flag], capture_output=True, text=True, timeout=3)
@@ -97,10 +99,7 @@ def quantize_int8_batch(
     RuntimeError if the Rust extension is not installed.
     """
     if _vectro_py is None:
-        raise RuntimeError(
-            "vectro_py Rust extension not installed. "
-            "Build it with: cd rust && maturin develop --release"
-        )
+        raise RuntimeError("vectro_py Rust extension not installed. Build it with: cd rust && maturin develop --release")
     arr = np.ascontiguousarray(vectors, dtype=np.float32)
     was_1d = arr.ndim == 1
     if was_1d:
@@ -200,12 +199,10 @@ def benchmark_int8_throughput(
         raise RuntimeError("vectro_py Rust extension not installed.")
 
     rng = np.random.default_rng(42)
-    vectors = np.ascontiguousarray(
-        rng.standard_normal((n_vectors, dim)).astype(np.float32)
-    )
+    vectors = np.ascontiguousarray(rng.standard_normal((n_vectors, dim)).astype(np.float32))
 
     for _ in range(warmup):
-        _vectro_py.quantize_int8_batch(vectors[:min(1000, n_vectors)])
+        _vectro_py.quantize_int8_batch(vectors[: min(1000, n_vectors)])
 
     throughputs = []
     for _ in range(runs):
@@ -233,7 +230,4 @@ if __name__ == "__main__":
         print(f"SIMD tier: {simd_tier()}")
         for d in [128, 384, 768, 1536]:
             result = benchmark_int8_throughput(dim=d)
-            print(
-                f"  d={d:4d}: {result['mean_vec_per_sec']:>10.0f} ± "
-                f"{result['std_vec_per_sec']:>7.0f} vec/s  ({result['simd_tier']})"
-            )
+            print(f"  d={d:4d}: {result['mean_vec_per_sec']:>10.0f} ± {result['std_vec_per_sec']:>7.0f} vec/s  ({result['simd_tier']})")

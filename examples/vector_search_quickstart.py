@@ -17,7 +17,7 @@ import time
 
 import numpy as np
 
-VECTOR_DIM = 768    # BERT / MPNet output size
+VECTOR_DIM = 768  # BERT / MPNet output size
 N_DOCS = 2_000
 N_QUERIES = 10
 TOP_K = 5
@@ -40,7 +40,7 @@ print(f"Queries  : {N_QUERIES}")
 # ---------------------------------------------------------------------------
 # 2. Ground-truth nearest neighbours (exact, using float32)
 # ---------------------------------------------------------------------------
-similarity_matrix = dataset @ queries.T          # (N_DOCS, N_QUERIES)
+similarity_matrix = dataset @ queries.T  # (N_DOCS, N_QUERIES)
 ground_truth = np.argsort(-similarity_matrix, axis=0)[:TOP_K].T  # (N_QUERIES, TOP_K)
 
 # ---------------------------------------------------------------------------
@@ -77,10 +77,7 @@ for profile_name in profile_names:
         recall_total += len(gt_set & approx_set) / TOP_K
     recall = recall_total / N_QUERIES
 
-    print(
-        f"{profile_name:<12} {result.compression_ratio:>7.2f}× "
-        f"{cos_sim:>8.4f} {recall:>10.4f} {compress_ms:>8.1f}"
-    )
+    print(f"{profile_name:<12} {result.compression_ratio:>7.2f}× {cos_sim:>8.4f} {recall:>10.4f} {compress_ms:>8.1f}")
 
 # ---------------------------------------------------------------------------
 # 4. Streaming decompression
@@ -107,7 +104,7 @@ from python.migration import inspect_artifact, validate_artifact
 vectro.save_compressed(result, "/tmp/vector_search_demo.npz")
 
 info = inspect_artifact("/tmp/vector_search_demo.npz")
-print(f"\n--- Artifact: /tmp/vector_search_demo.npz ---")
+print("\n--- Artifact: /tmp/vector_search_demo.npz ---")
 print(f"Format version : v{info['format_version']}")
 print(f"Vectors        : {info['n_vectors']:,} × {info['vector_dim']}")
 print(f"Precision mode : {info['precision_mode']}")

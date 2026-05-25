@@ -21,7 +21,8 @@ from typing import List
 import numpy as np
 
 try:
-    from vectro_py import PyBf16Encoder as _PyBf16Encoder    # type: ignore
+    from vectro_py import PyBf16Encoder as _PyBf16Encoder  # type: ignore
+
     _BINDINGS_AVAILABLE = True
 except ImportError:  # pragma: no cover
     _BINDINGS_AVAILABLE = False
@@ -46,10 +47,7 @@ class Bf16Encoder:
 
     def __init__(self) -> None:
         if not _BINDINGS_AVAILABLE:
-            raise ImportError(
-                "vectro_py is required.  Build it with `maturin develop` or "
-                "`pip install vectro` first."
-            )
+            raise ImportError("vectro_py is required.  Build it with `maturin develop` or `pip install vectro` first.")
         self._inner = _PyBf16Encoder()
 
     # ------------------------------------------------------------------

@@ -31,28 +31,26 @@ Memory comparison (768-dim, 1M vectors):
     INT8  (balanced)  :   784 MB  (3.9× reduction)
     NF4   (quality)   :   416 MB  (7.4× reduction)
 """
+
 from __future__ import annotations
 
 import asyncio
 import threading
 import uuid
-from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Iterable, List, Optional, Tuple
 
 import numpy as np
 
 from ..retrieval.mmr import cosine_scores as _cosine_scores_fn, mmr_select as _mmr_select
 
-_LANGCHAIN_ERROR = (
-    "langchain-core is required for VectroVectorStore. "
-    "Install with: pip install langchain-core"
-)
+_LANGCHAIN_ERROR = "langchain-core is required for VectroVectorStore. Install with: pip install langchain-core"
 
 
 def _require_langchain() -> Any:
     try:
         import langchain_core.vectorstores as _vs
         import langchain_core.documents as _docs
+
         return _vs, _docs
     except ImportError as exc:
         raise ImportError(_LANGCHAIN_ERROR) from exc
@@ -93,7 +91,7 @@ class VectroVectorStore:
         self._texts: List[str] = []
         self._metadatas: List[dict] = []
         # Compressed storage: rebuilt on every add/delete
-        self._compressed: Any = None          # BatchQuantizationResult | None
+        self._compressed: Any = None  # BatchQuantizationResult | None
         self._n_dims: int = 0
 
     # ------------------------------------------------------------------
@@ -275,9 +273,7 @@ class VectroVectorStore:
             k: Number of results to return.
             filter: Optional metadata equality filter.
         """
-        return [doc for doc, _ in self.similarity_search_by_vector_with_score(
-            embedding, k=k, filter=filter
-        )]
+        return [doc for doc, _ in self.similarity_search_by_vector_with_score(embedding, k=k, filter=filter)]
 
     def similarity_search_by_vector_with_score(
         self,
@@ -376,9 +372,7 @@ class VectroVectorStore:
         **kwargs: Any,
     ) -> List[str]:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: self.add_texts(list(texts), metadatas=metadatas, ids=ids)
-        )
+        return await loop.run_in_executor(None, lambda: self.add_texts(list(texts), metadatas=metadatas, ids=ids))
 
     async def aadd_documents(
         self,
@@ -397,9 +391,7 @@ class VectroVectorStore:
         **kwargs: Any,
     ) -> List[Any]:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: self.similarity_search(query, k=k, filter=filter)
-        )
+        return await loop.run_in_executor(None, lambda: self.similarity_search(query, k=k, filter=filter))
 
     async def asimilarity_search_with_score(
         self,
@@ -409,9 +401,7 @@ class VectroVectorStore:
         **kwargs: Any,
     ) -> List[Tuple[Any, float]]:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: self.similarity_search_with_score(query, k=k, filter=filter)
-        )
+        return await loop.run_in_executor(None, lambda: self.similarity_search_with_score(query, k=k, filter=filter))
 
     async def asimilarity_search_by_vector(
         self,
@@ -422,9 +412,7 @@ class VectroVectorStore:
     ) -> List[Any]:
         """Async similarity search by pre-computed embedding."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: self.similarity_search_by_vector(embedding, k=k, filter=filter)
-        )
+        return await loop.run_in_executor(None, lambda: self.similarity_search_by_vector(embedding, k=k, filter=filter))
 
     # ------------------------------------------------------------------
     # Max Marginal Relevance (MMR)
@@ -456,11 +444,7 @@ class VectroVectorStore:
         Returns:
             List of :class:`Document` objects in MMR-selected order.
         """
-        return [
-            doc for doc, _ in self.max_marginal_relevance_search_with_score(
-                query, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult, filter=filter
-            )
-        ]
+        return [doc for doc, _ in self.max_marginal_relevance_search_with_score(query, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult, filter=filter)]
 
     def max_marginal_relevance_search_with_score(
         self,
@@ -522,9 +506,7 @@ class VectroVectorStore:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
-            lambda: self.max_marginal_relevance_search(
-                query, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult, filter=filter
-            ),
+            lambda: self.max_marginal_relevance_search(query, k=k, fetch_k=fetch_k, lambda_mult=lambda_mult, filter=filter),
         )
 
     # ------------------------------------------------------------------
@@ -592,9 +574,7 @@ class VectroVectorStore:
             meta = json.load(fh)
 
         if meta.get("store_type") != "langchain":
-            raise ValueError(
-                f"meta.json store_type={meta.get('store_type')!r} is not 'langchain'."
-            )
+            raise ValueError(f"meta.json store_type={meta.get('store_type')!r} is not 'langchain'.")
 
         store = cls(
             embedding=embedding,
@@ -678,17 +658,15 @@ class VectroVectorStore:
             if n == 0 or self._compressed is None:
                 return {"n_vectors": 0, "compression_ratio": 1.0}
             d = self._n_dims
-            original_mb = n * d * 4 / (1024 ** 2)
-            compressed_mb = self._compressed.total_compressed_bytes / (1024 ** 2)
+            original_mb = n * d * 4 / (1024**2)
+            compressed_mb = self._compressed.total_compressed_bytes / (1024**2)
             return {
                 "n_vectors": n,
                 "dimensions": d,
                 "compression_profile": self._profile,
                 "original_mb": round(original_mb, 3),
                 "compressed_mb": round(compressed_mb, 3),
-                "compression_ratio": round(
-                    self._compressed.compression_ratio, 2
-                ),
+                "compression_ratio": round(self._compressed.compression_ratio, 2),
                 "memory_saved_mb": round(original_mb - compressed_mb, 3),
             }
 
@@ -696,7 +674,4 @@ class VectroVectorStore:
         return len(self._ids)
 
     def __repr__(self) -> str:
-        return (
-            f"VectroVectorStore(n={len(self)}, profile={self._profile!r}, "
-            f"dims={self._n_dims})"
-        )
+        return f"VectroVectorStore(n={len(self)}, profile={self._profile!r}, dims={self._n_dims})"

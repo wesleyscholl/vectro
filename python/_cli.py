@@ -55,9 +55,7 @@ def main() -> None:
         py_main()
     except ImportError:
         print(
-            "error: vectro_cli binary not found and Python CLI fallback is "
-            "unavailable.\n"
-            "Build the Rust binary with:  cargo build --release -p vectro_cli",
+            "error: vectro_cli binary not found and Python CLI fallback is unavailable.\nBuild the Rust binary with:  cargo build --release -p vectro_cli",
             file=sys.stderr,
         )
         sys.exit(1)

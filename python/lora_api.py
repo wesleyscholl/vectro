@@ -31,7 +31,7 @@ Usage
 from __future__ import annotations
 
 import warnings
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
@@ -51,6 +51,7 @@ _RQ_MIN_ROWS = 32
 # Result container
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class LoRAResult:
     """Compressed LoRA adapter matrices for a single target module.
@@ -67,6 +68,7 @@ class LoRAResult:
     cosine_sim_A  : per-row mean cosine similarity of A reconstruction
     cosine_sim_B  : per-row mean cosine similarity of B reconstruction
     """
+
     profile: str
     rank: int
     target_module: str
@@ -79,16 +81,14 @@ class LoRAResult:
 
     def __repr__(self) -> str:
         return (
-            f"LoRAResult(profile={self.profile!r}, rank={self.rank}, "
-            f"module={self.target_module!r}, "
-            f"A={self.A_shape}, B={self.B_shape}, "
-            f"cos_A={self.cosine_sim_A:.4f}, cos_B={self.cosine_sim_B:.4f})"
+            f"LoRAResult(profile={self.profile!r}, rank={self.rank}, module={self.target_module!r}, A={self.A_shape}, B={self.B_shape}, cos_A={self.cosine_sim_A:.4f}, cos_B={self.cosine_sim_B:.4f})"
         )
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _validate_lora_pair(A: np.ndarray, B: np.ndarray) -> None:
     """Validate shape, dtype, and rank consistency of an A/B pair."""
@@ -101,9 +101,7 @@ def _validate_lora_pair(A: np.ndarray, B: np.ndarray) -> None:
     if B.dtype != np.float32:
         raise ValueError(f"B must be float32, got {B.dtype}")
     if A.shape[0] != B.shape[1]:
-        raise ValueError(
-            f"Rank mismatch: A.shape[0]={A.shape[0]} != B.shape[1]={B.shape[1]}"
-        )
+        raise ValueError(f"Rank mismatch: A.shape[0]={A.shape[0]} != B.shape[1]={B.shape[1]}")
 
 
 def _compress_matrix_nf4(mat: np.ndarray) -> Dict[str, Any]:
@@ -116,7 +114,8 @@ def _compress_matrix_nf4(mat: np.ndarray) -> Dict[str, Any]:
         packed, scales = quantize_nf4(mat)
     except (RuntimeError, OSError):
         # Mojo binary reported available but failed — use NumPy path directly.
-        from .nf4_api import NF4_LEVELS, _NF4_THRESHOLDS
+        from .nf4_api import _NF4_THRESHOLDS
+
         n, d = mat.shape
         scales_2d = np.abs(mat).max(axis=1, keepdims=True)
         scales = scales_2d.ravel().copy()
@@ -136,6 +135,7 @@ def _decompress_matrix_nf4(data: Dict[str, Any]) -> np.ndarray:
         return dequantize_nf4(data["packed"], data["scales"], data["d"])
     except (RuntimeError, OSError):
         from .nf4_api import NF4_LEVELS
+
         packed, scales, d = data["packed"], data["scales"], data["d"]
         n = packed.shape[0]
         out = np.empty((n, d), dtype=np.float32)
@@ -160,6 +160,7 @@ def _compress_matrix_int8(mat: np.ndarray) -> Dict[str, Any]:
 
 def _decompress_matrix_int8(data: Dict[str, Any]) -> np.ndarray:
     from .interface import QuantizationResult
+
     qr = QuantizationResult(
         quantized=data["quantized"],
         scales=data["scales"],
@@ -185,6 +186,7 @@ def _decompress_matrix_rq(data: Dict[str, Any], rq: ResidualQuantizer) -> np.nda
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
 
 def compress_lora(
     A: np.ndarray,
@@ -212,9 +214,7 @@ def compress_lora(
     K-means codebook fitting.
     """
     if profile not in _VALID_LORA_PROFILES:
-        raise ValueError(
-            f"Unknown profile {profile!r}. Valid: {sorted(_VALID_LORA_PROFILES)}"
-        )
+        raise ValueError(f"Unknown profile {profile!r}. Valid: {sorted(_VALID_LORA_PROFILES)}")
     _validate_lora_pair(A, B)
 
     rank = A.shape[0]
@@ -223,9 +223,7 @@ def compress_lora(
     # RQ fallback: if either matrix has too few rows, drop to NF4
     if profile == "lora-rq" and (rank < _RQ_MIN_ROWS or B.shape[0] < _RQ_MIN_ROWS):
         warnings.warn(
-            f"lora-rq requires >= {_RQ_MIN_ROWS} rows for stable codebook fitting; "
-            f"A has {rank} rows, B has {B.shape[0]} rows. "
-            "Falling back to lora-nf4.",
+            f"lora-rq requires >= {_RQ_MIN_ROWS} rows for stable codebook fitting; A has {rank} rows, B has {B.shape[0]} rows. Falling back to lora-nf4.",
             UserWarning,
             stacklevel=2,
         )
@@ -253,15 +251,11 @@ def compress_lora(
     if A.shape[0] > 1:
         cos_A = float(mean_cosine_similarity(A, A_recon))
     else:
-        cos_A = float(nf4_cosine_sim(A, A_recon)) if effective_profile == "lora-nf4" else float(
-            mean_cosine_similarity(A, A_recon)
-        )
+        cos_A = float(nf4_cosine_sim(A, A_recon)) if effective_profile == "lora-nf4" else float(mean_cosine_similarity(A, A_recon))
     if B.shape[0] > 1:
         cos_B = float(mean_cosine_similarity(B, B_recon))
     else:
-        cos_B = float(nf4_cosine_sim(B, B_recon)) if effective_profile == "lora-nf4" else float(
-            mean_cosine_similarity(B, B_recon)
-        )
+        cos_B = float(nf4_cosine_sim(B, B_recon)) if effective_profile == "lora-nf4" else float(mean_cosine_similarity(B, B_recon))
 
     return LoRAResult(
         profile=effective_profile,
@@ -327,7 +321,4 @@ def compress_lora_adapter(
     >>> for name, result in compressed.items():
     ...     print(name, result)
     """
-    return {
-        module_name: compress_lora(A, B, profile=profile, target_module=module_name)
-        for module_name, (A, B) in adapter.items()
-    }
+    return {module_name: compress_lora(A, B, profile=profile, target_module=module_name) for module_name, (A, B) in adapter.items()}
