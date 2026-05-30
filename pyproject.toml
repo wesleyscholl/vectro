@@ -88,6 +88,8 @@ bench-ann = [
     "hnswlib>=0.8.0",
     "annoy>=1.17.3",
     "usearch>=2.9.0",
+    "faiss-cpu>=1.7.4",
+    "h5py>=3.9",
     "requests>=2.31",
     "tqdm>=4.0",
 ]
@@ -123,6 +125,8 @@ all = [
     "hnswlib>=0.8.0",
     "annoy>=1.17.3",
     "usearch>=2.9.0",
+    "faiss-cpu>=1.7.4",
+    "h5py>=3.9",
     "requests>=2.31",
 ]
 
