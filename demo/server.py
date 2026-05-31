@@ -28,6 +28,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import socketserver
 import sys
 import threading
@@ -35,7 +36,7 @@ import time
 import types
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -470,6 +471,336 @@ def _api_filtered_search(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Multi-index registry  (named HNSWIndex instances, created on demand)
+# ─────────────────────────────────────────────────────────────────────────
+
+_INDEXES: Dict[str, HNSWIndex]          = {}
+_INDEXES_META: Dict[str, Dict[str, Any]] = {}   # creation params + timestamps
+_INDEXES_LOCK = threading.Lock()
+
+_INDEX_ROUTE_RE = re.compile(
+    r"^/api/indexes(?:/(?P<name>[A-Za-z0-9_.\-]{1,64})(?:/(?P<action>[a-z_]+))?)?$"
+)
+
+# ── PCA / k-means (numpy-only, no sklearn) ──────────────────────────────
+
+def _pca_2d(vectors: np.ndarray) -> np.ndarray:
+    """Project (n, d) float32 matrix to 2-D via SVD.  Returns (n, 2)."""
+    mu = vectors.mean(axis=0)
+    c  = vectors - mu
+    _, _, Vt = np.linalg.svd(c, full_matrices=False)
+    return (c @ Vt[:2].T).astype(np.float32)
+
+
+def _kmeans(coords: np.ndarray, k: int, n_iter: int = 15) -> Tuple[np.ndarray, np.ndarray]:
+    """Simple Lloyd's k-means on (n, 2) coords.  Returns (labels, centers)."""
+    n = len(coords)
+    k = min(k, n)
+    rng = np.random.default_rng(seed=42)
+    centers = coords[rng.choice(n, k, replace=False)].copy().astype(np.float64)
+    labels  = np.zeros(n, dtype=np.int32)
+    for _ in range(n_iter):
+        dists  = np.linalg.norm(coords[:, None].astype(np.float64) - centers[None], axis=2)
+        labels = dists.argmin(axis=1).astype(np.int32)
+        for ki in range(k):
+            mask = labels == ki
+            if mask.any():
+                centers[ki] = coords[mask].astype(np.float64).mean(axis=0)
+    return labels, centers.astype(np.float32)
+
+
+# ── Index CRUD handlers ──────────────────────────────────────────────────
+
+def _idx_list() -> Dict[str, Any]:
+    with _INDEXES_LOCK:
+        result = []
+        for name, idx in _INDEXES.items():
+            s = idx.stats()
+            meta = _INDEXES_META.get(name, {})
+            result.append({
+                "name":           name,
+                "n_alive":        s["n_alive"],
+                "n_total":        s["n_total"],
+                "n_deleted":      s["n_deleted"],
+                "M":              idx.M,
+                "ef_construction": idx.ef_construction,
+                "space":          idx.space,
+                "dim":            meta.get("dim", 0),
+                "created_at":     meta.get("created_at", ""),
+            })
+    return {"indexes": result}
+
+
+def _idx_create(name: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    if not re.match(r"^[A-Za-z0-9_.\-]{1,64}$", name):
+        raise ValueError(f"invalid index name: {name!r}")
+    M                = max(4, min(int(body.get("M", 16)), 64))
+    ef_construction  = max(M, min(int(body.get("ef_construction", 200)), 500))
+    space            = str(body.get("space", "cosine"))
+    if space not in ("cosine", "l2"):
+        raise ValueError(f"space must be 'cosine' or 'l2', got {space!r}")
+    with _INDEXES_LOCK:
+        if name in _INDEXES:
+            raise ValueError(f"index {name!r} already exists; DELETE it first")
+        idx = HNSWIndex(M=M, ef_construction=ef_construction, space=space)
+        _INDEXES[name] = idx
+        _INDEXES_META[name] = {
+            "dim": int(body.get("dim", 0)),
+            "ef_construction": ef_construction,
+            "M": M,
+            "space": space,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+    return {"name": name, "M": M, "ef_construction": ef_construction, "space": space}
+
+
+def _idx_delete(name: str) -> Dict[str, Any]:
+    with _INDEXES_LOCK:
+        if name not in _INDEXES:
+            raise KeyError(f"index {name!r} not found")
+        _INDEXES.pop(name)
+        _INDEXES_META.pop(name, None)
+    return {"deleted": name}
+
+
+def _idx_stats(name: str) -> Dict[str, Any]:
+    with _INDEXES_LOCK:
+        if name not in _INDEXES:
+            raise KeyError(f"index {name!r} not found")
+        s    = _INDEXES[name].stats()
+        meta = _INDEXES_META.get(name, {})
+    return {**s, **meta, "name": name}
+
+
+def _idx_add(name: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Add vectors to a named index.
+    Body: {vectors: [[…], …], ids?: [str, …], metadata?: [{…}, …]}
+    """
+    with _INDEXES_LOCK:
+        if name not in _INDEXES:
+            raise KeyError(f"index {name!r} not found")
+        idx = _INDEXES[name]
+
+    raw_vecs = body.get("vectors") or []
+    if not raw_vecs:
+        raise ValueError("vectors must be a non-empty list")
+    vecs = np.asarray(raw_vecs, dtype=np.float32)
+    if vecs.ndim == 1:
+        vecs = vecs[np.newaxis, :]
+    if vecs.ndim != 2:
+        raise ValueError("vectors must be 1-D or 2-D")
+
+    ids_raw  = body.get("ids")
+    meta_raw = body.get("metadata")
+    ids_list: Optional[List[str]] = [str(x) for x in ids_raw] if ids_raw else None
+    meta_list: Optional[List[Optional[Dict[str, Any]]]] = (
+        [m if isinstance(m, dict) else None for m in meta_raw]
+        if meta_raw else None
+    )
+
+    t0 = time.perf_counter()
+    with _INDEXES_LOCK:
+        # Update stored dim on first add
+        if _INDEXES_META.get(name, {}).get("dim", 0) == 0:
+            _INDEXES_META[name]["dim"] = vecs.shape[1]
+        r = idx.add_batch(vecs, ids=ids_list, metadata=meta_list)
+    elapsed = time.perf_counter() - t0
+
+    return {**r, "timing_ms": round(elapsed * 1000, 2)}
+
+
+def _idx_search(name: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    """kNN search in a named index.
+    Body: {vector: [f32, …], k?: int, ef?: int, filter?: {…}, trace?: bool}
+    """
+    with _INDEXES_LOCK:
+        if name not in _INDEXES:
+            raise KeyError(f"index {name!r} not found")
+        idx = _INDEXES[name]
+
+    if not idx._vectors:
+        return {"results": [], "timing_ms": 0.0, "k": 0}
+
+    vec_raw = body.get("vector")
+    if vec_raw is None:
+        # Random vector matching the stored dimension
+        d   = idx._vectors[0].shape[0]
+        rng = np.random.default_rng()
+        q   = rng.standard_normal(d).astype(np.float32)
+    else:
+        q = np.asarray(vec_raw, dtype=np.float32)
+
+    k     = max(1, min(int(body.get("k", 10)), max(1, len(idx) - len(idx._deleted))))
+    ef    = max(k, int(body.get("ef", 64)))
+    filt  = body.get("filter") or None
+    if filt and not isinstance(filt, dict):
+        filt = None
+
+    t0 = time.perf_counter()
+    with _INDEXES_LOCK:
+        result = idx.search(q, k=k, ef=ef, filter=filt, trace=bool(body.get("trace")))
+    elapsed = time.perf_counter() - t0
+
+    if len(result) == 3:
+        indices, distances, tr = result
+        trace_data = {
+            "entry_point":          tr.entry_point,
+            "layer_descents":       tr.layer_descents,
+            "l0_visited":           tr.l0_visited,
+            "l0_candidates_final":  [(float(d), int(n)) for d, n in tr.l0_candidates_final],
+        }
+    else:
+        indices, distances = result
+        trace_data = None
+
+    hits = []
+    with _INDEXES_LOCK:
+        for nid, dist in zip(indices.tolist(), distances.tolist()):
+            meta = idx._metadata[nid] if nid < len(idx._metadata) else {}
+            hits.append({
+                "id":         int(nid),
+                "distance":   round(float(dist), 5),
+                "similarity": round(max(0.0, 1.0 - float(dist)), 5),
+                "metadata":   meta or {},
+            })
+
+    resp = {"results": hits, "k": k, "timing_ms": round(elapsed * 1000, 3)}
+    if trace_data is not None:
+        resp["trace"] = trace_data
+    return resp
+
+
+def _idx_benchmark(name: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    """Measure kNN search latency distribution.
+    Body: {k?: int, ef?: int, n_queries?: int, warmup?: int}
+    """
+    with _INDEXES_LOCK:
+        if name not in _INDEXES:
+            raise KeyError(f"index {name!r} not found")
+        idx = _INDEXES[name]
+        n_vecs = max(1, len(idx._vectors) - len(idx._deleted))
+
+    if n_vecs == 0:
+        return {"error": "index is empty"}
+
+    d         = idx._vectors[0].shape[0]
+    k         = max(1, min(int(body.get("k", 10)), n_vecs))
+    ef        = max(k, int(body.get("ef", 64)))
+    n_queries = max(10, min(int(body.get("n_queries", 200)), 2000))
+    warmup    = max(0,  min(int(body.get("warmup", 5)), 20))
+
+    rng = np.random.default_rng(seed=0)
+    queries = rng.standard_normal((n_queries + warmup, d)).astype(np.float32)
+
+    # Warmup
+    for i in range(warmup):
+        with _INDEXES_LOCK:
+            idx.search(queries[i], k=k, ef=ef)
+
+    # Timed runs
+    latencies_ms: List[float] = []
+    for i in range(warmup, n_queries + warmup):
+        t0 = time.perf_counter()
+        with _INDEXES_LOCK:
+            idx.search(queries[i], k=k, ef=ef)
+        latencies_ms.append((time.perf_counter() - t0) * 1000)
+
+    lats = sorted(latencies_ms)
+    n = len(lats)
+
+    def pct(p: float) -> float:
+        idx_f = (p / 100) * (n - 1)
+        lo, hi = int(idx_f), min(int(idx_f) + 1, n - 1)
+        return round(lats[lo] + (lats[hi] - lats[lo]) * (idx_f - lo), 4)
+
+    mean_ms = round(sum(lats) / n, 4)
+    qps     = round(1000 / mean_ms if mean_ms > 0 else float("inf"), 1)
+
+    # Recall estimate on small sample
+    recall_r = None
+    try:
+        sample = min(20, n_vecs - 1)
+        if sample > 1:
+            with _INDEXES_LOCK:
+                rr = idx.estimate_recall(sample_size=sample, k=k, ef=ef)
+            recall_r = round(rr["recall"], 4)
+    except Exception:
+        pass
+
+    return {
+        "n_queries":   n_queries,
+        "k":           k,
+        "ef":          ef,
+        "n_vectors":   n_vecs,
+        "dim":         d,
+        "p50_ms":      pct(50),
+        "p95_ms":      pct(95),
+        "p99_ms":      pct(99),
+        "mean_ms":     mean_ms,
+        "min_ms":      round(lats[0], 4),
+        "max_ms":      round(lats[-1], 4),
+        "qps":         qps,
+        "recall_k":    recall_r,
+    }
+
+
+def _idx_project(name: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    """PCA-project stored vectors to 2D.  Returns {points: [{id, x, y, meta}]}."""
+    with _INDEXES_LOCK:
+        if name not in _INDEXES:
+            raise KeyError(f"index {name!r} not found")
+        idx = _INDEXES[name]
+        alive = [i for i in range(len(idx._vectors)) if i not in idx._deleted]
+        if len(alive) < 2:
+            return {"points": [], "n": 0}
+        vecs = np.stack([idx._vectors[i] for i in alive], axis=0)
+        metas = [idx._metadata[i] if i < len(idx._metadata) else {} for i in alive]
+
+    t0     = time.perf_counter()
+    coords = _pca_2d(vecs)
+    elapsed = time.perf_counter() - t0
+
+    # Normalise to [-1, 1] for consistent canvas rendering
+    mx = np.abs(coords).max()
+    if mx > 0:
+        coords = coords / mx
+
+    points = [
+        {
+            "id":    int(alive[i]),
+            "x":     round(float(coords[i, 0]), 5),
+            "y":     round(float(coords[i, 1]), 5),
+            "meta":  metas[i] or {},
+        }
+        for i in range(len(alive))
+    ]
+    return {"points": points, "n": len(points), "timing_ms": round(elapsed * 1000, 2)}
+
+
+def _idx_cluster(name: str, body: Dict[str, Any]) -> Dict[str, Any]:
+    """k-means cluster the projected 2D coords.
+    Requires a prior call to /project to get the coords, or does it inline.
+    Returns {labels: [int, …], centers: [[x,y], …]}.
+    """
+    k = max(2, min(int(body.get("k", 4)), 12))
+    proj = _idx_project(name, body)
+    if not proj["points"]:
+        return {"labels": [], "centers": [], "k": k}
+
+    coords = np.array([[p["x"], p["y"]] for p in proj["points"]], dtype=np.float32)
+    labels, centers = _kmeans(coords, k=k)
+    return {
+        "points": [
+            {**pt, "cluster": int(labels[i])}
+            for i, pt in enumerate(proj["points"])
+        ],
+        "centers": [[round(float(c[0]), 5), round(float(c[1]), 5)] for c in centers],
+        "k":       k,
+        "n":       len(proj["points"]),
+    }
+
+
 ROUTES_POST: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "/api/compress":         _api_compress,
     "/api/search":           _api_search,
@@ -526,15 +857,83 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _read_body(self) -> Dict[str, Any]:
+        n = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(n) if n > 0 else b""
+        return json.loads(raw.decode("utf-8")) if raw else {}
+
+    def _dispatch_index_route(self, method: str, path: str) -> bool:
+        """Try to handle a /api/indexes/... route.  Return True if handled."""
+        m = _INDEX_ROUTE_RE.match(path)
+        if not m:
+            return False
+        name   = m.group("name")
+        action = m.group("action")
+
+        try:
+            if method == "GET":
+                if name is None:
+                    self._send_json(_idx_list())
+                else:
+                    self._send_json(_idx_stats(name))
+
+            elif method == "POST":
+                body = self._read_body()
+                if name is None:
+                    # POST /api/indexes  — create, name comes from body
+                    iname = str(body.get("name", "")).strip()
+                    if not iname:
+                        raise ValueError("body must contain 'name'")
+                    self._send_json(_idx_create(iname, body))
+                elif action == "add":
+                    self._send_json(_idx_add(name, body))
+                elif action == "search":
+                    self._send_json(_idx_search(name, body))
+                elif action == "benchmark":
+                    self._send_json(_idx_benchmark(name, body))
+                elif action == "project":
+                    self._send_json(_idx_project(name, body))
+                elif action == "cluster":
+                    self._send_json(_idx_cluster(name, body))
+                elif action is None:
+                    # POST /api/indexes/{name}  — also valid for create
+                    self._send_json(_idx_create(name, body))
+                else:
+                    self._send_json({"error": f"unknown action: {action}"}, status=404)
+
+            elif method == "DELETE":
+                if name is None:
+                    self._send_json({"error": "DELETE requires index name"}, status=400)
+                else:
+                    self._send_json(_idx_delete(name))
+
+            else:
+                return False
+
+        except (KeyError, ValueError) as exc:
+            code = 404 if isinstance(exc, KeyError) else 400
+            self._send_json({"error": str(exc)}, status=code)
+        except Exception as exc:
+            self._send_json({"error": str(exc)}, status=500)
+
+        return True
+
     def do_OPTIONS(self) -> None:        # noqa: N802
         self.send_response(204)
         self._send_cors()
         self.end_headers()
 
+    def do_DELETE(self) -> None:         # noqa: N802
+        path = self.path.split("?", 1)[0]
+        if not self._dispatch_index_route("DELETE", path):
+            self._send_json({"error": f"not found: {path}"}, status=404)
+
     def do_GET(self) -> None:            # noqa: N802
         path = self.path.split("?", 1)[0]
         if path == "/" or path == "/index.html":
             self._send_html(INDEX_HTML)
+            return
+        if self._dispatch_index_route("GET", path):
             return
         if path in ROUTES_GET:
             try:
@@ -546,14 +945,14 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:           # noqa: N802
         path = self.path.split("?", 1)[0]
+        if self._dispatch_index_route("POST", path):
+            return
         handler = ROUTES_POST.get(path)
         if handler is None:
             self._send_json({"error": f"not found: {path}"}, status=404)
             return
         try:
-            n = int(self.headers.get("Content-Length") or "0")
-            raw = self.rfile.read(n) if n > 0 else b""
-            body = json.loads(raw.decode("utf-8")) if raw else {}
+            body = self._read_body()
         except Exception as exc:
             self._send_json({"error": f"bad json: {exc}"}, status=400)
             return

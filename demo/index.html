@@ -3,2165 +3,1254 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Vectro — Search millions of AI embeddings in milliseconds</title>
-<meta name="description" content="Vectro shrinks AI fingerprints up to 13× while keeping search results just as accurate. Drop-in adapters for LangChain, LlamaIndex, Haystack, and DSPy." />
+<title>Vectro — Vector Database Studio</title>
 <style>
-  /* ─────────────────────── design tokens ─────────────────────── */
-  :root {
-    --bg:        #06070d;
-    --bg-2:      #0b0d18;
-    --panel:     #11142022;
-    --panel-2:   #0f1320;
-    --line:      #1d2235;
-    --line-2:    #2a3050;
-    --text:      #e9ecf6;
-    --text-dim:  #98a0b6;
-    --text-mute: #5e6478;
+/* ── reset & tokens ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:          #060612;
+  --panel:       #0d0d20;
+  --panel-2:     #11112a;
+  --line:        rgba(124,58,237,0.18);
+  --line-dim:    rgba(255,255,255,0.07);
+  --accent:      #7c3aed;
+  --accent-glow: rgba(124,58,237,0.22);
+  --accent-2:    #22d3ee;
+  --green:       #10b981;
+  --red:         #ef4444;
+  --warn:        #f59e0b;
+  --text:        #e2e8f0;
+  --text-dim:    #8892a4;
+  --text-muted:  #4a5568;
+  --mono:        ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans:        -apple-system, "Inter", "Segoe UI", system-ui, sans-serif;
+  --ease:        cubic-bezier(0.23, 1, 0.32, 1);
+  --r:           10px;
+  --r-sm:        6px;
+}
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); overflow: hidden; }
 
-    --accent:    #c084fc;     /* purple */
-    --accent-2:  #22d3ee;     /* cyan   */
-    --accent-3:  #4ade80;     /* green  */
-    --accent-4:  #facc15;     /* gold   */
-    --accent-5:  #f472b6;     /* pink   */
-    --accent-6:  #fb923c;     /* orange */
+/* ── scrollable inner panels ────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
 
-    --grad: linear-gradient(135deg,#c084fc 0%,#22d3ee 60%,#4ade80 100%);
-    --grad-warm: linear-gradient(135deg,#facc15 0%,#fb923c 60%,#f472b6 100%);
-    --shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 30px 60px -30px rgba(0,0,0,0.7);
+/* ── app shell ──────────────────────────────────────────────────────── */
+#app { display: flex; flex-direction: column; height: 100vh; }
 
-    --mono: ui-monospace,"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
-    --font: -apple-system,BlinkMacSystemFont,"Inter","Segoe UI",system-ui,sans-serif;
+/* ── top bar ─────────────────────────────────────────────────────────── */
+#topbar {
+  display: flex; align-items: center; gap: 24px;
+  padding: 0 28px; height: 52px; flex-shrink: 0;
+  border-bottom: 1px solid var(--line-dim);
+  background: rgba(6,6,18,0.9); backdrop-filter: blur(10px);
+  z-index: 50;
+}
+.logo { font-weight: 800; letter-spacing: 0.18em; font-size: 14px; color: var(--text); }
+.logo span { color: var(--accent); }
+.logo sup { font-size: 8px; color: var(--text-dim); letter-spacing: 0; }
 
-    --tooltip-bg: #0a0c14;
-    --tooltip-line: #2a3050;
+/* ── tab bar ─────────────────────────────────────────────────────────── */
+#tabs { display: flex; gap: 4px; margin-left: auto; }
+.tab {
+  font-size: 12.5px; font-weight: 600; letter-spacing: 0.04em;
+  padding: 6px 14px; border-radius: 999px;
+  border: none; background: transparent; color: var(--text-dim);
+  cursor: pointer; transition: color .15s, background .15s;
+  position: relative;
+}
+.tab:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+.tab.active { color: var(--accent); background: var(--accent-glow); }
 
-    --ease: cubic-bezier(.2,.8,.2,1);
-  }
+/* ── status pill ─────────────────────────────────────────────────────── */
+#status-pill {
+  display: flex; align-items: center; gap: 7px;
+  font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+  padding: 4px 12px; border-radius: 999px;
+  border: 1px solid var(--line-dim);
+}
+#status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); transition: background .4s; }
+#status-dot.online { background: var(--green); box-shadow: 0 0 0 3px rgba(16,185,129,.2); animation: pulse-dot 2s ease-in-out infinite; }
+#status-dot.error  { background: var(--red); }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.5} }
 
-  *, *::before, *::after { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
-  body {
-    font-family: var(--font);
-    background: var(--bg);
-    color: var(--text);
-    -webkit-font-smoothing: antialiased;
-    line-height: 1.55;
-    overflow-x: hidden;
-  }
+/* ── main content area ───────────────────────────────────────────────── */
+#main { flex: 1; overflow: hidden; display: flex; }
+.panel { display: none; flex: 1; overflow-y: auto; padding: 24px 28px 40px; }
+.panel.active { display: block; animation: panel-in .22s var(--ease); }
+@keyframes panel-in { from { opacity:0; transform: translateY(12px); } to { opacity:1; transform: translateY(0); } }
 
-  /* ambient particles canvas behind hero */
-  #particles {
-    position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  }
+/* ── layout helpers ──────────────────────────────────────────────────── */
+.row { display: flex; gap: 16px; }
+.col { flex: 1; min-width: 0; }
+h2 { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: var(--text); margin-bottom: 4px; }
+h3 { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px; }
+p.sub { font-size: 13px; color: var(--text-dim); margin-bottom: 20px; line-height: 1.6; }
 
-  /* radial wash + grid */
-  body::before {
-    content: ""; position: fixed; inset: -20% -20% auto -20%;
-    height: 110vh; pointer-events: none; z-index: 0;
-    background:
-      radial-gradient(60% 40% at 18% 5%, rgba(192,132,252,0.18), transparent 60%),
-      radial-gradient(50% 35% at 82% 0%, rgba(34,211,238,0.13), transparent 60%),
-      radial-gradient(40% 30% at 50% 80%, rgba(74,222,128,0.10), transparent 60%);
-  }
-  .grid-bg {
-    position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0.32;
-    background-image:
-      linear-gradient(to right, rgba(255,255,255,0.025) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(255,255,255,0.025) 1px, transparent 1px);
-    background-size: 32px 32px;
-    mask-image: linear-gradient(to bottom, black 0%, transparent 90%);
-  }
+/* ── cards ───────────────────────────────────────────────────────────── */
+.card {
+  background: var(--panel); border: 1px solid var(--line-dim);
+  border-radius: var(--r); padding: 18px 20px;
+  transition: border-color .2s;
+}
+.card:hover { border-color: var(--line); }
+.card + .card { margin-top: 14px; }
 
-  /* everything content sits above the canvas */
-  nav, main, footer { position: relative; z-index: 2; }
+/* ── forms ───────────────────────────────────────────────────────────── */
+.field { margin-bottom: 12px; }
+.field label { display: block; font-size: 11.5px; font-weight: 600; color: var(--text-dim); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 5px; }
+.field input, .field select, .field textarea {
+  width: 100%; padding: 8px 11px;
+  background: var(--panel-2); border: 1px solid var(--line-dim);
+  border-radius: var(--r-sm); color: var(--text);
+  font-family: var(--mono); font-size: 12.5px;
+  transition: border-color .15s;
+  outline: none;
+}
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
+.field textarea { resize: vertical; min-height: 64px; }
+.field select option { background: var(--panel); }
 
-  .container { max-width: 1180px; margin: 0 auto; padding: 0 24px; }
+/* ── buttons ─────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 16px; border-radius: var(--r-sm);
+  font-size: 12.5px; font-weight: 600; letter-spacing: 0.03em;
+  border: 1px solid var(--line-dim); background: var(--panel);
+  color: var(--text); cursor: pointer;
+  transition: transform .12s var(--ease), background .15s, border-color .15s;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--panel-2); border-color: var(--line); }
+.btn:active { transform: scale(0.96); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: #6d28d9; }
+.btn.danger { color: var(--red); border-color: rgba(239,68,68,.3); }
+.btn.danger:hover { background: rgba(239,68,68,.1); border-color: var(--red); }
+.btn.sm { padding: 5px 10px; font-size: 11.5px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
-  /* ───────────────────────── nav ───────────────────────── */
-  nav {
-    position: sticky; top: 0; z-index: 100;
-    background: rgba(7,8,13,0.75);
-    backdrop-filter: blur(14px);
-    border-bottom: 1px solid var(--line);
-  }
-  nav .row {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 0;
-  }
-  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800;
-          letter-spacing: 0.16em; font-size: 13px; }
-  .logo-mark {
-    width: 28px; height: 28px; border-radius: 7px;
-    background: var(--grad);
-    display: grid; place-items: center;
-    color: #0a0b14; font-weight: 900; font-size: 14px;
-    box-shadow: 0 0 0 1px rgba(255,255,255,0.08), 0 10px 30px -10px rgba(192,132,252,0.55);
-  }
-  .links { display: flex; gap: 26px; font-size: 13px; color: var(--text-dim); }
-  .links a { color: inherit; text-decoration: none; transition: color .15s; }
-  .links a:hover { color: var(--text); }
-  .badge-version {
-    font-family: var(--mono); font-size: 11px; color: var(--accent-2);
-    border: 1px solid rgba(34,211,238,0.3);
-    border-radius: 999px; padding: 4px 10px;
-  }
+/* ── badges / tags ───────────────────────────────────────────────────── */
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.badge.green  { background: rgba(16,185,129,.15); color: var(--green); }
+.badge.purple { background: var(--accent-glow); color: #a78bfa; }
+.badge.blue   { background: rgba(34,211,238,.12); color: var(--accent-2); }
+.badge.amber  { background: rgba(245,158,11,.15); color: var(--warn); }
 
-  /* ───────────────────────── hero ───────────────────────── */
-  .hero {
-    padding: 96px 0 60px;
-    position: relative;
-    text-align: left;
-  }
-  .hero h1 {
-    font-size: clamp(64px, 10vw, 144px);
-    line-height: 0.92;
-    margin: 0 0 18px;
-    letter-spacing: -0.05em;
-    font-weight: 900;
-    background: var(--grad);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    filter: drop-shadow(0 0 28px rgba(192,132,252,0.25));
-    animation: glow-cycle 6s ease-in-out infinite;
-  }
-  @keyframes glow-cycle {
-    0%,100% { filter: drop-shadow(0 0 24px rgba(192,132,252,0.25)); }
-    50%     { filter: drop-shadow(0 0 36px rgba(34,211,238,0.35)); }
-  }
-  .tagline {
-    font-size: clamp(20px, 2.4vw, 32px);
-    line-height: 1.25;
-    color: var(--text);
-    font-weight: 500;
-    max-width: 880px;
-    margin: 0 0 8px;
-    letter-spacing: -0.01em;
-  }
-  .tagline .pop {
-    background: var(--grad-warm);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    font-weight: 700;
-  }
-  .sub {
-    font-size: 17px; color: var(--text-dim);
-    max-width: 720px; margin: 16px 0 32px;
-  }
-  .eyebrow {
-    display: inline-flex; align-items: center; gap: 8px;
-    font-family: var(--mono); font-size: 12px; letter-spacing: 0.18em;
-    color: var(--accent); text-transform: uppercase;
-    border: 1px solid rgba(192,132,252,0.3);
-    border-radius: 999px; padding: 5px 12px;
-    background: rgba(192,132,252,0.06);
-    margin-bottom: 24px;
-  }
-  .eyebrow .dot {
-    width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
-    box-shadow: 0 0 0 4px rgba(192,132,252,0.18);
-    animation: pulse 1.6s ease-in-out infinite;
-  }
-  @keyframes pulse {
-    0%,100% { opacity: 1; transform: scale(1); }
-    50%     { opacity: 0.55; transform: scale(1.45); }
-  }
+/* ── tables ──────────────────────────────────────────────────────────── */
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th { font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line-dim); }
+td { padding: 9px 10px; border-bottom: 1px solid rgba(255,255,255,.04); color: var(--text); font-family: var(--mono); }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(124,58,237,.06); }
+.num { text-align: right; }
 
-  .cta-row { display: flex; gap: 14px; flex-wrap: wrap; }
-  .btn {
-    display: inline-flex; align-items: center; gap: 10px;
-    padding: 14px 22px; border-radius: 11px;
-    font-weight: 600; font-size: 14px; letter-spacing: 0.005em;
-    border: 1px solid var(--line); background: var(--panel-2);
-    color: var(--text); text-decoration: none;
-    transition: transform .2s var(--ease), border-color .2s, background .2s;
-    cursor: pointer;
-  }
-  .btn:hover { transform: translateY(-2px); border-color: rgba(192,132,252,0.5); }
-  .btn.primary {
-    border: 1px solid transparent;
-    background: var(--grad);
-    color: #0a0b14;
-    font-weight: 800;
-    box-shadow: 0 16px 40px -16px rgba(192,132,252,0.6);
-  }
-  .btn.primary:hover { transform: translateY(-2px) scale(1.01); }
+/* ── stats grid ─────────────────────────────────────────────────────── */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+.stat-cell { background: var(--panel-2); border: 1px solid var(--line-dim); border-radius: var(--r-sm); padding: 12px 14px; }
+.stat-cell .v { font-family: var(--mono); font-size: 20px; font-weight: 700; letter-spacing: -0.02em; color: #a78bfa; }
+.stat-cell .l { font-size: 10.5px; color: var(--text-muted); margin-top: 3px; letter-spacing: 0.06em; text-transform: uppercase; }
 
-  /* hero stat strip */
-  .hero-stats {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px;
-    margin-top: 64px; padding-top: 36px;
-    border-top: 1px solid var(--line);
-  }
-  @media (max-width: 720px) { .hero-stats { grid-template-columns: repeat(2, 1fr); } }
-  .stat .num {
-    font-family: var(--mono); font-size: clamp(26px, 3.4vw, 42px);
-    font-weight: 800; letter-spacing: -0.02em;
-    background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  .stat.featured .num {
-    background: var(--grad-warm);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-    text-shadow: 0 0 28px rgba(250,204,21,0.18);
-    animation: featured-pulse 3.5s ease-in-out infinite;
-  }
-  @keyframes featured-pulse {
-    0%,100% { filter: drop-shadow(0 0 0 rgba(250,204,21,0)); }
-    50%     { filter: drop-shadow(0 0 14px rgba(250,204,21,0.45)); }
-  }
-  .stat .lbl {
-    font-size: 12px; color: var(--text-mute); letter-spacing: 0.12em;
-    text-transform: uppercase; margin-top: 4px;
-  }
+/* ── shimmer skeleton ────────────────────────────────────────────────── */
+.skeleton { background: linear-gradient(90deg, var(--panel) 25%, var(--panel-2) 50%, var(--panel) 75%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; border-radius: var(--r-sm); }
+@keyframes shimmer { to { background-position: -200% 0; } }
 
-  /* ─────────────────── section header ─────────────────── */
-  section { padding: 96px 0; position: relative; }
-  .section-eyebrow {
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.22em;
-    color: var(--accent-2); text-transform: uppercase; margin: 0 0 12px;
-  }
-  .section-title {
-    font-size: clamp(28px, 3vw, 44px);
-    letter-spacing: -0.02em; font-weight: 800;
-    margin: 0 0 16px; line-height: 1.1;
-  }
-  .section-lede {
-    color: var(--text-dim); font-size: 17px; max-width: 720px;
-    margin: 0 0 44px;
-  }
+/* ── result rows ─────────────────────────────────────────────────────── */
+.result-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 10px 14px; border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: var(--panel-2); margin-bottom: 6px;
+  opacity: 0; transform: translateX(-12px);
+  transition: opacity .25s var(--ease), transform .25s var(--ease), border-color .15s;
+}
+.result-row.in { opacity: 1; transform: translateX(0); }
+.result-row:hover { border-color: var(--line); }
+.result-rank { font-family: var(--mono); font-size: 11px; color: var(--accent); width: 22px; flex-shrink: 0; padding-top: 2px; }
+.result-body { flex: 1; font-size: 13px; }
+.result-score { font-family: var(--mono); font-size: 11px; color: var(--text-dim); padding-top: 2px; }
 
-  /* ─────────────────── what / explainer ─────────────────── */
-  .explain {
-    display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px; align-items: center;
-  }
-  @media (max-width: 920px) { .explain { grid-template-columns: 1fr; } }
-  .explain p { color: var(--text-dim); font-size: 16px; }
-  .explain p strong { color: var(--text); }
-  .pipeline-svg { width: 100%; height: auto; }
+/* ── distance histogram ─────────────────────────────────────────────── */
+.hist-bar { display: flex; align-items: center; gap: 8px; margin: 3px 0; font-size: 11px; font-family: var(--mono); color: var(--text-dim); }
+.hist-track { flex: 1; height: 6px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
+.hist-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 999px; transition: width .5s var(--ease); width: 0; }
 
-  /* ─────────────────── feature cards ─────────────────── */
-  .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-  @media (max-width: 920px) { .features { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 600px) { .features { grid-template-columns: 1fr; } }
-  .card {
-    border: 1px solid var(--line);
-    background: linear-gradient(180deg, var(--panel-2) 0%, #0c0f1c 100%);
-    border-radius: 16px; padding: 26px;
-    box-shadow: var(--shadow);
-    transition: transform .25s var(--ease), border-color .2s;
-  }
-  .card:hover { transform: translateY(-3px); border-color: rgba(192,132,252,0.32); }
-  .card .icon {
-    width: 44px; height: 44px; border-radius: 11px;
-    display: grid; place-items: center;
-    background: rgba(192,132,252,0.1);
-    border: 1px solid rgba(192,132,252,0.18);
-    margin-bottom: 16px;
-  }
-  .card h3 { margin: 0 0 6px; font-size: 17px; letter-spacing: -0.005em; }
-  .card p { margin: 0; color: var(--text-dim); font-size: 14px; line-height: 1.55; }
-  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; }
-  .chip {
-    font-family: var(--mono); font-size: 11px;
-    background: rgba(34,211,238,0.06);
-    border: 1px solid rgba(34,211,238,0.18);
-    color: var(--accent-2);
-    border-radius: 6px; padding: 3px 8px;
-  }
-  .chip.m { color: var(--accent); border-color: rgba(192,132,252,0.22); background: rgba(192,132,252,0.06); }
-  .chip.g { color: var(--accent-3); border-color: rgba(74,222,128,0.22); background: rgba(74,222,128,0.06); }
-  .chip.y { color: var(--accent-4); border-color: rgba(250,204,21,0.22); background: rgba(250,204,21,0.06); }
+/* ── benchmark charts ────────────────────────────────────────────────── */
+.bench-chart { display: flex; align-items: flex-end; gap: 8px; height: 140px; padding: 12px 0 0; }
+.bench-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; }
+.bench-bar-track { flex: 1; width: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
+.bench-bar { background: linear-gradient(to top, var(--accent), #a78bfa); border-radius: 4px 4px 0 0; width: 100%; height: 0; transition: height .7s var(--ease); box-shadow: 0 -4px 20px -4px rgba(124,58,237,.5); }
+.bench-label { font-family: var(--mono); font-size: 10px; color: var(--text-muted); text-align: center; }
+.bench-val { font-family: var(--mono); font-size: 12px; color: var(--text-dim); text-align: center; }
 
-  /* ─────────────────── why vectro / use cases ─────────────────── */
-  .use-cases { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
-  @media (max-width: 920px) { .use-cases { grid-template-columns: 1fr; } }
-  .uc {
-    border: 1px solid var(--line);
-    background: linear-gradient(180deg, var(--panel-2), #0a0c16);
-    border-radius: 18px;
-    padding: 28px;
-    position: relative;
-    overflow: hidden;
-    transition: transform .25s var(--ease);
-  }
-  .uc:hover { transform: translateY(-4px); }
-  .uc::before {
-    content: ""; position: absolute; inset: 0;
-    background: radial-gradient(80% 40% at 0% 0%, var(--uc-glow, rgba(192,132,252,0.12)), transparent 60%);
-    pointer-events: none;
-  }
-  .uc h3 { margin: 14px 0 6px; font-size: 19px; letter-spacing: -0.01em; }
-  .uc p { color: var(--text-dim); font-size: 14.5px; margin: 0; }
-  .uc .ucnum {
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em;
-    color: var(--accent-2); text-transform: uppercase;
-    display: block; margin-bottom: 6px;
-  }
-  .uc-icon { width: 56px; height: 56px; }
-  .uc-saved {
-    margin-top: 18px; padding-top: 14px;
-    border-top: 1px dashed var(--line-2);
-    color: var(--accent-3); font-family: var(--mono); font-size: 12.5px;
-  }
+/* ── big metric ─────────────────────────────────────────────────────── */
+.big-metric { text-align: center; padding: 24px 0; }
+.big-metric .v { font-family: var(--mono); font-size: 46px; font-weight: 800; letter-spacing: -0.04em; background: linear-gradient(135deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.big-metric .l { font-size: 12px; color: var(--text-dim); margin-top: 4px; letter-spacing: 0.1em; text-transform: uppercase; }
 
-  /* ─────────────────── compression calculator ─────────────────── */
-  .calc {
-    display: grid; grid-template-columns: 380px 1fr; gap: 36px;
-    background: linear-gradient(180deg, var(--panel-2) 0%, #0c0f1c 100%);
-    border: 1px solid var(--line);
-    border-radius: 20px;
-    padding: 36px;
-    box-shadow: var(--shadow);
-  }
-  @media (max-width: 880px) { .calc { grid-template-columns: 1fr; } }
+/* ── recall ring ─────────────────────────────────────────────────────── */
+.recall-ring-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 0; }
+.recall-ring-wrap .pct { font-family: var(--mono); font-size: 28px; font-weight: 700; color: var(--text); }
+.recall-ring-wrap .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); }
 
-  .control { margin-bottom: 22px; }
-  .control label {
-    display: flex; justify-content: space-between; align-items: baseline;
-    font-size: 13px; color: var(--text-dim); margin-bottom: 10px;
-  }
-  .control label .v {
-    font-family: var(--mono); font-size: 14px; color: var(--accent-2);
-    background: rgba(34,211,238,0.05);
-    padding: 1px 8px; border-radius: 5px;
-  }
-  input[type="range"] {
-    -webkit-appearance: none; appearance: none;
-    width: 100%; height: 6px; border-radius: 999px;
-    background: var(--line); outline: none;
-  }
-  input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none; appearance: none;
-    width: 18px; height: 18px; border-radius: 50%;
-    background: var(--grad); cursor: pointer;
-    border: 2px solid #0a0c12;
-    box-shadow: 0 0 0 1px rgba(192,132,252,0.6), 0 8px 24px -8px rgba(192,132,252,0.7);
-  }
-  input[type="range"]::-moz-range-thumb {
-    width: 18px; height: 18px; border-radius: 50%;
-    background: linear-gradient(135deg,#c084fc,#22d3ee);
-    cursor: pointer; border: 2px solid #0a0c12;
-  }
-  .preset-row { display: flex; flex-wrap: wrap; gap: 6px; }
-  .preset {
-    font-family: var(--mono); font-size: 11px;
-    background: var(--bg-2); border: 1px solid var(--line);
-    color: var(--text-dim); padding: 5px 9px; border-radius: 6px;
-    cursor: pointer; transition: all .12s var(--ease);
-  }
-  .preset:hover { border-color: rgba(34,211,238,0.4); color: var(--text); }
-  .preset.active {
-    background: rgba(34,211,238,0.08); border-color: rgba(34,211,238,0.45);
-    color: var(--accent-2);
-  }
+/* ── canvas scatter ─────────────────────────────────────────────────── */
+#scatter-wrap { position: relative; background: var(--panel-2); border: 1px solid var(--line-dim); border-radius: var(--r); overflow: hidden; }
+#scatter-canvas { display: block; cursor: crosshair; }
+#scatter-tooltip {
+  position: absolute; pointer-events: none; z-index: 10;
+  background: rgba(13,13,32,.92); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 8px 12px;
+  font-family: var(--mono); font-size: 11px; color: var(--text);
+  backdrop-filter: blur(8px);
+  transition: opacity .12s; opacity: 0;
+  max-width: 220px;
+}
+#scatter-tooltip.vis { opacity: 1; }
 
-  .bars { display: flex; flex-direction: column; gap: 14px; }
-  .bar-row {
-    display: grid; grid-template-columns: 110px 1fr 130px; align-items: center; gap: 14px;
-  }
-  .bar-label { font-family: var(--mono); font-size: 13px; }
-  .bar-label .pname { color: var(--text); display: block; }
-  .bar-label .palg { color: var(--text-mute); font-size: 11px; }
-  .bar-track {
-    position: relative; height: 30px;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid var(--line);
-    border-radius: 8px; overflow: hidden;
-  }
-  .bar-fill {
-    position: absolute; inset: 0 auto 0 0;
-    background: var(--grad);
-    border-radius: 8px;
-    box-shadow: 0 0 24px -4px rgba(192,132,252,0.55);
-  }
-  .bar-fill.alt-1 { background: linear-gradient(135deg,#22d3ee,#4ade80); }
-  .bar-fill.alt-2 { background: linear-gradient(135deg,#facc15,#fb923c); }
-  .bar-fill.alt-3 { background: linear-gradient(135deg,#c084fc,#f472b6); }
-  .bar-fill.alt-original { background: linear-gradient(135deg,#4b5563,#6b7280); }
-  .bar-text { font-family: var(--mono); font-size: 13px; text-align: right; color: var(--text); }
-  .bar-text .saved { color: var(--accent-3); font-size: 11px; display: block; }
+/* ── toast ───────────────────────────────────────────────────────────── */
+#toasts { position: fixed; top: 64px; right: 20px; z-index: 100; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.toast {
+  padding: 10px 16px; border-radius: var(--r-sm);
+  font-size: 12.5px; font-weight: 600; border-left: 3px solid;
+  backdrop-filter: blur(12px); max-width: 340px;
+  animation: toast-in .25s var(--ease);
+  transition: opacity .3s, transform .3s;
+}
+.toast.success { background: rgba(16,185,129,.15); border-color: var(--green); color: var(--green); }
+.toast.error   { background: rgba(239,68,68,.15);  border-color: var(--red);   color: var(--red);   }
+.toast.info    { background: var(--accent-glow);   border-color: var(--accent); color: #a78bfa; }
+@keyframes toast-in { from { opacity:0; transform: translateX(20px); } }
+.toast.out { opacity:0; transform: translateX(20px); }
 
-  .summary {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 22px;
-  }
-  .summary-cell {
-    border: 1px solid var(--line); border-radius: 11px; padding: 14px;
-    background: var(--bg-2);
-  }
-  .summary-cell .v {
-    font-family: var(--mono); font-weight: 800;
-    background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
-    font-size: 22px; letter-spacing: -0.01em;
-  }
-  .summary-cell .l { font-size: 11px; color: var(--text-mute); letter-spacing: 0.12em;
-                     text-transform: uppercase; margin-top: 4px; }
+/* ── spinner ─────────────────────────────────────────────────────────── */
+.spin { display: inline-block; width: 13px; height: 13px; border: 2px solid rgba(124,58,237,.3); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ─────────────────── live throughput counter ─────────────────── */
-  .speed-panel {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 22px;
-    margin-top: 24px;
-    border: 1px solid var(--line); border-radius: 14px;
-    padding: 22px;
-    background: linear-gradient(180deg, rgba(34,211,238,0.04), rgba(192,132,252,0.04));
-  }
-  @media (max-width: 600px) { .speed-panel { grid-template-columns: 1fr; } }
-  .speed-cell .label {
-    font-family: var(--mono); font-size: 11px; color: var(--text-mute);
-    text-transform: uppercase; letter-spacing: 0.16em;
-  }
-  .speed-cell .number {
-    font-family: var(--mono); font-size: 36px; font-weight: 800; letter-spacing: -0.01em;
-    color: var(--text); margin-top: 4px;
-    line-height: 1;
-  }
-  .speed-cell .number.glow {
-    background: var(--grad-warm); -webkit-background-clip: text; background-clip: text;
-    color: transparent;
-    filter: drop-shadow(0 0 18px rgba(250,204,21,0.45));
-  }
-  .speed-cell .unit { color: var(--text-dim); font-size: 13px; margin-left: 6px; }
-  .speed-cell .delta {
-    color: var(--accent-3); font-family: var(--mono); font-size: 12px; margin-top: 6px;
-  }
+/* ── gauge (linear, liquid wave) ─────────────────────────────────────── */
+.gauge-track { height: 10px; border-radius: 999px; background: rgba(255,255,255,.06); overflow: hidden; position: relative; margin: 8px 0; }
+.gauge-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .8s var(--ease); width: 0; }
 
-  /* ─────────────────── platform toggle ─────────────────── */
-  .platforms {
-    display: inline-flex;
-    background: var(--bg-2); border: 1px solid var(--line);
-    border-radius: 10px; padding: 4px; gap: 4px;
-    margin: 0 0 22px;
-  }
-  .platforms button {
-    background: transparent; border: 0;
-    color: var(--text-dim);
-    font-family: var(--mono); font-size: 12px;
-    padding: 7px 14px; border-radius: 7px; cursor: pointer;
-    transition: all .15s var(--ease);
-  }
-  .platforms button:hover { color: var(--text); }
-  .platforms button.active {
-    background: rgba(192,132,252,0.14);
-    color: var(--accent);
-    box-shadow: inset 0 0 0 1px rgba(192,132,252,0.32);
-  }
+/* ── tag cloud for index panel ───────────────────────────────────────── */
+.kv-row { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px solid var(--line-dim); }
+.kv-row:last-child { border-bottom: none; }
+.kv-row .k { color: var(--text-dim); font-family: var(--mono); }
+.kv-row .v { color: var(--text); font-family: var(--mono); }
 
-  /* ─────────────────── search demo panel ─────────────────── */
-  .search-panel {
-    border: 1px solid var(--line); border-radius: 18px; overflow: hidden;
-    background: linear-gradient(180deg, var(--panel-2) 0%, #0a0c14 100%);
-    box-shadow: var(--shadow);
-  }
-  .search-bar {
-    padding: 18px;
-    display: flex; gap: 10px; align-items: center;
-    border-bottom: 1px solid var(--line);
-  }
-  .search-bar svg { flex: 0 0 auto; opacity: 0.6; }
-  .search-bar input {
-    background: transparent; border: 0; outline: none;
-    flex: 1 1 auto; color: var(--text); font-size: 16px;
-    padding: 8px 4px;
-  }
-  .search-bar input::placeholder { color: var(--text-mute); }
-  .search-bar .go {
-    background: var(--grad);
-    color: #0a0b14; font-weight: 700;
-    border: 0; padding: 9px 16px; border-radius: 8px; cursor: pointer;
-    font-family: var(--font); font-size: 13px;
-    transition: transform .15s var(--ease);
-  }
-  .search-bar .go:hover { transform: translateY(-1px); }
-  .search-suggest { display: flex; gap: 6px; padding: 0 18px 14px; flex-wrap: wrap; }
-  .search-suggest button {
-    font-family: var(--mono); font-size: 11px;
-    color: var(--text-dim); background: var(--bg-2);
-    border: 1px solid var(--line); border-radius: 6px;
-    padding: 5px 9px; cursor: pointer;
-    transition: all .12s var(--ease);
-  }
-  .search-suggest button:hover { color: var(--text); border-color: rgba(34,211,238,0.4); }
+/* ── grid ────────────────────────────────────────────────────────────── */
+.g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.g3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+.g3 .c3 { grid-column: span 3; }
+@media (max-width: 900px) { .g2, .g3 { grid-template-columns: 1fr; } .g3 .c3 { grid-column: span 1; } }
 
-  .search-stage {
-    display: grid; grid-template-columns: 1.05fr 1fr; gap: 0;
-  }
-  @media (max-width: 880px) { .search-stage { grid-template-columns: 1fr; } }
-  .search-stage > div { padding: 22px; }
-  .search-stage .map { border-right: 1px solid var(--line); }
-  @media (max-width: 880px) { .search-stage .map { border-right: 0; border-bottom: 1px solid var(--line); } }
+/* ── accordion ───────────────────────────────────────────────────────── */
+.acc-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 10px 0; user-select: none; }
+.acc-header:hover { color: var(--accent); }
+.acc-chevron { font-size: 10px; transition: transform .2s; }
+.acc-header.open .acc-chevron { transform: rotate(90deg); }
+.acc-body { display: none; padding-bottom: 10px; }
+.acc-header.open + .acc-body { display: block; }
 
-  .map-svg { width: 100%; aspect-ratio: 1; max-height: 420px; }
-  .map-dot { transition: r .25s var(--ease), filter .25s; }
-  .map-dot.match { filter: drop-shadow(0 0 8px var(--accent-2)); }
-  .map-dot.hover { r: 8; }
+/* ── range input ─────────────────────────────────────────────────────── */
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 999px; background: var(--panel-2); border: none; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid var(--bg); box-shadow: 0 0 0 2px rgba(124,58,237,.4); }
 
-  .results-list { display: flex; flex-direction: column; gap: 8px; }
-  .result-row {
-    display: grid; grid-template-columns: 28px 1fr 80px; gap: 10px; align-items: center;
-    padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px;
-    background: var(--bg-2);
-    opacity: 0; transform: translateX(8px);
-    transition: opacity .35s var(--ease), transform .35s var(--ease), border-color .15s;
-  }
-  .result-row.in { opacity: 1; transform: translateX(0); }
-  .result-row .rank { color: var(--text-mute); font-family: var(--mono); font-size: 13px; }
-  .result-row .text { color: var(--text); font-size: 14px; line-height: 1.35; }
-  .result-row .score {
-    font-family: var(--mono); font-size: 12px; color: var(--accent-2);
-    text-align: right;
-  }
+/* ── empty state ─────────────────────────────────────────────────────── */
+.empty { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 13px; }
+.empty .icon { font-size: 28px; margin-bottom: 10px; }
 
-  /* ─────────────────── recall scatter ─────────────────── */
-  .scatter-wrap {
-    background: linear-gradient(180deg, var(--panel-2) 0%, #0a0c14 100%);
-    border: 1px solid var(--line); border-radius: 18px;
-    padding: 28px; box-shadow: var(--shadow);
-  }
-  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; }
-  .legend-item { display: flex; align-items: center; gap: 8px;
-                 font-family: var(--mono); font-size: 12px; color: var(--text-dim); }
-  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
-
-  .scatter-dot { transition: r .25s var(--ease), filter .25s; cursor: pointer;
-                 transform-origin: center; transform-box: fill-box; }
-  .scatter-dot.appear { animation: pop-in 0.6s var(--ease) backwards; }
-  @keyframes pop-in {
-    0%   { opacity: 0; transform: scale(0.2); }
-    70%  { opacity: 1; transform: scale(1.18); }
-    100% { opacity: 1; transform: scale(1); }
-  }
-  .scatter-dot:hover { r: 12; filter: brightness(1.3); }
-
-  /* ─────────────────── tooltip ─────────────────── */
-  .tip {
-    position: fixed;
-    background: var(--tooltip-bg);
-    border: 1px solid var(--tooltip-line);
-    color: var(--text);
-    padding: 8px 11px; border-radius: 8px;
-    font-size: 12.5px; line-height: 1.45;
-    max-width: 260px;
-    pointer-events: none;
-    box-shadow: 0 18px 40px -10px rgba(0,0,0,0.6);
-    opacity: 0; transform: translateY(4px);
-    transition: opacity .12s var(--ease), transform .12s var(--ease);
-    z-index: 9999;
-  }
-  .tip.show { opacity: 1; transform: translateY(0); }
-  .tip strong { color: var(--accent-2); display: block; margin-bottom: 2px; font-size: 11.5px; letter-spacing: 0.04em; }
-  [data-tip] { cursor: help; }
-  [data-tip] {
-    text-decoration: underline dotted rgba(192,132,252,0.45); text-underline-offset: 3px;
-  }
-
-  /* ─────────────────── savings calculator ─────────────────── */
-  .save-panel {
-    display: grid; grid-template-columns: 380px 1fr; gap: 28px;
-    border: 1px solid var(--line); border-radius: 18px;
-    padding: 30px;
-    background: linear-gradient(180deg, rgba(74,222,128,0.04), var(--panel-2));
-  }
-  @media (max-width: 920px) { .save-panel { grid-template-columns: 1fr; } }
-  .save-cells {
-    display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
-  }
-  .save-cell {
-    border: 1px solid var(--line);
-    background: var(--bg-2);
-    border-radius: 12px; padding: 16px;
-  }
-  .save-cell .v {
-    font-family: var(--mono); font-size: 22px; font-weight: 800; letter-spacing: -0.01em;
-    background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  .save-cell.warm .v { background: var(--grad-warm);
-                       -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .save-cell .l { color: var(--text-mute); font-size: 11px; letter-spacing: 0.12em;
-                  text-transform: uppercase; margin-top: 4px; }
-  .save-cell .sub { color: var(--text-dim); font-size: 12px; margin-top: 6px; line-height: 1.4; }
-
-  /* ─────────────────── code grid ─────────────────── */
-  .code-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
-  @media (max-width: 880px) { .code-grid { grid-template-columns: 1fr; } }
-  pre.code {
-    margin: 0; background: #07090f;
-    border: 1px solid var(--line); border-radius: 12px;
-    padding: 22px; overflow-x: auto;
-    font-family: var(--mono); font-size: 13px; line-height: 1.65;
-    color: #d3d8ea;
-  }
-  pre.code .cmt { color: #5e6478; font-style: italic; }
-  pre.code .kw  { color: #f472b6; }
-  pre.code .str { color: #4ade80; }
-  pre.code .fn  { color: #22d3ee; }
-  pre.code .var { color: #c084fc; }
-  pre.code .num { color: #facc15; }
-
-  .code-card .head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-  .code-card .head .name { font-weight: 700; font-size: 14px; letter-spacing: -0.005em; }
-  .code-card .head .tag {
-    font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em;
-    color: var(--accent); text-transform: uppercase;
-    border: 1px solid rgba(192,132,252,0.3); border-radius: 4px; padding: 2px 7px;
-  }
-
-  /* ─────────────────── footer ─────────────────── */
-  footer {
-    border-top: 1px solid var(--line);
-    padding: 36px 0 60px; margin-top: 80px;
-    color: var(--text-mute); font-size: 13px;
-  }
-  footer .row { display: flex; justify-content: space-between; align-items: center;
-                flex-wrap: wrap; gap: 12px; }
-  footer a { color: var(--text-dim); text-decoration: none; }
-  footer a:hover { color: var(--text); }
-  .konjo {
-    font-family: var(--mono); letter-spacing: 0.1em;
-    background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-
-  ::selection { background: rgba(192,132,252,0.35); color: white; }
-
-  /* ─────────────────────── live banner ─────────────────────── */
-  .live-banner {
-    position: relative; z-index: 5;
-    border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, rgba(244,114,182,0.06), transparent);
-    font-size: 13px;
-  }
-  .live-banner.online {
-    background: linear-gradient(180deg, rgba(74,222,128,0.10), transparent);
-    border-bottom-color: rgba(74,222,128,0.18);
-  }
-  .live-row {
-    display: flex; align-items: center; gap: 14px;
-    padding: 11px 0; flex-wrap: wrap;
-  }
-  .live-dot {
-    width: 9px; height: 9px; border-radius: 50%;
-    background: var(--accent-5);
-    box-shadow: 0 0 0 4px rgba(244,114,182,0.18);
-    animation: pulse 1.6s ease-in-out infinite;
-    flex: 0 0 auto;
-  }
-  .online .live-dot {
-    background: var(--accent-3);
-    box-shadow: 0 0 0 4px rgba(74,222,128,0.22);
-  }
-  .live-banner strong { color: var(--text); font-weight: 700; letter-spacing: -0.005em; }
-  .live-banner.online strong { color: var(--accent-3); }
-  #live-msg { color: var(--text-dim); }
-  .live-banner code {
-    font-family: var(--mono); font-size: 12.5px;
-    background: var(--bg-2); border: 1px solid var(--line);
-    border-radius: 5px; padding: 2px 7px; color: var(--text);
-  }
-  .live-hw {
-    margin-left: auto;
-    font-family: var(--mono); font-size: 12px;
-    color: var(--accent-2);
-  }
-
-  /* small "LIVE" pill that gets stamped on real-result panels */
-  .live-pill {
-    display: inline-flex; align-items: center; gap: 6px;
-    font-family: var(--mono); font-size: 10px; letter-spacing: 0.18em;
-    text-transform: uppercase;
-    color: var(--accent-3);
-    border: 1px solid rgba(74,222,128,0.4);
-    background: rgba(74,222,128,0.08);
-    border-radius: 999px; padding: 3px 9px;
-    vertical-align: middle;
-    margin-left: 8px;
-  }
-  .live-pill::before {
-    content: ""; width: 6px; height: 6px; border-radius: 50%;
-    background: var(--accent-3);
-    box-shadow: 0 0 0 3px rgba(74,222,128,0.18);
-    animation: pulse 1.6s ease-in-out infinite;
-  }
-  .live-pill.measured::after {
-    content: " · measured here"; color: var(--text-mute);
-    letter-spacing: 0.04em; text-transform: none;
-  }
-
-  /* spinner shown while a real call is in-flight */
-  .api-spin {
-    display: inline-block; width: 11px; height: 11px;
-    border: 2px solid rgba(192,132,252,0.3);
-    border-top-color: var(--accent);
-    border-radius: 50%; animation: spin .8s linear infinite;
-    margin-left: 8px; vertical-align: -1px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
+/* ── inline error ────────────────────────────────────────────────────── */
+.err-msg { color: var(--red); font-size: 12px; font-family: var(--mono); margin-top: 8px; display: none; }
+.err-msg.show { display: block; }
 </style>
 </head>
 <body>
+<div id="app">
 
-<canvas id="particles" aria-hidden="true"></canvas>
-<div class="grid-bg" aria-hidden="true"></div>
-
-<!-- ============== NAV ============== -->
-<nav>
-  <div class="container row">
-    <div class="logo">
-      <div class="logo-mark">V</div>
-      <span>VECTRO</span>
-      <span class="badge-version">v5.0.0</span>
-    </div>
-    <div class="links">
-      <a href="#what">What</a>
-      <a href="#why">Why</a>
-      <a href="#calc">Calculator</a>
-      <a href="#search">Try a search</a>
-      <a href="#code">Code</a>
-    </div>
-  </div>
-</nav>
-
-<!-- ============== LIVE BACKEND BANNER ============== -->
-<div id="live-banner" class="live-banner offline" role="status" aria-live="polite">
-  <div class="container live-row">
-    <span class="live-dot"></span>
-    <strong id="live-state">Demo backend offline</strong>
-    <span id="live-msg">
-      Run <code>python demo/server.py</code> to make every number on this page live —
-      measured by the real Vectro library on this machine.
-    </span>
-    <span id="live-hw" class="live-hw"></span>
+<!-- ── top bar ─────────────────────────────────────────────────────── -->
+<div id="topbar">
+  <div class="logo">V<span>E</span>CTRO <sup>v5.2</sup></div>
+  <nav id="tabs">
+    <button class="tab active" data-panel="overview">Overview</button>
+    <button class="tab" data-panel="indexes">Indexes</button>
+    <button class="tab" data-panel="search">Search</button>
+    <button class="tab" data-panel="benchmark">Benchmark</button>
+    <button class="tab" data-panel="projection">2D Projection</button>
+  </nav>
+  <div id="status-pill">
+    <div id="status-dot"></div>
+    <span id="status-txt">connecting…</span>
   </div>
 </div>
 
-<main>
+<!-- ── panels ──────────────────────────────────────────────────────── -->
+<div id="main">
 
-<!-- ============== HERO ============== -->
-<header class="hero">
-  <div class="container">
-    <span class="eyebrow"><span class="dot"></span>open source · MIT · 1064 tests</span>
-    <h1>Vectro.</h1>
-    <p class="tagline">
-      Search millions of <span data-tip="ai-fingerprints">AI fingerprints</span>
-      in milliseconds — <span class="pop">13× smaller, just as accurate</span>.
-    </p>
-    <p class="sub">
-      Vectro shrinks the giant number-arrays that AI models use to represent meaning, so
-      you can store more, search faster, and pay less — without losing the right answers.
-      Drop it into LangChain, LlamaIndex, Haystack, or DSPy in one line.
-    </p>
-    <div class="cta-row">
-      <a href="#calc"   class="btn primary">▶  Shrink some vectors</a>
-      <a href="#search" class="btn">Try a search →</a>
-    </div>
+<!-- ─────────────── OVERVIEW ─────────────────────────────────────── -->
+<section class="panel active" id="panel-overview">
+  <h2>Vectro Vector Database Studio</h2>
+  <p class="sub">Real-time compression, search, and analysis — every number measured live on this machine.</p>
 
-    <div class="hero-stats">
-      <div class="stat featured">
-        <div class="num" id="hero-tput">22M</div>
-        <div class="lbl" data-tip="searches-per-sec">Vectors compressed / second</div>
-      </div>
-      <div class="stat">
-        <div class="num">13×</div>
-        <div class="lbl" data-tip="compression-x">Smaller storage</div>
-      </div>
-      <div class="stat">
-        <div class="num">99.6%</div>
-        <div class="lbl" data-tip="accuracy">Accuracy preserved</div>
-      </div>
-      <div class="stat">
-        <div class="num">4</div>
-        <div class="lbl" data-tip="frameworks">RAG frameworks</div>
-      </div>
-    </div>
-  </div>
-</header>
-
-<!-- ============== WHAT IS VECTRO ============== -->
-<section id="what">
-  <div class="container">
-    <div class="explain">
-      <div>
-        <p class="section-eyebrow">What is Vectro?</p>
-        <h2 class="section-title">Big AI memory, made small.</h2>
-        <p>
-          Modern AI turns every sentence, image, or document into a long list of numbers —
-          an <strong data-tip="ai-fingerprints">AI fingerprint</strong> that captures what
-          it <em>means</em>, not just the words.
-        </p>
-        <p>
-          A million of these fingerprints from
-          <span data-tip="openai">OpenAI's text-embedding-3-small</span> takes about
-          <strong>6.1 GB</strong> of memory.  Vectro shrinks that to
-          <strong>1.5 GB</strong> with
-          <span data-tip="int8">8-bit compression</span>, or as little as
-          <strong>192 MB</strong> with
-          <span data-tip="binary">1-bit compression</span> — and search is just as accurate.
-        </p>
-        <p>
-          The math runs in <strong data-tip="mojo-simd">Mojo SIMD</strong> on Apple
-          Silicon and Linux x86, with NumPy fallbacks everywhere else. Existing
-          LangChain / LlamaIndex / Haystack / DSPy code drops in unchanged — no
-          rewrites, no new vector database to learn.
-        </p>
-      </div>
-
-      <!-- Pipeline SVG -->
-      <svg class="pipeline-svg" viewBox="0 0 520 360"
-           xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="pipe-title">
-        <title id="pipe-title">How Vectro fits in your search pipeline</title>
-        <defs>
-          <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#c084fc"/><stop offset="100%" stop-color="#22d3ee"/>
-          </linearGradient>
-          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5"
-                  markerWidth="6" markerHeight="6" orient="auto">
-            <path d="M0,0 L10,5 L0,10 z" fill="#98a0b6"/>
-          </marker>
-          <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur stdDeviation="3" result="blur"/>
-            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
-          </filter>
-        </defs>
-
-        <g font-family="ui-monospace, SF Mono, monospace" font-size="12" fill="#e7eaf3">
-          <!-- Query -->
-          <g transform="translate(20,30)">
-            <rect width="140" height="56" rx="10" fill="#11141f" stroke="#1d2235"/>
-            <text x="70" y="22" text-anchor="middle" font-weight="700">Your question</text>
-            <text x="70" y="40" text-anchor="middle" fill="#98a0b6" font-size="11">"capital of France?"</text>
-          </g>
-          <!-- Embed -->
-          <g transform="translate(190,30)">
-            <rect width="140" height="56" rx="10" fill="#11141f" stroke="rgba(192,132,252,0.4)" filter="url(#glow)"/>
-            <text x="70" y="22" text-anchor="middle" font-weight="700" fill="#c084fc">Turn into numbers</text>
-            <text x="70" y="40" text-anchor="middle" fill="#98a0b6" font-size="11">OpenAI · Voyage</text>
-          </g>
-          <!-- Compress -->
-          <g transform="translate(360,30)">
-            <rect width="140" height="56" rx="10" fill="#11141f" stroke="rgba(34,211,238,0.5)" filter="url(#glow)"/>
-            <text x="70" y="22" text-anchor="middle" font-weight="700" fill="#22d3ee">Vectro: shrink</text>
-            <text x="70" y="40" text-anchor="middle" fill="#98a0b6" font-size="11">8-bit · 4-bit · 1-bit</text>
-          </g>
-          <!-- Search -->
-          <g transform="translate(105,148)">
-            <rect width="140" height="56" rx="10" fill="#11141f" stroke="rgba(74,222,128,0.45)" filter="url(#glow)"/>
-            <text x="70" y="22" text-anchor="middle" font-weight="700" fill="#4ade80">Find meaning matches</text>
-            <text x="70" y="40" text-anchor="middle" fill="#98a0b6" font-size="11">closest · most diverse</text>
-          </g>
-          <!-- Rerank -->
-          <g transform="translate(275,148)">
-            <rect width="140" height="56" rx="10" fill="#11141f" stroke="rgba(250,204,21,0.45)" filter="url(#glow)"/>
-            <text x="70" y="22" text-anchor="middle" font-weight="700" fill="#facc15">Re-rank top hits</text>
-            <text x="70" y="40" text-anchor="middle" fill="#98a0b6" font-size="11">precision boost</text>
-          </g>
-          <!-- Retrieve -->
-          <g transform="translate(190,266)">
-            <rect width="140" height="56" rx="10" fill="#11141f" stroke="rgba(244,114,182,0.45)" filter="url(#glow)"/>
-            <text x="70" y="22" text-anchor="middle" font-weight="700" fill="#f472b6">Best answers</text>
-            <text x="70" y="40" text-anchor="middle" fill="#98a0b6" font-size="11">ranked passages</text>
-          </g>
-        </g>
-
-        <g stroke="#98a0b6" stroke-width="1.5" fill="none" marker-end="url(#arrow)">
-          <path d="M160,58 L188,58"/>
-          <path d="M330,58 L358,58"/>
-          <path d="M430,90 Q430,120 320,148 L317,148"/>
-          <path d="M175,90 Q175,120 245,148 L243,148"/>
-          <path d="M345,206 Q345,236 320,266"/>
-          <path d="M175,206 Q175,236 200,266"/>
-        </g>
-
-        <g font-family="ui-monospace, monospace" font-size="11" fill="#5e6478">
-          <text x="20" y="345">indexed once · queries hit compressed memory</text>
-        </g>
-      </svg>
-    </div>
-  </div>
-</section>
-
-<!-- ============== WHY VECTRO ============== -->
-<section id="why">
-  <div class="container">
-    <p class="section-eyebrow">Why Vectro?</p>
-    <h2 class="section-title">Three places this is a force multiplier.</h2>
-    <p class="section-lede">If your product turns text or images into "meaning" and looks them up later, Vectro probably saves you money, latency, or both.</p>
-
-    <div class="use-cases">
-      <article class="uc" style="--uc-glow: rgba(192,132,252,0.13)">
-        <span class="ucnum">Use case 01</span>
-        <svg class="uc-icon" viewBox="0 0 64 64" fill="none" stroke="#c084fc" stroke-width="2">
-          <circle cx="28" cy="28" r="14"/>
-          <path d="m38 38 14 14"/>
-          <circle cx="28" cy="28" r="4" fill="#c084fc">
-            <animate attributeName="r" values="3;5;3" dur="2.4s" repeatCount="indefinite"/>
-          </circle>
-          <path d="M14 28a14 14 0 0 1 14-14" stroke="#c084fc" stroke-dasharray="8 4">
-            <animate attributeName="stroke-dashoffset" from="0" to="-24" dur="3s" repeatCount="indefinite"/>
-          </path>
-        </svg>
-        <h3>Meaning search for your docs</h3>
-        <p>Help-centers, knowledge bases, support tickets, code search. Users type what they
-           <em>mean</em>; Vectro finds matching content even when no keywords overlap.</p>
-        <div class="uc-saved">+ saves <span data-tip="storage-savings">75%</span> of your vector index storage.</div>
-      </article>
-
-      <article class="uc" style="--uc-glow: rgba(34,211,238,0.13)">
-        <span class="ucnum">Use case 02</span>
-        <svg class="uc-icon" viewBox="0 0 64 64" fill="none" stroke="#22d3ee" stroke-width="2">
-          <rect x="6"  y="14" width="22" height="36" rx="3"/>
-          <rect x="36" y="14" width="22" height="36" rx="3"/>
-          <path d="M28 32h8" stroke-dasharray="3 3">
-            <animate attributeName="stroke-dashoffset" from="0" to="-12" dur="1.5s" repeatCount="indefinite"/>
-          </path>
-          <circle cx="17" cy="22" r="2" fill="#22d3ee"/>
-          <circle cx="17" cy="32" r="2" fill="#22d3ee"/>
-          <circle cx="17" cy="42" r="2" fill="#22d3ee"/>
-          <circle cx="47" cy="32" r="3" fill="#22d3ee">
-            <animate attributeName="opacity" values="0.4;1;0.4" dur="1.6s" repeatCount="indefinite"/>
-          </circle>
-        </svg>
-        <h3>RAG that actually scales</h3>
-        <p>Feeding LLMs the right snippets from your data. Vectro lets you keep
-           millions of passages in memory at once — bigger context windows, fewer
-           cache misses, lower bills.</p>
-        <div class="uc-saved">+ <span data-tip="latency">3–4× faster</span> p95 retrieval at the same recall.</div>
-      </article>
-
-      <article class="uc" style="--uc-glow: rgba(74,222,128,0.13)">
-        <span class="ucnum">Use case 03</span>
-        <svg class="uc-icon" viewBox="0 0 64 64" fill="none" stroke="#4ade80" stroke-width="2">
-          <circle cx="32" cy="32" r="3" fill="#4ade80"/>
-          <circle cx="14" cy="20" r="3"/>
-          <circle cx="50" cy="20" r="3"/>
-          <circle cx="14" cy="44" r="3"/>
-          <circle cx="50" cy="44" r="3"/>
-          <path d="M32 32 14 20M32 32 50 20M32 32 14 44M32 32 50 44">
-            <animate attributeName="stroke-dasharray" values="0 100;100 0" dur="2.5s" repeatCount="indefinite"/>
-          </path>
-        </svg>
-        <h3>Personal recommendations</h3>
-        <p>Products, articles, tracks, jobs — anywhere you compare a user to a catalog.
-           Vectro fits the whole catalog in RAM on a single box, so personalisation
-           doesn't need a Postgres-sized vector cluster.</p>
-        <div class="uc-saved">+ runs on a <span data-tip="commodity">$200/mo box</span> instead of a GPU cluster.</div>
-      </article>
-    </div>
-  </div>
-</section>
-
-<!-- ============== FEATURES ============== -->
-<section>
-  <div class="container">
-    <p class="section-eyebrow">Capabilities</p>
-    <h2 class="section-title">Everything a search index needs.</h2>
-    <p class="section-lede">Five primitives that compose into production-grade retrieval. Save / load, async, and metadata filters in every adapter.</p>
-
-    <div class="features">
-      <div class="card">
-        <div class="icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c084fc" stroke-width="1.8">
-            <rect x="3"  y="3"  width="7" height="7" rx="1.5"/>
-            <rect x="14" y="3"  width="7" height="7" rx="1.5"/>
-            <rect x="3"  y="14" width="7" height="7" rx="1.5"/>
-            <rect x="14" y="14" width="7" height="7" rx="1.5"/>
-          </svg>
-        </div>
-        <h3>4× — 32× compression</h3>
-        <p>Pick the right size: 8-bit (4× smaller, 99.9% accuracy), 4-bit (8× smaller, 99% accuracy), or 1-bit (32× smaller, 95%+ accuracy).</p>
-        <div class="chip-row"><span class="chip">4×</span><span class="chip m">8×</span><span class="chip g">32×</span></div>
-      </div>
-
-      <div class="card">
-        <div class="icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="1.8">
-            <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
-          </svg>
-        </div>
-        <h3>Closest-match + diverse</h3>
-        <p>Find the top results, or dial in diversity so you don't get five near-duplicates. Hybrid keyword + meaning search built in.</p>
-        <div class="chip-row"><span class="chip m">closest</span><span class="chip">diverse</span><span class="chip g">hybrid</span></div>
-      </div>
-
-      <div class="card">
-        <div class="icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="1.8">
-            <path d="M12 2 4 6v6c0 5 4 9 8 10 4-1 8-5 8-10V6z"/><path d="m9 12 2 2 4-4"/>
-          </svg>
-        </div>
-        <h3>Drop-in for the big four</h3>
-        <p>One line of code — same library you already use. LangChain, LlamaIndex, Haystack 2.x, DSPy.</p>
-        <div class="chip-row"><span class="chip">LangChain</span><span class="chip m">LlamaIndex</span><span class="chip g">Haystack</span><span class="chip">DSPy</span></div>
-      </div>
-
-      <div class="card">
-        <div class="icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#facc15" stroke-width="1.8">
-            <path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0z"/>
-            <path d="M3 12h18M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18"/>
-          </svg>
-        </div>
-        <h3>Use any embedding model</h3>
-        <p>OpenAI, Voyage, Cohere, SentenceTransformers — one Vectro instance plugs into all four. Built-in batching and caching.</p>
-        <div class="chip-row"><span class="chip m">OpenAI</span><span class="chip">Voyage</span><span class="chip g">Cohere</span><span class="chip y">ST</span></div>
-      </div>
-
-      <div class="card">
-        <div class="icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#f472b6" stroke-width="1.8">
-            <ellipse cx="12" cy="5" rx="9" ry="3"/>
-            <path d="M3 5v6c0 1.7 4 3 9 3s9-1.3 9-3V5"/>
-            <path d="M3 11v6c0 1.7 4 3 9 3s9-1.3 9-3v-6"/>
-          </svg>
-        </div>
-        <h3>Local cache, no surprise bills</h3>
-        <p>Embed every text once. Stored on disk. Same query never pays the OpenAI tax twice.</p>
-        <div class="chip-row"><span class="chip g">SQLite</span><span class="chip">SHA-256</span><span class="chip m">thread-safe</span></div>
-      </div>
-
-      <div class="card">
-        <div class="icon">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fb923c" stroke-width="1.8">
-            <rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 10h20M6 4v16"/>
-          </svg>
-        </div>
-        <h3>Save, reload, run async</h3>
-        <p>Persist the whole index to disk in one call. Async everywhere — safe for FastAPI, AIOHTTP, DSPy pipelines.</p>
-        <div class="chip-row"><span class="chip">save/load</span><span class="chip m">async</span><span class="chip g">filters</span></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============== CALCULATOR ============== -->
-<section id="calc">
-  <div class="container">
-    <p class="section-eyebrow">Interactive</p>
-    <h2 class="section-title">Compression calculator.</h2>
-    <p class="section-lede">Drag the sliders. See your index shrink in real time. Switch platforms to see how fast it goes on the hardware you have.</p>
-
-    <div class="platforms" role="radiogroup" aria-label="Platform">
-      <button data-plat="m3"     class="active">Apple M3 Pro</button>
-      <button data-plat="linux">Linux x86 (AVX2)</button>
-      <button data-plat="windows">Windows AMD64</button>
-      <button data-plat="m4">Apple M4 (preview)</button>
-    </div>
-
-    <div class="calc">
-      <div class="calc-controls">
-        <div class="control">
-          <label>
-            <span data-tip="vectors">Vectors</span>
-            <span class="v"><span id="nVal">100,000</span></span>
-          </label>
-          <input id="nSlider" type="range" min="1000" max="10000000" step="1000" value="100000"/>
-          <div class="preset-row" style="margin-top: 10px;">
-            <button class="preset" data-n="10000">10K</button>
-            <button class="preset" data-n="100000">100K</button>
-            <button class="preset" data-n="1000000">1M</button>
-            <button class="preset" data-n="10000000">10M</button>
+  <div class="g3">
+    <!-- Compression calculator -->
+    <div class="card c3">
+      <h3>Compression calculator</h3>
+      <div class="g2">
+        <div>
+          <div class="field">
+            <label>Vectors <span id="ov-n-val" style="float:right;color:var(--text)">50,000</span></label>
+            <input type="range" id="ov-n" min="1000" max="200000" step="1000" value="50000" />
           </div>
-        </div>
-
-        <div class="control">
-          <label>
-            <span data-tip="dims">Numbers per vector</span>
-            <span class="v"><span id="dVal">1536</span></span>
-          </label>
-          <input id="dSlider" type="range" min="64" max="4096" step="32" value="1536"/>
-          <div class="preset-row" style="margin-top: 10px;">
-            <button class="preset" data-d="384">384</button>
-            <button class="preset" data-d="768">768</button>
-            <button class="preset" data-d="1024">1024</button>
-            <button class="preset" data-d="1536">1536</button>
-            <button class="preset" data-d="3072">3072</button>
+          <div class="field">
+            <label>Dimensions <span id="ov-d-val" style="float:right;color:var(--text)">768</span></label>
+            <input type="range" id="ov-d" min="64" max="4096" step="64" value="768" />
           </div>
-        </div>
-
-        <div class="summary">
-          <div class="summary-cell"><div class="v" id="origMB">—</div><div class="l">Uncompressed</div></div>
-          <div class="summary-cell"><div class="v" id="bestMB">—</div><div class="l">Smallest</div></div>
-          <div class="summary-cell"><div class="v" id="bestRatio">—</div><div class="l">You save</div></div>
-        </div>
-      </div>
-
-      <div>
-        <div class="bars" id="bars"></div>
-
-        <div class="speed-panel">
-          <div class="speed-cell">
-            <div class="label">Compress speed</div>
-            <div class="number" id="speed-num">—<span class="unit"> M / sec</span></div>
-            <div class="delta" id="speed-delta">—</div>
+          <div class="field">
+            <label>Mode</label>
+            <select id="ov-mode">
+              <option value="balanced">INT8 balanced (4× compression)</option>
+              <option value="fast">INT8 fast (4×)</option>
+              <option value="quality">INT8 quality (4×)</option>
+              <option value="nf4">NF4 (8×)</option>
+              <option value="binary">Binary (32×)</option>
+            </select>
           </div>
-          <div class="speed-cell">
-            <div class="label">Time to compress this index</div>
-            <div class="number glow" id="speed-time">—<span class="unit"></span></div>
-            <div class="delta" id="speed-time-sub">on the selected platform</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============== STORAGE COST CALCULATOR ============== -->
-<section>
-  <div class="container">
-    <p class="section-eyebrow">Bottom line</p>
-    <h2 class="section-title">What you save.</h2>
-    <p class="section-lede">Same index, different storage tier. Numbers are on-disk + RAM only — they don't count compute.</p>
-
-    <div class="save-panel">
-      <div>
-        <div class="control">
-          <label>
-            <span>How big is your catalog?</span>
-            <span class="v"><span id="save-n">1,000,000</span> items</span>
-          </label>
-          <input id="save-slider" type="range" min="10000" max="100000000" step="10000" value="1000000"/>
-          <div class="preset-row" style="margin-top: 10px;">
-            <button class="preset" data-save="100000">100K</button>
-            <button class="preset" data-save="1000000">1M</button>
-            <button class="preset" data-save="10000000">10M</button>
-            <button class="preset" data-save="100000000">100M</button>
-          </div>
-        </div>
-      </div>
-
-      <div class="save-cells">
-        <div class="save-cell">
-          <div class="v" id="save-fp32">—</div>
-          <div class="l">Without Vectro</div>
-          <div class="sub">FP32, 1536 dims (OpenAI default).  Your index in raw memory.</div>
-        </div>
-        <div class="save-cell warm">
-          <div class="v" id="save-int8">—</div>
-          <div class="l">With Vectro 8-bit</div>
-          <div class="sub">99.9% of the same answers. 4× less RAM, 4× cheaper to host.</div>
-        </div>
-        <div class="save-cell">
-          <div class="v" id="save-nf4">—</div>
-          <div class="l">With Vectro 4-bit (NF4)</div>
-          <div class="sub">99% accuracy, 8× smaller. Sweet spot for big catalogs.</div>
-        </div>
-        <div class="save-cell warm">
-          <div class="v" id="save-bin">—</div>
-          <div class="l">With Vectro 1-bit</div>
-          <div class="sub">95%+ accuracy, 32× smaller. RAM-only at 100M+ scale.</div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============== LIVE SEARCH ============== -->
-<section id="search">
-  <div class="container">
-    <p class="section-eyebrow">Try it</p>
-    <h2 class="section-title">Run a search.</h2>
-    <p class="section-lede">Type a question — or pick one of the chips. Watch the index light up and return the closest meaning matches.</p>
-
-    <div class="search-panel">
-      <div class="search-bar">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#98a0b6" stroke-width="1.8">
-          <circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>
-        </svg>
-        <input id="qbox" type="text" placeholder="What is the capital of France?" value="capital of France"/>
-        <button class="go" id="qrun">Search</button>
-      </div>
-      <div class="search-suggest" id="qchips"></div>
-
-      <div class="search-stage">
-        <div class="map">
-          <svg id="qmap" class="map-svg" viewBox="0 0 480 480" xmlns="http://www.w3.org/2000/svg" role="img"
-               aria-labelledby="qmap-title">
-            <title id="qmap-title">Vectro index — each dot is one item; bright dots are matches</title>
-            <defs>
-              <radialGradient id="qDotMatch">
-                <stop offset="0%" stop-color="#22d3ee"/>
-                <stop offset="100%" stop-color="#0ea5e9"/>
-              </radialGradient>
-            </defs>
-            <!-- gridlines -->
-            <g stroke="#1d2235" stroke-width="1" opacity="0.5">
-              <line x1="40"  y1="40"  x2="40"  y2="440"/>
-              <line x1="40"  y1="440" x2="440" y2="440"/>
-            </g>
-            <g id="qmap-dots"></g>
-            <g id="qmap-query"></g>
-            <g font-family="ui-monospace,monospace" font-size="11" fill="#5e6478">
-              <text x="40"  y="460" text-anchor="start">← geography</text>
-              <text x="440" y="460" text-anchor="end">food / culture →</text>
-              <text x="20"  y="40" text-anchor="start">↑ specific</text>
-              <text x="20"  y="440" text-anchor="start">↓ general</text>
-            </g>
-          </svg>
+          <button class="btn primary" id="ov-compress-btn">
+            <span class="spin" id="ov-spin" style="display:none"></span>
+            ▶ Compress (live)
+          </button>
+          <div class="err-msg" id="ov-err"></div>
         </div>
         <div>
-          <div style="font-size: 13px; color: var(--text-mute); margin-bottom: 12px; font-family: var(--mono); letter-spacing: 0.12em; text-transform: uppercase;">Top matches</div>
-          <div class="results-list" id="qresults"></div>
+          <div class="stats-grid" id="ov-stats">
+            <div class="stat-cell"><div class="v" id="ov-ratio">—</div><div class="l">ratio</div></div>
+            <div class="stat-cell"><div class="v" id="ov-orig">—</div><div class="l">original</div></div>
+            <div class="stat-cell"><div class="v" id="ov-comp">—</div><div class="l">compressed</div></div>
+            <div class="stat-cell"><div class="v" id="ov-tput">—</div><div class="l">M vec/s</div></div>
+          </div>
+          <div style="margin-top:14px">
+            <h3>Memory bars</h3>
+            <div id="ov-bars"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recall gauge -->
+    <div class="card">
+      <h3>Recall@k estimate</h3>
+      <div class="recall-ring-wrap">
+        <canvas id="recall-canvas" width="120" height="120"></canvas>
+        <div class="pct" id="recall-pct">—</div>
+        <div class="lbl" id="recall-label">offline</div>
+      </div>
+      <div class="stats-grid" style="margin-top:8px">
+        <div class="stat-cell"><div class="v" id="rc-lo">—</div><div class="l">CI lo</div></div>
+        <div class="stat-cell"><div class="v" id="rc-hi">—</div><div class="l">CI hi</div></div>
+        <div class="stat-cell"><div class="v" id="rc-k">—</div><div class="l">k</div></div>
+        <div class="stat-cell"><div class="v" id="rc-n">—</div><div class="l">vectors</div></div>
+      </div>
+    </div>
+
+    <!-- Search (demo) -->
+    <div class="card">
+      <h3>Semantic search</h3>
+      <div class="field">
+        <label>Query</label>
+        <input id="ov-query" type="text" placeholder="capital of France…" />
+      </div>
+      <div class="field">
+        <label>k <span id="ov-k-val" style="float:right;color:var(--text)">5</span></label>
+        <input type="range" id="ov-k" min="1" max="15" value="5" />
+      </div>
+      <button class="btn primary" id="ov-search-btn">⊙ Search</button>
+      <div id="ov-results" style="margin-top:12px"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── INDEXES ─────────────────────────────────────── -->
+<section class="panel" id="panel-indexes">
+  <div class="row" style="align-items:flex-start;gap:20px">
+    <!-- Create form -->
+    <div style="width:280px;flex-shrink:0">
+      <div class="card">
+        <h3>Create index</h3>
+        <div class="field"><label>Name</label><input id="idx-name" type="text" placeholder="my-index" /></div>
+        <div class="field"><label>Dimensions</label><input id="idx-dim" type="number" value="128" min="2" max="4096" /></div>
+        <div class="field"><label>M (graph links)</label><input id="idx-m" type="number" value="16" min="4" max="64" /></div>
+        <div class="field"><label>ef_construction</label><input id="idx-ef" type="number" value="200" min="16" max="500" /></div>
+        <div class="field">
+          <label>Distance</label>
+          <select id="idx-space">
+            <option value="cosine">cosine</option>
+            <option value="l2">l2</option>
+          </select>
+        </div>
+        <button class="btn primary" id="idx-create-btn" style="width:100%">+ Create index</button>
+        <div class="err-msg" id="idx-err"></div>
+      </div>
+
+      <!-- ef/M explanation -->
+      <div class="card" style="margin-top:14px">
+        <div class="acc-header" id="params-acc">
+          <span style="font-size:12.5px;font-weight:600;color:var(--text-dim)">Parameter guide</span>
+          <span class="acc-chevron">▶</span>
+        </div>
+        <div class="acc-body" id="params-body">
+          <div class="kv-row" style="margin-top:4px">
+            <span class="k">M</span>
+            <span class="v" style="color:var(--text-dim);font-size:11px;max-width:160px;text-align:right">Max bidirectional links per node. Higher = better recall, more memory (16 = default, 32 = high-recall)</span>
+          </div>
+          <div class="kv-row">
+            <span class="k">ef_construction</span>
+            <span class="v" style="color:var(--text-dim);font-size:11px;max-width:160px;text-align:right">Beam width during build. Higher = better graph quality, slower build. (200 = default)</span>
+          </div>
+          <div class="kv-row">
+            <span class="k">ef_search</span>
+            <span class="v" style="color:var(--text-dim);font-size:11px;max-width:160px;text-align:right">Beam width during query. Controls recall/latency tradeoff at query time. (≥k, default 64)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Index list -->
+    <div class="col">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <h3 style="margin-bottom:0">Your indexes</h3>
+        <button class="btn sm" id="idx-refresh-btn">↻ Refresh</button>
+      </div>
+      <div id="idx-list-wrap">
+        <div class="empty"><div class="icon">⊘</div>No indexes yet. Create one to get started.</div>
+      </div>
+      <!-- Expanded stats panel -->
+      <div id="idx-detail" style="display:none;margin-top:16px">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <h3 id="idx-detail-name" style="margin-bottom:0">stats</h3>
+            <button class="btn sm" id="idx-detail-close">✕</button>
+          </div>
+          <div class="stats-grid" id="idx-detail-stats"></div>
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ============== RECALL VS COMPRESSION ============== -->
-<section>
-  <div class="container">
-    <p class="section-eyebrow">Trade-off</p>
-    <h2 class="section-title">Smaller, faster, still right.</h2>
-    <p class="section-lede">Each profile is a point on the curve. The X axis is how much smaller your index gets. The Y axis is how often the right answer is in the top-10. Pick where you want to be.</p>
-
-    <div class="scatter-wrap">
-      <svg id="scatter" viewBox="0 0 760 380" xmlns="http://www.w3.org/2000/svg"
-           role="img" aria-labelledby="scatter-title">
-        <title id="scatter-title">Accuracy vs compression scatter plot</title>
-        <defs>
-          <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%"  stop-color="#22d3ee" stop-opacity="0.0"/>
-            <stop offset="50%" stop-color="#22d3ee" stop-opacity="0.6"/>
-            <stop offset="100%" stop-color="#c084fc" stop-opacity="0.0"/>
-          </linearGradient>
-          <radialGradient id="dotG-fast"><stop offset="0%" stop-color="#facc15"/><stop offset="100%" stop-color="#fb923c"/></radialGradient>
-          <radialGradient id="dotG-bal"><stop offset="0%" stop-color="#22d3ee"/><stop offset="100%" stop-color="#0ea5e9"/></radialGradient>
-          <radialGradient id="dotG-qua"><stop offset="0%" stop-color="#c084fc"/><stop offset="100%" stop-color="#a855f7"/></radialGradient>
-          <radialGradient id="dotG-bin"><stop offset="0%" stop-color="#4ade80"/><stop offset="100%" stop-color="#16a34a"/></radialGradient>
-        </defs>
-
-        <g stroke="#1d2235" stroke-width="1">
-          <line x1="80"  y1="40"  x2="80"  y2="320"/>
-          <line x1="80"  y1="320" x2="720" y2="320"/>
-          <line x1="80"  y1="100" x2="720" y2="100" stroke-dasharray="3,4" opacity="0.5"/>
-          <line x1="80"  y1="180" x2="720" y2="180" stroke-dasharray="3,4" opacity="0.5"/>
-          <line x1="80"  y1="260" x2="720" y2="260" stroke-dasharray="3,4" opacity="0.5"/>
-          <line x1="208" y1="40"  x2="208" y2="320" stroke-dasharray="3,4" opacity="0.5"/>
-          <line x1="336" y1="40"  x2="336" y2="320" stroke-dasharray="3,4" opacity="0.5"/>
-          <line x1="464" y1="40"  x2="464" y2="320" stroke-dasharray="3,4" opacity="0.5"/>
-          <line x1="592" y1="40"  x2="592" y2="320" stroke-dasharray="3,4" opacity="0.5"/>
-        </g>
-
-        <g font-family="ui-monospace, SF Mono, monospace" font-size="11" fill="#98a0b6">
-          <text x="74" y="324" text-anchor="end">95%</text>
-          <text x="74" y="264" text-anchor="end">96%</text>
-          <text x="74" y="184" text-anchor="end">98%</text>
-          <text x="74" y="104" text-anchor="end">100%</text>
-          <text x="20" y="180" transform="rotate(-90,20,180)" text-anchor="middle" fill="#c084fc">accuracy (top-10)</text>
-          <text x="80"  y="340" text-anchor="middle">1×</text>
-          <text x="208" y="340" text-anchor="middle">4×</text>
-          <text x="336" y="340" text-anchor="middle">8×</text>
-          <text x="464" y="340" text-anchor="middle">16×</text>
-          <text x="592" y="340" text-anchor="middle">24×</text>
-          <text x="720" y="340" text-anchor="middle">32×</text>
-          <text x="400" y="368" text-anchor="middle" fill="#22d3ee">how much smaller</text>
-        </g>
-
-        <path d="M 80 75 Q 250 90 380 130 Q 540 200 720 280"
-              fill="none" stroke="url(#lineGrad)" stroke-width="2" stroke-linecap="round"/>
-
-        <g id="scatter-dots">
-          <!-- Filled in by JS so they animate in one by one -->
-        </g>
-
-        <g font-family="-apple-system, sans-serif" font-size="12" fill="#5e6478">
-          <text x="120" y="178" font-style="italic">↑ better</text>
-        </g>
-      </svg>
-
-      <div class="legend">
-        <div class="legend-item"><span class="legend-dot" style="background:#5e6478"></span>FP32 (no compression)</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#facc15"></span>fast — 8-bit</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#22d3ee"></span>balanced — 8-bit</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#c084fc"></span>quality — 4-bit (NF4)</div>
-        <div class="legend-item"><span class="legend-dot" style="background:#4ade80"></span>tiny — 1-bit</div>
+<!-- ─────────────── SEARCH ─────────────────────────────────────── -->
+<section class="panel" id="panel-search">
+  <div class="row" style="align-items:flex-start;gap:20px">
+    <!-- Controls -->
+    <div style="width:300px;flex-shrink:0">
+      <div class="card">
+        <h3>kNN search</h3>
+        <div class="field">
+          <label>Index</label>
+          <select id="srch-index"><option value="">— select an index —</option></select>
+        </div>
+        <div class="field">
+          <label>Query vector</label>
+          <textarea id="srch-vec" placeholder="[0.1, 0.2, 0.3, …]  or leave blank for random"></textarea>
+        </div>
+        <button class="btn sm" id="srch-rand-btn" style="margin-bottom:10px">⚂ Random vector</button>
+        <div class="field">
+          <label>k <span id="srch-k-val" style="float:right;color:var(--text)">10</span></label>
+          <input type="range" id="srch-k" min="1" max="50" value="10" />
+        </div>
+        <div class="field">
+          <label>ef (beam width) <span id="srch-ef-val" style="float:right;color:var(--text)">64</span></label>
+          <input type="range" id="srch-ef" min="10" max="200" value="64" />
+        </div>
+        <div class="field">
+          <label>Metadata filter <span style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">(JSON, optional)</span></label>
+          <input id="srch-filter" type="text" placeholder='{"category":"science"}' />
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn primary" id="srch-btn" style="flex:1">⊙ Search</button>
+          <button class="btn" id="srch-trace-btn" title="Search with trace">⟁ Trace</button>
+        </div>
+        <div class="err-msg" id="srch-err"></div>
+      </div>
+    </div>
+    <!-- Results -->
+    <div class="col">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <h3 style="margin-bottom:0">Results</h3>
+        <span id="srch-timing" style="font-family:var(--mono);font-size:11px;color:var(--text-dim)"></span>
+      </div>
+      <div id="srch-results"></div>
+      <!-- Distance histogram -->
+      <div id="srch-hist" style="display:none;margin-top:20px">
+        <h3>Distance distribution</h3>
+        <div id="srch-hist-bars"></div>
+      </div>
+      <!-- Trace panel -->
+      <div id="srch-trace-panel" style="display:none;margin-top:20px">
+        <h3>Search trace</h3>
+        <div class="card">
+          <div class="kv-row"><span class="k">entry point</span><span id="tr-ep" class="v">—</span></div>
+          <div class="kv-row"><span class="k">l0 visited</span><span id="tr-vis" class="v">—</span></div>
+          <div class="kv-row"><span class="k">layer descents</span><span id="tr-layers" class="v">—</span></div>
+        </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ============== CODE SNIPPETS ============== -->
-<section id="code">
-  <div class="container">
-    <p class="section-eyebrow">Code</p>
-    <h2 class="section-title">One line. Same library you already use.</h2>
-    <p class="section-lede">Pick the framework you have. Add <code>compression_profile=</code>. That's it.</p>
-
-    <div class="code-grid">
-      <div class="code-card">
-        <div class="head"><span class="name">LangChain</span><span class="tag">VectorStore</span></div>
-        <pre class="code"><span class="kw">from</span> python.integrations <span class="kw">import</span> LangChainVectorStore
-<span class="kw">from</span> python.embeddings <span class="kw">import</span> OpenAIEmbeddings
-
-<span class="var">embed</span> = <span class="fn">OpenAIEmbeddings</span>(model=<span class="str">"text-embedding-3-small"</span>)
-<span class="var">store</span> = <span class="fn">LangChainVectorStore</span>(
-    embedding=<span class="var">embed</span>,
-    compression_profile=<span class="str">"balanced"</span>,   <span class="cmt"># 4× smaller</span>
-)
-
-<span class="var">store</span>.<span class="fn">add_texts</span>([<span class="str">"Paris is the capital of France"</span>])
-<span class="var">docs</span> = <span class="var">store</span>.<span class="fn">similarity_search</span>(<span class="str">"capital of France"</span>, k=<span class="num">3</span>)</pre>
+<!-- ─────────────── BENCHMARK ─────────────────────────────────────── -->
+<section class="panel" id="panel-benchmark">
+  <div class="row" style="align-items:flex-start;gap:20px">
+    <div style="width:260px;flex-shrink:0">
+      <div class="card">
+        <h3>Benchmark</h3>
+        <div class="field">
+          <label>Index</label>
+          <select id="bench-index"><option value="">— select an index —</option></select>
+        </div>
+        <div class="field">
+          <label>k <span id="bench-k-val" style="float:right;color:var(--text)">10</span></label>
+          <input type="range" id="bench-k" min="1" max="50" value="10" />
+        </div>
+        <div class="field">
+          <label>ef_search <span id="bench-ef-val" style="float:right;color:var(--text)">64</span></label>
+          <input type="range" id="bench-ef" min="10" max="200" value="64" />
+        </div>
+        <div class="field">
+          <label>Queries <span id="bench-nq-val" style="float:right;color:var(--text)">200</span></label>
+          <input type="range" id="bench-nq" min="20" max="2000" step="20" value="200" />
+        </div>
+        <button class="btn primary" id="bench-btn" style="width:100%">▶ Run benchmark</button>
+        <div class="err-msg" id="bench-err"></div>
       </div>
-
-      <div class="code-card">
-        <div class="head"><span class="name">LlamaIndex</span><span class="tag">VectorStore</span></div>
-        <pre class="code"><span class="kw">from</span> python.integrations <span class="kw">import</span> LlamaIndexVectorStore
-<span class="kw">from</span> llama_index.core.vector_stores <span class="kw">import</span> VectorStoreQuery
-
-<span class="var">vs</span> = <span class="fn">LlamaIndexVectorStore</span>(compression_profile=<span class="str">"quality"</span>)  <span class="cmt"># 8× smaller</span>
-<span class="var">vs</span>.<span class="fn">add</span>(nodes_with_embeddings)
-
-<span class="var">res</span> = <span class="var">vs</span>.<span class="fn">query</span>(<span class="fn">VectorStoreQuery</span>(
-    query_embedding=<span class="var">q</span>, similarity_top_k=<span class="num">5</span>,
-))</pre>
+    </div>
+    <div class="col">
+      <div id="bench-results" style="display:none">
+        <div class="g2" style="margin-bottom:16px">
+          <div class="card big-metric">
+            <div class="v" id="bench-qps">—</div>
+            <div class="l">queries / second</div>
+          </div>
+          <div class="card">
+            <h3>Recall@k</h3>
+            <div class="recall-ring-wrap" style="padding:8px 0">
+              <canvas id="bench-recall-canvas" width="90" height="90"></canvas>
+              <div class="pct" id="bench-recall-pct" style="font-size:22px">—</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Latency distribution</h3>
+          <div class="bench-chart" id="bench-chart">
+            <div class="bench-bar-wrap"><div class="bench-bar-track"><div class="bench-bar" id="bar-p50"></div></div><div class="bench-val" id="bv-p50">—</div><div class="bench-label">p50</div></div>
+            <div class="bench-bar-wrap"><div class="bench-bar-track"><div class="bench-bar" id="bar-p95"></div></div><div class="bench-val" id="bv-p95">—</div><div class="bench-label">p95</div></div>
+            <div class="bench-bar-wrap"><div class="bench-bar-track"><div class="bench-bar" id="bar-p99"></div></div><div class="bench-val" id="bv-p99">—</div><div class="bench-label">p99</div></div>
+            <div class="bench-bar-wrap"><div class="bench-bar-track"><div class="bench-bar" id="bar-mean" style="background:linear-gradient(to top, var(--green), #6ee7b7)"></div></div><div class="bench-val" id="bv-mean">—</div><div class="bench-label">mean</div></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <h3>Stats</h3>
+          <div class="stats-grid" id="bench-stats"></div>
+        </div>
       </div>
+      <div id="bench-empty" class="empty"><div class="icon">📊</div>Select an index and click Run to measure real latency.</div>
+    </div>
+  </div>
+</section>
 
-      <div class="code-card">
-        <div class="head"><span class="name">Haystack 2.x</span><span class="tag">DocumentStore</span></div>
-        <pre class="code"><span class="kw">from</span> haystack.dataclasses <span class="kw">import</span> Document
-<span class="kw">from</span> python.integrations <span class="kw">import</span> HaystackDocumentStore
-
-<span class="var">store</span> = <span class="fn">HaystackDocumentStore</span>(compression_profile=<span class="str">"balanced"</span>)
-<span class="var">store</span>.<span class="fn">write_documents</span>([
-    <span class="fn">Document</span>(content=<span class="str">"Paris ..."</span>, embedding=<span class="var">v</span>),
-])
-
-<span class="var">hits</span> = <span class="var">store</span>.<span class="fn">embedding_retrieval</span>(
-    query_embedding=<span class="var">q</span>, top_k=<span class="num">5</span>,
-)</pre>
+<!-- ─────────────── 2D PROJECTION ─────────────────────────────────── -->
+<section class="panel" id="panel-projection">
+  <div class="row" style="align-items:flex-start;gap:20px;height:calc(100vh - 120px)">
+    <!-- Controls sidebar -->
+    <div style="width:260px;flex-shrink:0;overflow-y:auto;height:100%;padding-right:4px">
+      <div class="card">
+        <h3>2D Projection</h3>
+        <div class="field">
+          <label>Index</label>
+          <select id="proj-index"><option value="">— select an index —</option></select>
+        </div>
+        <div class="field">
+          <label>Add vectors</label>
+          <textarea id="proj-vecs" placeholder="[[0.1,0.2,…],[…],…] or leave blank to auto-generate" style="min-height:80px"></textarea>
+        </div>
+        <div class="field">
+          <label>Count (auto) <span id="proj-n-val" style="float:right;color:var(--text)">50</span></label>
+          <input type="range" id="proj-n" min="5" max="500" step="5" value="50" />
+        </div>
+        <button class="btn sm" id="proj-gen-btn" style="width:100%;margin-bottom:8px">⚂ Auto-generate &amp; add</button>
+        <button class="btn sm" id="proj-add-btn" style="width:100%;margin-bottom:8px">+ Add JSON vectors</button>
+        <hr style="border:none;border-top:1px solid var(--line-dim);margin:10px 0"/>
+        <div class="field">
+          <label>k-means clusters <span id="proj-k-val" style="float:right;color:var(--text)">4</span></label>
+          <input type="range" id="proj-k" min="2" max="12" value="4" />
+        </div>
+        <button class="btn primary" id="proj-project-btn" style="width:100%;margin-bottom:8px">⊙ Project + cluster</button>
+        <hr style="border:none;border-top:1px solid var(--line-dim);margin:10px 0"/>
+        <div class="field"><label>Dim (dim of auto-vecs) <span id="proj-dim-val" style="float:right;color:var(--text)">32</span></label><input type="range" id="proj-dim" min="2" max="256" step="2" value="32" /></div>
+        <div class="err-msg" id="proj-err"></div>
       </div>
-
-      <div class="code-card">
-        <div class="head"><span class="name">DSPy</span><span class="tag">Retriever</span></div>
-        <pre class="code"><span class="kw">import</span> dspy
-<span class="kw">from</span> python.integrations <span class="kw">import</span> VectroDSPyRetriever
-<span class="kw">from</span> python.embeddings <span class="kw">import</span> OpenAIEmbeddings
-
-<span class="var">rm</span> = <span class="fn">VectroDSPyRetriever</span>(
-    embed_fn=<span class="fn">OpenAIEmbeddings</span>(model=<span class="str">"text-embedding-3-small"</span>),
-    k=<span class="num">5</span>, compression_profile=<span class="str">"balanced"</span>,
-)
-<span class="var">rm</span>.<span class="fn">add_texts</span>([<span class="str">"Paris is the capital of France"</span>])
-
-dspy.settings.<span class="fn">configure</span>(rm=<span class="var">rm</span>)
-<span class="var">prediction</span> = <span class="var">rm</span>(<span class="str">"What is the capital of France?"</span>)</pre>
+      <div class="card" style="margin-top:12px">
+        <h3>Legend</h3>
+        <div id="proj-legend"></div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <div class="kv-row"><span class="k">points</span><span id="proj-pt-count" class="v">0</span></div>
+        <div class="kv-row"><span class="k">proj ms</span><span id="proj-ms" class="v">—</span></div>
+        <div class="kv-row" style="margin-top:8px;font-size:11px;color:var(--text-muted)"><span>Scroll to zoom · Drag to pan · Hover for metadata</span></div>
+      </div>
+    </div>
+    <!-- Canvas -->
+    <div class="col" style="height:100%">
+      <div id="scatter-wrap" style="height:100%">
+        <canvas id="scatter-canvas"></canvas>
+        <div id="scatter-tooltip"></div>
       </div>
     </div>
   </div>
 </section>
 
-</main>
+</div><!-- #main -->
+</div><!-- #app -->
 
-<!-- ============== FOOTER ============== -->
-<footer>
-  <div class="container row">
-    <div><strong style="color: var(--text);">Vectro</strong>  ·  v5.0.0  ·  MIT</div>
-    <div class="konjo">ቆንጆ · 根性 · 康宙 · कोहजो · ᨀᨚᨐᨚ · конйо · 건조 · কুঞ্জ</div>
-    <div>
-      <a href="https://github.com/konjoai/vectro">GitHub</a>  ·  <a href="#what">Docs</a>
-    </div>
-  </div>
-</footer>
-
-<!-- shared tooltip ⓘ element -->
-<div id="tip" class="tip" role="tooltip"></div>
+<!-- toasts -->
+<div id="toasts"></div>
 
 <script>
-(() => {
-  // ─────────────────────── particle canvas ───────────────────────
-  // Subtle ambient flow of "vectors" drifting up-right.  Cheap, ~120
-  // particles, GPU-friendly via canvas2d.  When user scrolls past the
-  // hero we reduce density to keep the page responsive.
-  const canvas = document.getElementById("particles");
-  const ctx = canvas.getContext("2d");
-  let cw = 0, ch = 0;
-  function resize() {
-    cw = canvas.width = window.innerWidth * (window.devicePixelRatio || 1);
-    ch = canvas.height = window.innerHeight * (window.devicePixelRatio || 1);
-    canvas.style.width  = window.innerWidth  + "px";
-    canvas.style.height = window.innerHeight + "px";
-  }
-  resize();
-  window.addEventListener("resize", resize, { passive: true });
+'use strict';
+// ── Config ──────────────────────────────────────────────────────────────
+const API = window.location.origin;
 
-  const COLORS = ["#c084fc", "#22d3ee", "#4ade80", "#facc15", "#f472b6"];
-  const N_PARTICLES = 120;
-  const particles = [];
-  for (let i = 0; i < N_PARTICLES; i++) {
-    particles.push({
-      x: Math.random() * cw,
-      y: Math.random() * ch,
-      r: 0.6 + Math.random() * 1.7,
-      vx: 0.05 + Math.random() * 0.4,
-      vy: -0.05 - Math.random() * 0.4,
-      a: 0.05 + Math.random() * 0.35,
-      c: COLORS[(Math.random() * COLORS.length) | 0],
-    });
-  }
-  function step() {
-    ctx.clearRect(0, 0, cw, ch);
-    const dpr = window.devicePixelRatio || 1;
-    for (const p of particles) {
-      p.x += p.vx * dpr;
-      p.y += p.vy * dpr;
-      if (p.x > cw + 10) p.x = -10;
-      if (p.y < -10)     p.y = ch + 10;
-      ctx.beginPath();
-      ctx.fillStyle = p.c;
-      ctx.globalAlpha = p.a;
-      ctx.arc(p.x, p.y, p.r * dpr, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    requestAnimationFrame(step);
-  }
-  step();
+// ── Utilities ────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const mk = (tag, cls, txt) => {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (txt != null) el.textContent = txt;
+  return el;
+};
 
-  // ─────────────────────── tooltip ───────────────────────
-  const TIPS = {
-    "ai-fingerprints": {
-      title: "AI fingerprint",
-      body: "A long list of numbers (often 384–3072) that encodes the meaning of a piece of text or image. Two fingerprints with similar numbers come from things that mean similar stuff.",
-    },
-    "openai": {
-      title: "OpenAI text-embedding-3-small",
-      body: "A popular API model that turns text into 1536-number fingerprints. Used as the default in most modern RAG demos.",
-    },
-    "int8": {
-      title: "8-bit compression",
-      body: "Stores each number using 8 bits (one byte) instead of 32. Roughly 4× smaller, and search results stay 99.9% identical.",
-    },
-    "binary": {
-      title: "1-bit compression",
-      body: "Stores only the sign of each number — true or false. 32× smaller. Accuracy drops a few percent but is great for huge catalogs.",
-    },
-    "mojo-simd": {
-      title: "Mojo + SIMD",
-      body: "Vectro's hot path is written in Mojo and Rust, using CPU-level parallelism (NEON on Apple Silicon, AVX2 on x86) to compress 22 million vectors per second on an M3.",
-    },
-    "compression-x": {
-      title: "Compression ratio",
-      body: "How much smaller your index gets. 4× means a 4 GB index becomes 1 GB. 13× is the practical sweet spot for RAG.",
-    },
-    "accuracy": {
-      title: "Accuracy preserved",
-      body: "How often Vectro's top-10 search results match the uncompressed top-10. 99.6% means roughly the same right answers.",
-    },
-    "frameworks": {
-      title: "RAG frameworks supported",
-      body: "LangChain, LlamaIndex, Haystack 2.x, and DSPy. Drop-in adapters — no refactor.",
-    },
-    "searches-per-sec": {
-      title: "Vectors per second",
-      body: "How many fingerprints Vectro can compress and store every second. On an M3 Pro, that's 22 million.",
-    },
-    "vectors": {
-      title: "Vectors",
-      body: "Each item in your catalog (a paragraph, a product, a frame) becomes one vector — one fingerprint.",
-    },
-    "dims": {
-      title: "Numbers per vector",
-      body: "Most modern AI models produce vectors with 384 to 3072 numbers. Bigger dims = more precision per fingerprint but more storage.",
-    },
-    "storage-savings": {
-      title: "Storage savings",
-      body: "Compared to keeping vectors uncompressed in RAM. Vectro 8-bit cuts your storage to ~25%.",
-    },
-    "latency": {
-      title: "Faster retrieval",
-      body: "Smaller vectors mean fewer cache misses and more vectors per L1/L2 hit, so the search loop runs closer to peak CPU.",
-    },
-    "commodity": {
-      title: "Cheap hardware",
-      body: "Vectro fits a 100M-vector index in a few GB of RAM. You don't need a multi-node cluster or a GPU.",
-    },
+function toast(msg, type = 'info', dur = 3500) {
+  const el = mk('div', `toast ${type}`, msg);
+  $('toasts').appendChild(el);
+  setTimeout(() => {
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 320);
+  }, dur);
+}
+
+function fmtBytes(b) {
+  if (b >= 1e9) return (b/1e9).toFixed(2)+' GB';
+  if (b >= 1e6) return (b/1e6).toFixed(2)+' MB';
+  if (b >= 1e3) return (b/1e3).toFixed(1)+' KB';
+  return b.toFixed(0)+' B';
+}
+
+function fmtNum(n) {
+  if (n >= 1e6) return (n/1e6).toFixed(2)+'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
+  return String(n);
+}
+
+let animFrames = {};
+function countUp(elId, to, unit = '', decimals = 0) {
+  const el = $(elId); if (!el) return;
+  cancelAnimationFrame(animFrames[elId]);
+  const from = parseFloat(el.dataset.val || 0);
+  const dur = 700, t0 = performance.now();
+  const step = t => {
+    const p = Math.min(1, (t - t0) / dur);
+    const e = 1 - Math.pow(1 - p, 3);
+    const v = from + (to - from) * e;
+    el.textContent = v.toFixed(decimals) + unit;
+    if (p < 1) animFrames[elId] = requestAnimationFrame(step);
+    else el.dataset.val = to;
   };
-  const tipEl = document.getElementById("tip");
-  document.querySelectorAll("[data-tip]").forEach(el => {
-    el.addEventListener("mouseenter", e => {
-      const k = el.dataset.tip;
-      const t = TIPS[k];
-      if (!t) return;
-      tipEl.innerHTML = `<strong>${t.title}</strong>${t.body}`;
-      tipEl.classList.add("show");
-    });
-    el.addEventListener("mousemove", e => {
-      const x = Math.min(window.innerWidth - 280, e.clientX + 14);
-      const y = Math.max(8, e.clientY - 8);
-      tipEl.style.left = x + "px";
-      tipEl.style.top  = y + "px";
-    });
-    el.addEventListener("mouseleave", () => tipEl.classList.remove("show"));
+  animFrames[elId] = requestAnimationFrame(step);
+}
+
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+
+// ── Status banner ────────────────────────────────────────────────────────
+async function checkStatus() {
+  try {
+    const h = await api('GET', '/api/health');
+    $('status-dot').className = 'online';
+    $('status-txt').textContent = `live · v${h.version} · ${h.platform}`;
+  } catch {
+    $('status-dot').className = 'error';
+    $('status-txt').textContent = 'offline — run python demo/server.py';
+  }
+}
+setInterval(checkStatus, 30000);
+checkStatus();
+
+// ── Tab routing ──────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    const id = 'panel-' + t.dataset.panel;
+    document.getElementById(id).classList.add('active');
+    if (t.dataset.panel === 'indexes') loadIndexList();
+    if (t.dataset.panel === 'search')  populateIndexSelects();
+    if (t.dataset.panel === 'benchmark') populateIndexSelects();
+    if (t.dataset.panel === 'projection') populateIndexSelects();
   });
+});
 
-  // ─────────────────────── platform throughput ───────────────────────
-  const PLATFORMS = {
-    m3:      { label: "Apple M3 Pro",        tput: 22.0, simd: "NEON 32-wide" },
-    linux:   { label: "Linux x86 (AVX2)",    tput: 13.5, simd: "AVX2"         },
-    windows: { label: "Windows AMD64",        tput: 13.0, simd: "AVX2"         },
-    m4:      { label: "Apple M4 (preview)",  tput: 31.0, simd: "SME2 (when wired)" },
-  };
-  let currentPlat = "m3";
-  document.querySelectorAll(".platforms button").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".platforms button").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      currentPlat = btn.dataset.plat;
-      tweenHeroTput(PLATFORMS[currentPlat].tput);
-      recompute();
+// ═══════════════════════════════════════════════════════════════════
+// OVERVIEW PANEL
+// ═══════════════════════════════════════════════════════════════════
+const ovN = $('ov-n'), ovD = $('ov-d');
+ovN.addEventListener('input', () => { $('ov-n-val').textContent = (+ovN.value).toLocaleString(); });
+ovD.addEventListener('input', () => { $('ov-d-val').textContent = +ovD.value; });
+$('ov-k').addEventListener('input', e => $('ov-k-val').textContent = e.target.value);
+
+$('ov-compress-btn').addEventListener('click', async () => {
+  const btn = $('ov-compress-btn'), spin = $('ov-spin'), err = $('ov-err');
+  btn.disabled = true; spin.style.display = 'inline-block'; err.classList.remove('show');
+  try {
+    const r = await api('POST', '/api/compress', {
+      n_vecs: +ovN.value, dim: +ovD.value, mode: $('ov-mode').value,
     });
+    countUp('ov-ratio', r.ratio, '×', 2);
+    $('ov-orig').textContent = fmtBytes(r.original_bytes);
+    $('ov-comp').textContent = fmtBytes(r.compressed_bytes);
+    countUp('ov-tput', r.throughput_M_vec_s, ' M', 3);
+    renderOvBars(r);
+    toast(`${r.ratio.toFixed(2)}× compression · ${r.throughput_M_vec_s.toFixed(3)} M vec/s`, 'success');
+  } catch(e) { err.textContent = e.message; err.classList.add('show'); toast(e.message, 'error'); }
+  finally { btn.disabled = false; spin.style.display = 'none'; }
+});
+
+const MODES = ['fast','balanced','quality','nf4','binary'];
+const MODE_RATIOS = { fast:4, balanced:4, quality:4, nf4:8, binary:32 };
+function renderOvBars(r) {
+  const wrap = $('ov-bars'); wrap.innerHTML = '';
+  const orig = r.original_bytes;
+  [['float32 (original)', 1], ['int8 4×', 4], ['nf4 8×', 8], ['binary 32×', 32]].forEach(([lbl, ratio]) => {
+    const bytes = orig / ratio;
+    const pct   = Math.round(100 / ratio);
+    const row   = mk('div', 'hist-bar');
+    row.innerHTML = `<span style="width:110px;color:var(--text-dim)">${lbl}</span>
+      <div class="hist-track"><div class="hist-fill" style="width:${pct}%"></div></div>
+      <span style="width:60px;text-align:right;font-family:var(--mono);font-size:11px;color:var(--text-dim)">${fmtBytes(bytes)}</span>`;
+    wrap.appendChild(row);
   });
+}
 
-  // ─────────────────────── hero throughput counter ───────────────────────
-  const heroEl = document.getElementById("hero-tput");
-  let heroVal = 22, heroTarget = 22;
-  function tweenHeroTput(target) {
-    heroTarget = target;
-    const start = heroVal;
-    const t0 = performance.now();
-    const dur = 750;
-    function frame(t) {
-      const k = Math.min(1, (t - t0) / dur);
-      // ease-out quint
-      const e = 1 - Math.pow(1 - k, 5);
-      heroVal = start + (target - start) * e;
-      heroEl.textContent = heroVal.toFixed(1) + "M";
-      if (k < 1) requestAnimationFrame(frame);
+// Demo search
+$('ov-search-btn').addEventListener('click', async () => {
+  const q = $('ov-query').value.trim() || 'capital';
+  const k = +$('ov-k').value;
+  try {
+    const r = await api('POST', '/api/search', { query_text: q, k });
+    const wrap = $('ov-results'); wrap.innerHTML = '';
+    r.passages.forEach((p, i) => {
+      const row = mk('div', 'result-row');
+      row.innerHTML = `<div class="result-rank">#${i+1}</div>
+        <div class="result-body">${p}</div>
+        <div class="result-score">${(r.scores[i]||0).toFixed(4)}</div>`;
+      wrap.appendChild(row);
+      setTimeout(() => row.classList.add('in'), 60 * i);
+    });
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+// Recall gauge (arc canvas)
+function drawRecallArc(canvasId, pct, color = '#7c3aed') {
+  const c = $(canvasId); if (!c) return;
+  const ctx = c.getContext('2d'), w = c.width, h = c.height, cx = w/2, cy = h/2, r = cx - 8;
+  ctx.clearRect(0, 0, w, h);
+  // bg arc
+  ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI*0.75, Math.PI*0.25); ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.stroke();
+  // fill arc
+  if (pct > 0) {
+    const start = Math.PI*0.75, end = start + (Math.PI*1.5)*(pct/100);
+    const grad = ctx.createLinearGradient(0,0,w,h);
+    grad.addColorStop(0, color); grad.addColorStop(1, '#22d3ee');
+    ctx.beginPath(); ctx.arc(cx, cy, r, start, end); ctx.strokeStyle = grad; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.stroke();
+  }
+}
+
+async function loadRecall() {
+  try {
+    const r = await api('POST', '/api/recall_estimate', {sample_size:50, k:5, ef:32});
+    const pct = Math.round(r.recall * 100);
+    $('recall-pct').textContent = pct + '%';
+    $('recall-label').textContent = r.label || '';
+    $('rc-lo').textContent = (r.ci_95_lower*100).toFixed(1)+'%';
+    $('rc-hi').textContent = (r.ci_95_upper*100).toFixed(1)+'%';
+    $('rc-k').textContent  = r.k;
+    $('rc-n').textContent  = r.n_alive;
+    drawRecallArc('recall-canvas', pct, pct >= 95 ? '#10b981' : pct >= 80 ? '#7c3aed' : '#f59e0b');
+  } catch {}
+}
+setTimeout(loadRecall, 800); setInterval(loadRecall, 45000);
+
+// ═══════════════════════════════════════════════════════════════════
+// INDEXES PANEL
+// ═══════════════════════════════════════════════════════════════════
+$('idx-create-btn').addEventListener('click', async () => {
+  const btn = $('idx-create-btn'), err = $('idx-err');
+  err.classList.remove('show');
+  const name = $('idx-name').value.trim();
+  if (!name) { err.textContent = 'Name is required'; err.classList.add('show'); return; }
+  btn.disabled = true;
+  try {
+    const r = await api('POST', '/api/indexes', {
+      name, M: +$('idx-m').value, ef_construction: +$('idx-ef').value,
+      space: $('idx-space').value, dim: +$('idx-dim').value,
+    });
+    toast(`Created index "${r.name}" (M=${r.M}, ef=${r.ef_construction}, ${r.space})`, 'success');
+    $('idx-name').value = '';
+    loadIndexList();
+  } catch(e) { err.textContent = e.message; err.classList.add('show'); toast(e.message, 'error'); }
+  finally { btn.disabled = false; }
+});
+
+$('idx-refresh-btn').addEventListener('click', loadIndexList);
+$('idx-detail-close').addEventListener('click', () => $('idx-detail').style.display = 'none');
+$('params-acc').addEventListener('click', () => {
+  $('params-acc').classList.toggle('open');
+  $('params-body').style.display = $('params-acc').classList.contains('open') ? 'block' : 'none';
+});
+
+async function loadIndexList() {
+  const wrap = $('idx-list-wrap');
+  try {
+    const { indexes } = await api('GET', '/api/indexes');
+    if (!indexes.length) {
+      wrap.innerHTML = '<div class="empty"><div class="icon">⊘</div>No indexes yet.</div>';
+      return;
     }
-    requestAnimationFrame(frame);
-  }
-  // small idle pulse so the hero counter is alive
-  setInterval(() => {
-    const jitter = (Math.random() - 0.5) * 0.4;
-    heroEl.textContent = (heroTarget + jitter).toFixed(1) + "M";
-  }, 1100);
+    const tbl = mk('table');
+    tbl.innerHTML = `<thead><tr>
+      <th>Name</th><th>Vectors</th><th>Deleted</th><th>M</th><th>ef</th><th>Space</th><th>Dim</th><th></th>
+    </tr></thead>`;
+    const tbody = mk('tbody'); tbl.appendChild(tbody);
+    indexes.forEach(idx => {
+      const tr = mk('tr');
+      tr.innerHTML = `
+        <td><b>${idx.name}</b></td>
+        <td class="num">${idx.n_alive.toLocaleString()}</td>
+        <td class="num">${idx.n_deleted}</td>
+        <td class="num">${idx.M}</td>
+        <td class="num">${idx.ef_construction}</td>
+        <td><span class="badge purple">${idx.space}</span></td>
+        <td class="num">${idx.dim || '—'}</td>
+        <td style="text-align:right">
+          <button class="btn sm" data-stats="${idx.name}">stats</button>
+          <button class="btn sm danger" data-del="${idx.name}">✕</button>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+    wrap.innerHTML = ''; wrap.appendChild(tbl);
 
-  // ─────────────────────── compression calculator ───────────────────────
-  const PROFILES = [
-    { name: "fp32",     algo: "uncompressed",         ratio: 1.0,  klass: "alt-original" },
-    { name: "fast",     algo: "8-bit (SIMD)",         ratio: 4.0,  klass: "alt-1" },
-    { name: "balanced", algo: "8-bit + tuned",        ratio: 4.0,  klass: "alt-1" },
-    { name: "quality",  algo: "4-bit (NF4)",          ratio: 8.0,  klass: "alt-2" },
-    { name: "tiny",     algo: "1-bit",                ratio: 32.0, klass: "alt-3" },
-  ];
-  const FP32 = 4;
-
-  const $ = (id) => document.getElementById(id);
-  const nSlider = $("nSlider"), dSlider = $("dSlider");
-  const nVal = $("nVal"), dVal = $("dVal");
-  const barsEl = $("bars");
-  const origMB = $("origMB"), bestMB = $("bestMB"), bestRatio = $("bestRatio");
-
-  function fmtBytes(b) {
-    if (b >= 1e9) return (b / 1e9).toFixed(2) + " GB";
-    if (b >= 1e6) return (b / 1e6).toFixed(1) + " MB";
-    if (b >= 1e3) return (b / 1e3).toFixed(1) + " KB";
-    return b.toFixed(0) + " B";
-  }
-  function fmtCount(n) { return n.toLocaleString(); }
-  function fmtTime(s) {
-    if (s < 1) return (s * 1000).toFixed(0) + " ms";
-    if (s < 60) return s.toFixed(1) + " s";
-    if (s < 3600) return (s / 60).toFixed(1) + " min";
-    return (s / 3600).toFixed(1) + " hours";
-  }
-
-  // build bars
-  function buildBars() {
-    barsEl.innerHTML = "";
-    for (const p of PROFILES) {
-      const row = document.createElement("div");
-      row.className = "bar-row";
-      row.innerHTML = `
-        <div class="bar-label">
-          <span class="pname">${p.name}</span>
-          <span class="palg">${p.algo}</span>
-        </div>
-        <div class="bar-track"><div class="bar-fill ${p.klass}" data-name="${p.name}" style="width:0"></div></div>
-        <div class="bar-text" data-bar-text="${p.name}">—</div>
-      `;
-      barsEl.appendChild(row);
-    }
-  }
-
-  // spring tween for bar widths
-  const barTargets = new Map();
-  const barCurrents = new Map();
-  function tickBars() {
-    for (const [name, target] of barTargets) {
-      const cur = barCurrents.get(name) ?? 0;
-      // spring: stiffness 0.18, damping built into framerate
-      const next = cur + (target - cur) * 0.18;
-      barCurrents.set(name, next);
-      const el = barsEl.querySelector(`[data-name="${name}"]`);
-      if (el) el.style.width = next.toFixed(2) + "%";
-    }
-    requestAnimationFrame(tickBars);
-  }
-
-  function recompute() {
-    const n = parseInt(nSlider.value, 10);
-    const d = parseInt(dSlider.value, 10);
-    nVal.textContent = fmtCount(n);
-    dVal.textContent = fmtCount(d);
-
-    const original = n * d * FP32;
-    origMB.textContent = fmtBytes(original);
-
-    const bestSize = original / 32;
-    bestMB.textContent = fmtBytes(bestSize);
-    bestRatio.textContent = "32× — saves " + fmtBytes(original - bestSize);
-
-    for (const p of PROFILES) {
-      const size = original / p.ratio;
-      const pct  = (size / original) * 100;
-      barTargets.set(p.name, pct);
-      const txt = barsEl.querySelector(`[data-bar-text="${p.name}"]`);
-      if (txt) {
-        const ratioStr = p.ratio === 1 ? "1×" : p.ratio.toFixed(0) + "×";
-        const saved = original - size;
-        txt.innerHTML = `${fmtBytes(size)} <span class="saved">${ratioStr} · saves ${fmtBytes(saved)}</span>`;
+    tbl.addEventListener('click', async e => {
+      const sn = e.target.dataset.stats;
+      const dn = e.target.dataset.del;
+      if (sn) { showIndexStats(sn); return; }
+      if (dn && confirm(`Delete index "${dn}"?`)) {
+        try {
+          await api('DELETE', `/api/indexes/${dn}`);
+          toast(`Deleted "${dn}"`, 'success');
+          loadIndexList();
+          $('idx-detail').style.display = 'none';
+        } catch(ex) { toast(ex.message, 'error'); }
       }
+    });
+  } catch(e) { wrap.innerHTML = `<div class="empty"><div class="icon">⚠</div>${e.message}</div>`; }
+}
+
+async function showIndexStats(name) {
+  const detail = $('idx-detail'), sg = $('idx-detail-stats');
+  detail.style.display = 'block';
+  $('idx-detail-name').textContent = name + ' — stats';
+  sg.innerHTML = '';
+  try {
+    const s = await api('GET', `/api/indexes/${name}`);
+    const cells = [
+      ['n_alive', 'live vectors'], ['n_deleted', 'deleted'], ['orphan_count', 'orphans'],
+      ['n_total', 'total'], ['max_level', 'layers'], ['avg_degree_l0', 'avg degree'],
+    ];
+    cells.forEach(([k, l]) => {
+      if (s[k] !== undefined) {
+        const cell = mk('div', 'stat-cell');
+        cell.innerHTML = `<div class="v">${typeof s[k]==='number'?s[k].toFixed?.(s[k]%1?2:0):s[k]:'—'}</div><div class="l">${l}</div>`;
+        sg.appendChild(cell);
+      }
+    });
+  } catch(e) { sg.innerHTML = `<div class="err-msg show">${e.message}</div>`; }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SEARCH PANEL
+// ═══════════════════════════════════════════════════════════════════
+$('srch-k').addEventListener('input',  e => $('srch-k-val').textContent = e.target.value);
+$('srch-ef').addEventListener('input', e => $('srch-ef-val').textContent = e.target.value);
+$('srch-rand-btn').addEventListener('click', () => $('srch-vec').value = '');
+
+async function runSearch(withTrace) {
+  const name = $('srch-index').value;
+  if (!name) { toast('Select an index first', 'error'); return; }
+  const btn = withTrace ? $('srch-trace-btn') : $('srch-btn');
+  const err = $('srch-err');
+  btn.disabled = true; err.classList.remove('show');
+  const k  = +$('srch-k').value;
+  const ef = +$('srch-ef').value;
+  let vecRaw = null;
+  const ta = $('srch-vec').value.trim();
+  if (ta) { try { vecRaw = JSON.parse(ta); } catch { err.textContent = 'Invalid JSON vector'; err.classList.add('show'); btn.disabled=false; return; } }
+  let filt = null;
+  const ft = $('srch-filter').value.trim();
+  if (ft) { try { filt = JSON.parse(ft); } catch { err.textContent = 'Invalid filter JSON'; err.classList.add('show'); btn.disabled=false; return; } }
+  try {
+    const payload = { k, ef, trace: withTrace };
+    if (vecRaw) payload.vector = vecRaw;
+    if (filt) payload.filter = filt;
+    const r = await api('POST', `/api/indexes/${name}/search`, payload);
+    $('srch-timing').textContent = `${r.timing_ms?.toFixed(2)} ms`;
+    renderSearchResults(r.results || []);
+    renderHistogram(r.results || []);
+    if (withTrace && r.trace) {
+      $('srch-trace-panel').style.display = 'block';
+      $('tr-ep').textContent    = r.trace.entry_point;
+      $('tr-vis').textContent   = r.trace.l0_visited?.length + ' nodes';
+      $('tr-layers').textContent = r.trace.layer_descents?.length + ' layers';
     }
+  } catch(e) { err.textContent = e.message; err.classList.add('show'); toast(e.message, 'error'); }
+  finally { btn.disabled = false; }
+}
+$('srch-btn').addEventListener('click',       () => runSearch(false));
+$('srch-trace-btn').addEventListener('click', () => runSearch(true));
 
-    // throughput / time-to-compress on the selected platform
-    const tput = PLATFORMS[currentPlat].tput * 1.0e6; // M vec/s -> vec/s
-    const baselineTput = tput / 4;                    // FP32 baseline ~4× slower
-    const secs = n / tput;
-    const baselineSecs = n / baselineTput;
-    $("speed-num").innerHTML = (PLATFORMS[currentPlat].tput).toFixed(1)
-      + '<span class="unit"> M / sec</span>';
-    $("speed-delta").textContent =
-      `${(tput / baselineTput).toFixed(1)}× faster than uncompressed · ${PLATFORMS[currentPlat].simd}`;
-    $("speed-time").innerHTML = fmtTime(secs)
-      + `<span class="unit"> · vs ${fmtTime(baselineSecs)} uncompressed</span>`;
-  }
-
-  buildBars();
-  recompute();
-  tickBars();
-
-  nSlider.addEventListener("input", recompute);
-  dSlider.addEventListener("input", recompute);
-  document.querySelectorAll(".preset[data-n]").forEach(b => {
-    b.addEventListener("click", () => { nSlider.value = b.dataset.n; recompute();
-      flashActive(b, "[data-n]"); });
+function renderSearchResults(results) {
+  const wrap = $('srch-results'); wrap.innerHTML = '';
+  if (!results.length) { wrap.innerHTML = '<div class="empty"><div class="icon">⊘</div>No results.</div>'; return; }
+  results.forEach((r, i) => {
+    const row = mk('div', 'result-row');
+    const meta = r.metadata && Object.keys(r.metadata).length > 0
+      ? `<span style="font-size:10.5px;color:var(--text-muted)"> ${JSON.stringify(r.metadata)}</span>` : '';
+    row.innerHTML = `<div class="result-rank">#${i+1}</div>
+      <div class="result-body">ID&nbsp;<b>${r.id}</b>${meta}</div>
+      <div class="result-score">${r.distance?.toFixed(4)}</div>`;
+    wrap.appendChild(row);
+    setTimeout(() => row.classList.add('in'), 55*i);
   });
-  document.querySelectorAll(".preset[data-d]").forEach(b => {
-    b.addEventListener("click", () => { dSlider.value = b.dataset.d; recompute();
-      flashActive(b, "[data-d]"); });
+}
+
+function renderHistogram(results) {
+  const wrap = $('srch-hist-bars'), outer = $('srch-hist');
+  if (!results.length) { outer.style.display='none'; return; }
+  outer.style.display = 'block'; wrap.innerHTML = '';
+  const max = Math.max(...results.map(r => r.distance)) || 1;
+  results.forEach((r, i) => {
+    const pct = Math.round((r.distance / max) * 100);
+    const row = mk('div', 'hist-bar');
+    row.innerHTML = `<span style="width:32px">ID ${r.id}</span>
+      <div class="hist-track"><div class="hist-fill" style="width:${pct}%"></div></div>
+      <span style="width:48px;text-align:right">${r.distance?.toFixed(4)}</span>`;
+    wrap.appendChild(row);
   });
-  function flashActive(btn, sel) {
-    document.querySelectorAll(`.preset${sel}`).forEach(x => x.classList.remove("active"));
-    btn.classList.add("active");
-    setTimeout(() => btn.classList.remove("active"), 1200);
-  }
+}
 
-  // ─────────────────────── savings calculator ───────────────────────
-  const saveSlider = $("save-slider"), saveN = $("save-n");
-  function saveRecompute() {
-    const n = parseInt(saveSlider.value, 10);
-    saveN.textContent = fmtCount(n);
-    const fp32 = n * 1536 * 4;
-    $("save-fp32").textContent = fmtBytes(fp32);
-    $("save-int8").textContent = fmtBytes(fp32 / 4);
-    $("save-nf4").textContent  = fmtBytes(fp32 / 8);
-    $("save-bin").textContent  = fmtBytes(fp32 / 32);
-  }
-  saveSlider.addEventListener("input", saveRecompute);
-  document.querySelectorAll(".preset[data-save]").forEach(b => {
-    b.addEventListener("click", () => { saveSlider.value = b.dataset.save; saveRecompute(); });
-  });
-  saveRecompute();
+// ═══════════════════════════════════════════════════════════════════
+// BENCHMARK PANEL
+// ═══════════════════════════════════════════════════════════════════
+$('bench-k').addEventListener('input',  e => $('bench-k-val').textContent = e.target.value);
+$('bench-ef').addEventListener('input', e => $('bench-ef-val').textContent = e.target.value);
+$('bench-nq').addEventListener('input', e => $('bench-nq-val').textContent = e.target.value);
 
-  // ─────────────────────── search demo ───────────────────────
-  // Synthetic 2-D map of a small "knowledge base" — hand-placed so each
-  // query has obvious-looking nearest neighbours.
-  const KB = [
-    { x: 0.10, y: 0.18, t: "Paris is the capital of France",      tags: ["paris","france","capital"] },
-    { x: 0.13, y: 0.30, t: "Berlin is the capital of Germany",    tags: ["berlin","germany","capital"] },
-    { x: 0.08, y: 0.45, t: "Tokyo is the capital of Japan",       tags: ["tokyo","japan","capital"] },
-    { x: 0.20, y: 0.65, t: "Athens is the capital of Greece",     tags: ["athens","greece","capital"] },
-    { x: 0.22, y: 0.85, t: "Rome is the capital of Italy",        tags: ["rome","italy","capital"] },
-    { x: 0.40, y: 0.20, t: "Berlin gets cold and wet in winter",  tags: ["berlin","weather","cold"] },
-    { x: 0.45, y: 0.30, t: "Tokyo summers are humid and rainy",    tags: ["tokyo","weather","summer"] },
-    { x: 0.50, y: 0.45, t: "Athens has a mild Mediterranean climate", tags: ["athens","weather"] },
-    { x: 0.55, y: 0.62, t: "Cairo is hot and arid year round",    tags: ["cairo","weather","hot"] },
-    { x: 0.60, y: 0.80, t: "Moscow has long snowy winters",       tags: ["moscow","weather","snow"] },
-    { x: 0.78, y: 0.18, t: "French cuisine emphasises butter and wine", tags: ["france","food"] },
-    { x: 0.82, y: 0.35, t: "Italian pasta carbonara comes from Rome",   tags: ["rome","italy","food"] },
-    { x: 0.86, y: 0.55, t: "Japanese ramen has many regional styles",   tags: ["japan","food"] },
-    { x: 0.84, y: 0.75, t: "Greek salad is a Mediterranean staple",     tags: ["greece","food"] },
-    { x: 0.92, y: 0.88, t: "Sushi originated in Japan as a preservation method", tags: ["japan","food","history"] },
-    { x: 0.32, y: 0.55, t: "Trains in France connect Paris to Marseille at 320 km/h", tags: ["france","trains","paris"] },
-    { x: 0.36, y: 0.72, t: "The Tokyo subway carries 8 million riders per day",         tags: ["tokyo","japan","transit"] },
-    { x: 0.65, y: 0.35, t: "Italy's high-speed rail spans Milan to Naples",             tags: ["italy","trains"] },
-    { x: 0.70, y: 0.50, t: "Berlin's U-Bahn is one of Europe's oldest",                 tags: ["berlin","germany","transit"] },
-    { x: 0.30, y: 0.25, t: "The Eiffel Tower is in Paris",                              tags: ["paris","france","landmark"] },
-    { x: 0.15, y: 0.55, t: "Mount Fuji is a volcano on Honshu in Japan",                tags: ["japan","landmark"] },
-    { x: 0.42, y: 0.92, t: "Acropolis sits on a rocky outcrop above Athens",            tags: ["athens","greece","landmark"] },
-    { x: 0.68, y: 0.10, t: "Colosseum is an amphitheatre in Rome",                      tags: ["rome","italy","landmark"] },
-    { x: 0.90, y: 0.20, t: "Brandenburg Gate stands in central Berlin",                 tags: ["berlin","germany","landmark"] },
-  ];
-  const VW = 480, VH = 480, MARGIN = 40;
-  const dotsLayer = document.getElementById("qmap-dots");
-  const queryLayer = document.getElementById("qmap-query");
-
-  function svgEl(name, attrs) {
-    const e = document.createElementNS("http://www.w3.org/2000/svg", name);
-    for (const k in attrs) e.setAttribute(k, attrs[k]);
-    return e;
-  }
-
-  function projX(x) { return MARGIN + x * (VW - MARGIN * 1.2); }
-  function projY(y) { return MARGIN + y * (VH - MARGIN * 1.6); }
-
-  // place all KB dots
-  KB.forEach((p, i) => {
-    const c = svgEl("circle", {
-      cx: projX(p.x), cy: projY(p.y), r: 5,
-      fill: "#2a3050", stroke: "#3a4063", "stroke-width": 1,
-      class: "map-dot",
+$('bench-btn').addEventListener('click', async () => {
+  const name = $('bench-index').value;
+  if (!name) { toast('Select an index first', 'error'); return; }
+  const btn = $('bench-btn'), err = $('bench-err');
+  btn.disabled = true; btn.textContent = 'Running…'; err.classList.remove('show');
+  $('bench-results').style.display = 'none';
+  $('bench-empty').style.display = 'none';
+  try {
+    const r = await api('POST', `/api/indexes/${name}/benchmark`, {
+      k: +$('bench-k').value, ef: +$('bench-ef').value, n_queries: +$('bench-nq').value, warmup: 5,
     });
-    c.dataset.idx = i;
-    dotsLayer.appendChild(c);
-  });
-
-  // query chips
-  const QUERIES = [
-    "capital of France",
-    "where is sushi from",
-    "high-speed trains in Europe",
-    "best winter to avoid",
-    "famous landmarks in Italy",
-    "what to eat in Greece",
-  ];
-  const chipsRow = document.getElementById("qchips");
-  QUERIES.forEach(q => {
-    const b = document.createElement("button");
-    b.textContent = q;
-    b.addEventListener("click", () => {
-      $("qbox").value = q;
-      runSearch(q);
+    $('bench-results').style.display = 'block';
+    countUp('bench-qps', r.qps, '', 0);
+    // Latency bars
+    const maxMs = Math.max(r.p99_ms, r.mean_ms, 0.001);
+    [['p50', r.p50_ms], ['p95', r.p95_ms], ['p99', r.p99_ms], ['mean', r.mean_ms]].forEach(([id, v]) => {
+      $(`bar-${id}`).style.height = Math.max(4, (v/maxMs)*100) + '%';
+      $(`bv-${id}`).textContent = v?.toFixed(2)+'ms';
     });
-    chipsRow.appendChild(b);
-  });
-
-  function tokenize(s) {
-    return s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
-  }
-  // Score each KB item by tag-overlap with the query plus a small geographic-bias
-  // bonus so the visual pattern is meaningful.
-  function score(qTokens, item) {
-    const set = new Set(qTokens);
-    let s = 0;
-    for (const t of item.tags) if (set.has(t)) s += 2;
-    for (const t of qTokens)   if (item.t.toLowerCase().includes(t)) s += 1;
-    if (qTokens.includes("capital") && item.tags.includes("capital")) s += 2;
-    if (qTokens.includes("food") || qTokens.includes("eat") || qTokens.includes("cuisine")) {
-      if (item.tags.includes("food")) s += 2;
+    // Recall ring
+    if (r.recall_k != null) {
+      const pct = Math.round(r.recall_k * 100);
+      $('bench-recall-pct').textContent = pct + '%';
+      drawRecallArc('bench-recall-canvas', pct, pct >= 95 ? '#10b981' : '#7c3aed');
     }
-    if (qTokens.includes("trains") || qTokens.includes("train") || qTokens.includes("rail")) {
-      if (item.tags.includes("trains") || item.tags.includes("transit")) s += 2;
+    // Stats grid
+    const sg = $('bench-stats'); sg.innerHTML = '';
+    [['n_queries','queries'],['n_vectors','vectors'],['dim','dim'],['min_ms','min ms'],['max_ms','max ms']].forEach(([k,l]) => {
+      if (r[k] != null) {
+        const c = mk('div','stat-cell');
+        c.innerHTML = `<div class="v">${typeof r[k]==='number'&&r[k]%1?r[k].toFixed(2):r[k]}</div><div class="l">${l}</div>`;
+        sg.appendChild(c);
+      }
+    });
+    toast(`${r.qps.toFixed(0)} QPS · p50=${r.p50_ms.toFixed(2)}ms`, 'success');
+  } catch(e) { err.textContent = e.message; err.classList.add('show'); $('bench-empty').style.display='block'; toast(e.message,'error'); }
+  finally { btn.disabled = false; btn.textContent = '▶ Run benchmark'; }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 2D PROJECTION PANEL
+// ═══════════════════════════════════════════════════════════════════
+$('proj-n').addEventListener('input',   e => $('proj-n-val').textContent = e.target.value);
+$('proj-k').addEventListener('input',   e => $('proj-k-val').textContent = e.target.value);
+$('proj-dim').addEventListener('input', e => $('proj-dim-val').textContent = e.target.value);
+
+const CLUSTER_COLORS = [
+  '#7c3aed','#22d3ee','#10b981','#f59e0b',
+  '#ef4444','#ec4899','#3b82f6','#84cc16',
+  '#f97316','#a855f7','#14b8a6','#eab308',
+];
+
+// Canvas scatter state
+let scatterPoints = [];
+let scatterCenters = [];
+let scatterK = 4;
+let scatterTransform = { ox: 0, oy: 0, scale: 1 };
+let scatterDrag = null;
+let scatterHover = null;
+
+function resizeScatter() {
+  const c = $('scatter-canvas'), wrap = $('scatter-wrap');
+  c.width  = wrap.clientWidth;
+  c.height = wrap.clientHeight;
+  drawScatter();
+}
+
+function worldToScreen(x, y) {
+  const c = $('scatter-canvas');
+  const { ox, oy, scale } = scatterTransform;
+  const cx = c.width/2, cy = c.height/2;
+  return [cx + (x - ox) * scale, cy + (y - oy) * scale];
+}
+
+function screenToWorld(sx, sy) {
+  const c = $('scatter-canvas');
+  const { ox, oy, scale } = scatterTransform;
+  const cx = c.width/2, cy = c.height/2;
+  return [(sx - cx) / scale + ox, (sy - cy) / scale + oy];
+}
+
+function drawScatter() {
+  const c = $('scatter-canvas'); if (!c) return;
+  const ctx = c.getContext('2d'), W = c.width, H = c.height;
+  ctx.clearRect(0,0,W,H);
+  // bg
+  ctx.fillStyle = '#0d0d20'; ctx.fillRect(0,0,W,H);
+  // grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 1;
+  const step = scatterTransform.scale * 0.25;
+  if (step > 6) {
+    const [wx0,wy0] = screenToWorld(0,0), [wx1,wy1] = screenToWorld(W,H);
+    for (let gx = Math.floor(wx0/0.25)*0.25; gx <= wx1; gx += 0.25) {
+      const [sx] = worldToScreen(gx, 0); ctx.beginPath(); ctx.moveTo(sx,0); ctx.lineTo(sx,H); ctx.stroke();
     }
-    if (qTokens.includes("winter") || qTokens.includes("snow") || qTokens.includes("cold")) {
-      if (item.tags.includes("weather") || item.tags.includes("cold") || item.tags.includes("snow")) s += 2;
+    for (let gy = Math.floor(wy0/0.25)*0.25; gy <= wy1; gy += 0.25) {
+      const [,sy] = worldToScreen(0, gy); ctx.beginPath(); ctx.moveTo(0,sy); ctx.lineTo(W,sy); ctx.stroke();
     }
-    if (qTokens.includes("landmarks") || qTokens.includes("landmark")) {
-      if (item.tags.includes("landmark")) s += 2;
-    }
-    return s + 0.0001 * Math.random();   // tiny noise to break ties
   }
-
-  function placeQueryDot(qTokens) {
-    queryLayer.innerHTML = "";
-    // pick the average position of the top-3 matches as the "query"
-    // location — visually places the query near its meaning cluster.
-    const ranked = KB.map((p, i) => ({ p, i, s: score(qTokens, p) }))
-                     .sort((a, b) => b.s - a.s);
-    const top = ranked.slice(0, 3);
-    const cx = top.reduce((a, r) => a + projX(r.p.x), 0) / top.length;
-    const cy = top.reduce((a, r) => a + projY(r.p.y), 0) / top.length;
-    const halo = svgEl("circle", {
-      cx, cy, r: 4, fill: "url(#qDotMatch)",
-      stroke: "#22d3ee", "stroke-width": 2,
-      class: "query-dot",
-    });
-    halo.style.filter = "drop-shadow(0 0 12px #22d3ee)";
-    queryLayer.appendChild(halo);
-    // pulse animation
-    const animR = svgEl("animate", {
-      attributeName: "r", from: 4, to: 28, dur: "1.6s",
-      begin: "0s", repeatCount: "indefinite",
-    });
-    const animO = svgEl("animate", {
-      attributeName: "opacity", from: 0.6, to: 0, dur: "1.6s",
-      repeatCount: "indefinite",
-    });
-    const ring = svgEl("circle", {
-      cx, cy, r: 4, fill: "none",
-      stroke: "#22d3ee", "stroke-width": 2,
-    });
-    ring.appendChild(animR);
-    ring.appendChild(animO);
-    queryLayer.appendChild(ring);
-    return ranked;
-  }
-
-  const resultsEl = document.getElementById("qresults");
-  function runSearch(q) {
-    const tokens = tokenize(q);
-    const ranked = placeQueryDot(tokens);
-
-    // reset KB dots
-    document.querySelectorAll(".map-dot").forEach(el => {
-      el.classList.remove("match");
-      el.setAttribute("fill", "#2a3050");
-      el.setAttribute("stroke", "#3a4063");
-      el.setAttribute("r", 5);
-    });
-    // highlight top-5 progressively
-    const top5 = ranked.slice(0, 5);
-    top5.forEach((r, rank) => {
-      setTimeout(() => {
-        const el = document.querySelector(`.map-dot[data-idx="${r.i}"]`);
-        if (el) {
-          el.classList.add("match");
-          el.setAttribute("fill", "url(#qDotMatch)");
-          el.setAttribute("stroke", "#22d3ee");
-          el.setAttribute("r", 8);
-        }
-      }, 120 + rank * 100);
-    });
-
-    // results list (animated in)
-    resultsEl.innerHTML = "";
-    top5.forEach((r, rank) => {
-      const row = document.createElement("div");
-      row.className = "result-row";
-      const sim = (0.7 + r.s * 0.04).toFixed(3);
-      row.innerHTML = `<div class="rank">#${rank + 1}</div>
-                       <div class="text">${r.p.t}</div>
-                       <div class="score">${sim}</div>`;
-      resultsEl.appendChild(row);
-      setTimeout(() => row.classList.add("in"), 100 + rank * 100);
+  // cluster arcs (very faint)
+  if (scatterCenters.length) {
+    scatterPoints.forEach(p => {
+      const ci = p.cluster ?? 0;
+      const [sx, sy] = worldToScreen(p.x, p.y);
+      const [cx2, cy2] = worldToScreen(scatterCenters[ci]?.[0]??0, scatterCenters[ci]?.[1]??0);
+      ctx.strokeStyle = CLUSTER_COLORS[ci % CLUSTER_COLORS.length] + '18';
+      ctx.lineWidth = 0.7;
+      ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(cx2,cy2); ctx.stroke();
     });
   }
-
-  document.getElementById("qrun").addEventListener("click",
-    () => runSearch(document.getElementById("qbox").value || "capital of France"));
-  document.getElementById("qbox").addEventListener("keydown", e => {
-    if (e.key === "Enter") runSearch(e.target.value);
+  // points
+  scatterPoints.forEach(p => {
+    const [sx, sy] = worldToScreen(p.x, p.y);
+    if (sx < -20 || sx > W+20 || sy < -20 || sy > H+20) return;
+    const ci = p.cluster ?? 0;
+    const col = CLUSTER_COLORS[ci % CLUSTER_COLORS.length];
+    const r = scatterHover?.id === p.id ? 8 : 5;
+    ctx.save();
+    ctx.shadowBlur  = scatterHover?.id === p.id ? 18 : 6;
+    ctx.shadowColor = col;
+    ctx.fillStyle   = col;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, 2*Math.PI); ctx.fill();
+    ctx.restore();
   });
+  // centroid rings
+  scatterCenters.forEach((c2, ci) => {
+    const [sx, sy] = worldToScreen(c2[0], c2[1]);
+    const col = CLUSTER_COLORS[ci % CLUSTER_COLORS.length];
+    ctx.save(); ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([4,4]);
+    ctx.shadowBlur = 12; ctx.shadowColor = col;
+    ctx.beginPath(); ctx.arc(sx, sy, 14, 0, 2*Math.PI); ctx.stroke();
+    ctx.setLineDash([]); ctx.restore();
+  });
+}
 
-  // initial search so the panel isn't empty
-  runSearch("capital of France");
+// Scatter: zoom + pan
+$('scatter-canvas').addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY < 0 ? 1.12 : 0.89;
+  const rect  = $('scatter-canvas').getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const [wx, wy] = screenToWorld(mx, my);
+  scatterTransform.scale *= delta;
+  const [nx, ny] = worldToScreen(wx, wy);
+  scatterTransform.ox += (mx - nx) / scatterTransform.scale;
+  scatterTransform.oy += (my - ny) / scatterTransform.scale;
+  drawScatter();
+}, { passive: false });
 
-  // ─────────────────────── scatter dots (animate in) ───────────────────────
-  const SCATTER_DOTS = [
-    { cx: 80,  cy: 60,  fill: "#5e6478",       label: "FP32 baseline (1.000)",        delay: 0,    color: "#98a0b6" },
-    { cx: 208, cy: 76,  fill: "url(#dotG-fast)", label: "fast — 8-bit (0.997)",        delay: 200,  color: "#facc15" },
-    { cx: 208, cy: 84,  fill: "url(#dotG-bal)",  label: "balanced — 8-bit (0.996)",    delay: 400,  color: "#22d3ee" },
-    { cx: 336, cy: 116, fill: "url(#dotG-qua)",  label: "quality — 4-bit (0.991)",     delay: 600,  color: "#c084fc" },
-    { cx: 720, cy: 280, fill: "url(#dotG-bin)",  label: "tiny — 1-bit (0.951)",        delay: 800,  color: "#4ade80" },
-  ];
-  function paintScatter() {
-    const layer = document.getElementById("scatter-dots");
-    layer.innerHTML = "";
-    SCATTER_DOTS.forEach((d, i) => {
-      const g = svgEl("g", { class: "scatter-group" });
-      const dot = svgEl("circle", {
-        class: "scatter-dot appear",
-        cx: d.cx, cy: d.cy, r: 9, fill: d.fill,
-        stroke: "#0a0c12", "stroke-width": 3,
-        style: `animation-delay: ${d.delay}ms`,
+$('scatter-canvas').addEventListener('mousedown', e => {
+  scatterDrag = { sx: e.clientX, sy: e.clientY, ox: scatterTransform.ox, oy: scatterTransform.oy };
+});
+window.addEventListener('mousemove', e => {
+  if (scatterDrag) {
+    const dx = e.clientX - scatterDrag.sx, dy = e.clientY - scatterDrag.sy;
+    scatterTransform.ox = scatterDrag.ox - dx / scatterTransform.scale;
+    scatterTransform.oy = scatterDrag.oy - dy / scatterTransform.scale;
+    drawScatter();
+  } else {
+    // hover hit-test
+    const c = $('scatter-canvas'); if (!c) return;
+    const rect = c.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    let best = null, bd = 14;
+    scatterPoints.forEach(p => {
+      const [sx, sy] = worldToScreen(p.x, p.y);
+      const d = Math.hypot(sx-mx, sy-my);
+      if (d < bd) { bd=d; best=p; }
+    });
+    scatterHover = best;
+    drawScatter();
+    const tt = $('scatter-tooltip');
+    if (best) {
+      const meta = best.meta && Object.keys(best.meta).length ? JSON.stringify(best.meta) : '';
+      tt.innerHTML = `<b>ID ${best.id}</b>${meta ? `<br>${meta}` : ''}<br>cluster ${best.cluster??'—'}<br>(${best.x?.toFixed(3)}, ${best.y?.toFixed(3)})`;
+      tt.classList.add('vis');
+      tt.style.left = (e.clientX - rect.left + 14) + 'px';
+      tt.style.top  = (e.clientY - rect.top  - 8)  + 'px';
+    } else {
+      tt.classList.remove('vis');
+    }
+  }
+});
+window.addEventListener('mouseup', () => { scatterDrag = null; });
+window.addEventListener('resize', resizeScatter);
+
+function setScatterData(points, centers, k) {
+  scatterPoints  = points;
+  scatterCenters = centers;
+  scatterK       = k;
+  // Reset transform for new data
+  scatterTransform = { ox: 0, oy: 0, scale: Math.min($('scatter-canvas').width, $('scatter-canvas').height) * 0.42 };
+  drawScatter();
+  // Legend
+  const leg = $('proj-legend'); leg.innerHTML = '';
+  for (let i = 0; i < k; i++) {
+    const row = mk('div','kv-row');
+    row.innerHTML = `<span style="display:flex;align-items:center;gap:7px"><span style="width:10px;height:10px;border-radius:50%;background:${CLUSTER_COLORS[i%CLUSTER_COLORS.length]};display:inline-block;box-shadow:0 0 6px ${CLUSTER_COLORS[i%CLUSTER_COLORS.length]}55"></span>Cluster ${i}</span>
+      <span class="v">${points.filter(p=>p.cluster===i).length}</span>`;
+    leg.appendChild(row);
+  }
+}
+
+$('proj-gen-btn').addEventListener('click', async () => {
+  const name = $('proj-index').value;
+  if (!name) { toast('Select an index first', 'error'); return; }
+  const n = +$('proj-n').value, dim = +$('proj-dim').value;
+  const btn = $('proj-gen-btn'); btn.disabled = true;
+  try {
+    // generate random unit vectors
+    const vecs = [];
+    for (let i = 0; i < n; i++) {
+      const v = Array.from({length: dim}, () => (Math.random()*2-1));
+      const norm = Math.sqrt(v.reduce((a,x)=>a+x*x,0)) || 1;
+      vecs.push(v.map(x=>x/norm));
+    }
+    const r = await api('POST', `/api/indexes/${name}/add`, {
+      vectors: vecs,
+      ids: vecs.map((_,i)=>`rnd-${Date.now()}-${i}`),
+    });
+    toast(`Added ${r.inserted} vectors (${r.updated} updated)`, 'success');
+    $('proj-pt-count').textContent = 'N/A (project to update)';
+  } catch(e) { toast(e.message,'error'); }
+  finally { btn.disabled = false; }
+});
+
+$('proj-add-btn').addEventListener('click', async () => {
+  const name = $('proj-index').value;
+  if (!name) { toast('Select an index first', 'error'); return; }
+  const raw = $('proj-vecs').value.trim();
+  if (!raw) { toast('Paste JSON vectors first', 'error'); return; }
+  let vecs;
+  try { vecs = JSON.parse(raw); } catch { toast('Invalid JSON', 'error'); return; }
+  const btn = $('proj-add-btn'); btn.disabled = true;
+  try {
+    const r = await api('POST', `/api/indexes/${name}/add`, { vectors: vecs });
+    toast(`Added ${r.inserted} vectors`, 'success');
+  } catch(e) { toast(e.message,'error'); }
+  finally { btn.disabled = false; }
+});
+
+$('proj-project-btn').addEventListener('click', async () => {
+  const name = $('proj-index').value;
+  if (!name) { toast('Select an index first', 'error'); return; }
+  const btn = $('proj-project-btn'), err = $('proj-err');
+  btn.disabled = true; err.classList.remove('show');
+  const k = +$('proj-k').value;
+  try {
+    resizeScatter();
+    const r = await api('POST', `/api/indexes/${name}/cluster`, { k });
+    if (!r.points?.length) { toast('Index is empty — add vectors first', 'error'); return; }
+    $('proj-pt-count').textContent = r.n;
+    $('proj-ms').textContent = r.timing_ms?.toFixed(2)+'ms';
+    setScatterData(r.points, r.centers, r.k);
+    toast(`Projected ${r.n} points into ${r.k} clusters`, 'success');
+  } catch(e) { err.textContent = e.message; err.classList.add('show'); toast(e.message,'error'); }
+  finally { btn.disabled = false; }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// INDEX SELECT SYNC (shared across panels)
+// ═══════════════════════════════════════════════════════════════════
+async function populateIndexSelects() {
+  try {
+    const { indexes } = await api('GET', '/api/indexes');
+    ['srch-index','bench-index','proj-index'].forEach(id => {
+      const sel = $(id); if (!sel) return;
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">— select an index —</option>';
+      indexes.forEach(idx => {
+        const opt = mk('option'); opt.value = idx.name; opt.textContent = `${idx.name} (${idx.n_alive} vectors)`;
+        if (idx.name === cur) opt.selected = true;
+        sel.appendChild(opt);
       });
-      const text = svgEl("text", {
-        x: d.cx + 14, y: d.cy + 4,
-        "font-family": "ui-monospace, monospace",
-        "font-size": 11, fill: d.color,
-        opacity: 0,
-      });
-      text.textContent = d.label;
-      // anchor adjustment for the rightmost label
-      if (d.cx > 600) {
-        text.setAttribute("x", d.cx - 14);
-        text.setAttribute("text-anchor", "end");
-      }
-      g.appendChild(dot);
-      g.appendChild(text);
-      layer.appendChild(g);
-      // fade text in slightly after the dot
-      setTimeout(() => {
-        text.setAttribute("opacity", 1);
-        text.style.transition = "opacity 0.4s";
-      }, d.delay + 300);
     });
-  }
+  } catch {}
+}
 
-  // Use IntersectionObserver so the dots animate in only when the
-  // section enters the viewport (more rewarding on scroll).
-  const scatterEl = document.getElementById("scatter");
-  let painted = false;
-  const io = new IntersectionObserver((entries) => {
-    for (const e of entries) {
-      if (e.isIntersecting && !painted) {
-        painted = true;
-        paintScatter();
-      }
-    }
-  }, { threshold: 0.2 });
-  io.observe(scatterEl);
-
-  // ─────────────────────── smooth scroll ───────────────────────
-  document.querySelectorAll('a[href^="#"]').forEach(a => {
-    a.addEventListener("click", e => {
-      const t = document.querySelector(a.getAttribute("href"));
-      if (t) {
-        e.preventDefault();
-        t.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    });
-  });
-
-  // ───────────────────────────────────────────────────────────────
-  //                LIVE BACKEND — real Vectro on this CPU
-  // ───────────────────────────────────────────────────────────────
-  // When demo/server.py is running we point fetch() at it and overlay
-  // the real, *measured* numbers on top of the synthetic visualisation.
-  // Everything below is additive: if /api/health doesn't respond, the
-  // page works exactly as before.
-  // ───────────────────────────────────────────────────────────────
-
-  const LIVE = { online: false, base: window.location.origin };
-  const banner   = document.getElementById("live-banner");
-  const liveS    = document.getElementById("live-state");
-  const liveMsg  = document.getElementById("live-msg");
-  const liveHw   = document.getElementById("live-hw");
-
-  async function api(path, body) {
-    const opt = body
-      ? { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body) }
-      : { method: "GET" };
-    const r = await fetch(LIVE.base + path, opt);
-    if (!r.ok) throw new Error(`${path} → ${r.status}`);
-    return r.json();
-  }
-
-  function pillFor(parent, opts = {}) {
-    const existing = parent.querySelector(".live-pill");
-    if (existing) return existing;
-    const pill = document.createElement("span");
-    pill.className = "live-pill" + (opts.measured ? " measured" : "");
-    pill.textContent = "LIVE";
-    parent.appendChild(pill);
-    return pill;
-  }
-  function spinnerOn(parent) {
-    if (parent.querySelector(".api-spin")) return;
-    const s = document.createElement("span");
-    s.className = "api-spin";
-    parent.appendChild(s);
-  }
-  function spinnerOff(parent) {
-    parent.querySelectorAll(".api-spin").forEach(n => n.remove());
-  }
-
-  async function checkLive() {
-    try {
-      const h = await api("/api/health");
-      LIVE.online = !!h.ok;
-      LIVE.platform = h.platform;
-      LIVE.version = h.version;
-    } catch (_) {
-      LIVE.online = false;
-    }
-    if (LIVE.online) {
-      banner.classList.remove("offline");
-      banner.classList.add("online");
-      liveS.textContent = "Live — every number on this page is measured here, right now.";
-      liveMsg.innerHTML  = `Calling real Vectro <code>v${LIVE.version}</code> on every interaction.`;
-      liveHw.textContent = LIVE.platform || "";
-      // Stamp pills + run a real benchmark + a real recompute.
-      stampLivePills();
-      tryBenchmark();
-      tryRecompute();
-      tryServerSearch(document.getElementById("qbox").value);
-    }
-    return LIVE.online;
-  }
-
-  function stampLivePills() {
-    // headline stat
-    const heroLbl = document.querySelector(".stat.featured .lbl");
-    if (heroLbl) pillFor(heroLbl, { measured: false });
-    // calculator summary cells
-    document.querySelectorAll(".summary-cell .l").forEach(el => pillFor(el));
-    // platform speed panel
-    const speedLbl = document.querySelector(".speed-cell .label");
-    if (speedLbl) pillFor(speedLbl, { measured: true });
-    // search results
-    const sLbl = document.querySelector("#search .section-eyebrow");
-    if (sLbl) pillFor(sLbl);
-    // savings cells
-    document.querySelectorAll(".save-cell .l").forEach(el => pillFor(el));
-  }
-
-  // ── live compress: replace the synthetic recompute() with a real
-  // /api/compress call.  Debounced 250 ms so dragging sliders doesn't
-  // overwhelm the server.
-  let recomputeTimer = null;
-  async function tryRecompute() {
-    if (!LIVE.online) return;
-    clearTimeout(recomputeTimer);
-    recomputeTimer = setTimeout(realCompress, 250);
-  }
-
-  async function realCompress() {
-    const n   = parseInt(document.getElementById("nSlider").value, 10);
-    const d   = parseInt(document.getElementById("dSlider").value, 10);
-    const sum = document.querySelector(".summary");
-    spinnerOn(sum);
-    // We measure four modes side-by-side so the bars + summary all
-    // become "real".  Cap n for the API call so big slider values
-    // don't stall the server (the visual bars already use the slider n).
-    const cap = Math.min(n, 100_000);
-    try {
-      const [int8, q, b] = await Promise.all([
-        api("/api/compress", { n_vecs: cap, dim: d, mode: "balanced" }),
-        api("/api/compress", { n_vecs: cap, dim: d, mode: "quality"  }),
-        api("/api/compress", { n_vecs: cap, dim: d, mode: "binary"   }),
-      ]);
-      // Update the speed panel with the *real* throughput.
-      const speedNum = document.getElementById("speed-num");
-      const delta    = document.getElementById("speed-delta");
-      const Mvs = (int8.throughput_M_vec_s || 0).toFixed(2);
-      speedNum.innerHTML = `${Mvs}<span class="unit"> M / sec</span>`;
-      delta.textContent =
-        `measured · 8-bit · n=${cap.toLocaleString()} d=${d}  →  ${int8.timing_ms} ms`;
-
-      // Update bar text with real ratios (8-bit, NF4 quality, 1-bit binary)
-      const setBar = (name, ratio, originalBytes) => {
-        const txt = document.querySelector(`[data-bar-text="${name}"]`);
-        if (!txt) return;
-        const bytes = originalBytes / ratio;
-        const saved = originalBytes - bytes;
-        txt.innerHTML = `${fmtBytesUI(bytes)} <span class="saved">${ratio.toFixed(2)}× · saves ${fmtBytesUI(saved)} (real)</span>`;
-      };
-      // Reuse existing fmtBytes by extracting it from window? It's
-      // closure-private; replicate inline.
-      function fmtBytesUI(b) {
-        if (b >= 1e9) return (b / 1e9).toFixed(2) + " GB";
-        if (b >= 1e6) return (b / 1e6).toFixed(1) + " MB";
-        if (b >= 1e3) return (b / 1e3).toFixed(1) + " KB";
-        return b.toFixed(0) + " B";
-      }
-      // For the bar visuals (which are drawn at the slider's full n),
-      // scale the real ratios up to the slider's n so the user sees the
-      // right answer for their chosen catalog size.
-      const realFp32 = n * d * 4;
-      setBar("fast",     int8.ratio,  realFp32);
-      setBar("balanced", int8.ratio,  realFp32);
-      setBar("quality",  q.ratio,     realFp32);
-      setBar("tiny",     b.ratio,     realFp32);
-    } catch (e) {
-      console.warn("realCompress failed:", e);
-    } finally {
-      spinnerOff(sum);
-    }
-  }
-
-  // re-fire real compress when sliders move
-  document.getElementById("nSlider").addEventListener("input", tryRecompute);
-  document.getElementById("dSlider").addEventListener("input", tryRecompute);
-
-  // ── live benchmark: get a real M vec/s number for THIS CPU at d=768
-  async function tryBenchmark() {
-    if (!LIVE.online) return;
-    const heroEl = document.getElementById("hero-tput");
-    const heroLbl = document.querySelector(".stat.featured .lbl");
-    spinnerOn(heroLbl);
-    try {
-      const r = await api("/api/benchmark", { n_vecs: 50_000, dim: 768, reps: 3 });
-      const Mvs = r.best_M_vec_s;
-      // Tween from current displayed value to the real one.
-      const start = parseFloat(heroEl.textContent) || 22;
-      const t0 = performance.now();
-      const dur = 1000;
-      function frame(t) {
-        const k = Math.min(1, (t - t0) / dur);
-        const e = 1 - Math.pow(1 - k, 5);
-        const v = start + (Mvs - start) * e;
-        heroEl.textContent = v.toFixed(2) + "M";
-        if (k < 1) requestAnimationFrame(frame);
-      }
-      requestAnimationFrame(frame);
-      // Update hero label with true platform info.
-      const lbl = document.querySelector(".stat.featured .lbl");
-      const plat = (r.platform || LIVE.platform || "").replace(" / ", " · ");
-      const orig = lbl.firstChild;
-      orig.textContent = `Vectors compressed / second on ${plat}`;
-    } catch (e) {
-      console.warn("benchmark failed:", e);
-    } finally {
-      spinnerOff(heroLbl);
-    }
-  }
-
-  // ── live search: replace the synthetic runSearch with /api/search
-  const qbox = document.getElementById("qbox");
-  const qrun = document.getElementById("qrun");
-  const resultsEl = document.getElementById("qresults");
-
-  async function tryServerSearch(query) {
-    if (!LIVE.online) return false;
-    spinnerOn(qrun);
-    try {
-      const out = await api("/api/search", { query_text: query, k: 5 });
-      // Render real results.
-      resultsEl.innerHTML = "";
-      out.passages.forEach((p, rank) => {
-        const row = document.createElement("div");
-        row.className = "result-row";
-        row.innerHTML = `<div class="rank">#${rank + 1}</div>
-                         <div class="text">${p}</div>
-                         <div class="score">${out.scores[rank].toFixed(4)}</div>`;
-        resultsEl.appendChild(row);
-        setTimeout(() => row.classList.add("in"), 80 + rank * 90);
-      });
-      // Tag a "LIVE · Xms" stamp on the search header.
-      const sLbl = document.querySelector("#search .section-eyebrow");
-      const existing = sLbl.querySelector(".live-pill");
-      if (existing) existing.textContent = `LIVE · ${out.timing_ms.toFixed(2)} ms`;
-
-      // Highlight the corresponding dots on the synthetic 2-D map by
-      // re-running the local placement against the original query — we
-      // already have the visual choreography from the static demo, so
-      // the server result populates the real list and the static map
-      // shows where the meaning cluster lives.
-      // (The local runSearch is already wired; we leave it — the dots
-      // animate as the user clicks "Search".)
-      return true;
-    } catch (e) {
-      console.warn("server search failed, falling back:", e);
-      return false;
-    } finally {
-      spinnerOff(qrun);
-    }
-  }
-
-  // intercept "Search" clicks and Enter presses to prefer the server.
-  // The original local handler still runs first to drive the animated
-  // map; we then overlay real results into the list.
-  qrun.addEventListener("click", () => tryServerSearch(qbox.value));
-  qbox.addEventListener("keydown", e => {
-    if (e.key === "Enter") tryServerSearch(qbox.value);
-  });
-  document.querySelectorAll(".search-suggest button").forEach(b => {
-    b.addEventListener("click", () => tryServerSearch(b.textContent));
-  });
-
-  // kick off the probe
-  checkLive();
-})();
+// ── Init ──────────────────────────────────────────────────────────
+setTimeout(() => { $('ov-compress-btn').click(); }, 600);
+resizeScatter();
 </script>
 </body>
 </html>
