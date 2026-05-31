@@ -1,505 +1,1256 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Vectro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vectro — Vector Database Studio</title>
 <style>
-  :root {
-    --bg: #000008;
-    --ink: #d8def0;
-    --ink-dim: #6f7894;
-    --ink-faint: #2a3148;
-    --konjo: #7c3aed;
-    --blue: #3b82f6;
-    --aurora: #10b981;
-    --glass: rgba(14, 18, 36, 0.55);
-    --glass-edge: rgba(124, 58, 237, 0.18);
-  }
+/* ── reset & tokens ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:          #060612;
+  --panel:       #0d0d20;
+  --panel-2:     #11112a;
+  --line:        rgba(124,58,237,0.18);
+  --line-dim:    rgba(255,255,255,0.07);
+  --accent:      #7c3aed;
+  --accent-glow: rgba(124,58,237,0.22);
+  --accent-2:    #22d3ee;
+  --green:       #10b981;
+  --red:         #ef4444;
+  --warn:        #f59e0b;
+  --text:        #e2e8f0;
+  --text-dim:    #8892a4;
+  --text-muted:  #4a5568;
+  --mono:        ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --sans:        -apple-system, "Inter", "Segoe UI", system-ui, sans-serif;
+  --ease:        cubic-bezier(0.23, 1, 0.32, 1);
+  --r:           10px;
+  --r-sm:        6px;
+}
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); overflow: hidden; }
 
-  * { box-sizing: border-box; }
+/* ── scrollable inner panels ────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; }
 
-  html, body {
-    margin: 0; padding: 0;
-    height: 100%; width: 100%;
-    background: var(--bg);
-    color: var(--ink);
-    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter",
-                 system-ui, sans-serif;
-    overflow: hidden;
-  }
+/* ── app shell ──────────────────────────────────────────────────────── */
+#app { display: flex; flex-direction: column; height: 100vh; }
 
-  body {
-    background:
-      radial-gradient(ellipse at 50% 50%, rgba(124, 58, 237, 0.10), transparent 60%),
-      radial-gradient(ellipse at 18% 22%, rgba(59, 130, 246, 0.08), transparent 55%),
-      radial-gradient(ellipse at 82% 78%, rgba(16, 185, 129, 0.07), transparent 55%),
-      var(--bg);
-  }
+/* ── top bar ─────────────────────────────────────────────────────────── */
+#topbar {
+  display: flex; align-items: center; gap: 24px;
+  padding: 0 28px; height: 52px; flex-shrink: 0;
+  border-bottom: 1px solid var(--line-dim);
+  background: rgba(6,6,18,0.9); backdrop-filter: blur(10px);
+  z-index: 50;
+}
+.logo { font-weight: 800; letter-spacing: 0.18em; font-size: 14px; color: var(--text); }
+.logo span { color: var(--accent); }
+.logo sup { font-size: 8px; color: var(--text-dim); letter-spacing: 0; }
 
-  @keyframes twinkle {
-    0%, 100% { opacity: 0.35; }
-    50%      { opacity: 1.0; }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; transform: translateY(8px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  @keyframes input-glow {
-    0%, 100% { box-shadow: 0 0 0 1px var(--glass-edge), 0 0 24px rgba(124, 58, 237, 0.10); }
-    50%      { box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.45), 0 0 32px rgba(124, 58, 237, 0.22); }
-  }
-  @keyframes star-drop {
-    from { opacity: 0; transform: scale(0.4); }
-    to   { opacity: 1; transform: scale(1); }
-  }
+/* ── tab bar ─────────────────────────────────────────────────────────── */
+#tabs { display: flex; gap: 4px; margin-left: auto; }
+.tab {
+  font-size: 12.5px; font-weight: 600; letter-spacing: 0.04em;
+  padding: 6px 14px; border-radius: 999px;
+  border: none; background: transparent; color: var(--text-dim);
+  cursor: pointer; transition: color .15s, background .15s;
+  position: relative;
+}
+.tab:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+.tab.active { color: var(--accent); background: var(--accent-glow); }
 
-  #stars {
-    position: fixed; inset: 0;
-    pointer-events: none;
-    z-index: 0;
-  }
+/* ── status pill ─────────────────────────────────────────────────────── */
+#status-pill {
+  display: flex; align-items: center; gap: 7px;
+  font-family: var(--mono); font-size: 11px; color: var(--text-dim);
+  padding: 4px 12px; border-radius: 999px;
+  border: 1px solid var(--line-dim);
+}
+#status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); transition: background .4s; }
+#status-dot.online { background: var(--green); box-shadow: 0 0 0 3px rgba(16,185,129,.2); animation: pulse-dot 2s ease-in-out infinite; }
+#status-dot.error  { background: var(--red); }
+@keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:.5} }
 
-  /* Brand corner */
-  .brand {
-    position: fixed;
-    top: 28px; left: 36px;
-    z-index: 5;
-    letter-spacing: 0.08em;
-    animation: fade-in 0.8s ease 0.1s both;
-  }
-  .brand .mark {
-    font-size: 12px;
-    color: var(--ink-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.32em;
-  }
-  .brand .name {
-    font-size: 18px;
-    color: var(--ink);
-    margin-top: 4px;
-    font-weight: 500;
-  }
+/* ── main content area ───────────────────────────────────────────────── */
+#main { flex: 1; overflow: hidden; display: flex; }
+.panel { display: none; flex: 1; overflow-y: auto; padding: 24px 28px 40px; }
+.panel.active { display: block; animation: panel-in .22s var(--ease); }
+@keyframes panel-in { from { opacity:0; transform: translateY(12px); } to { opacity:1; transform: translateY(0); } }
 
-  .nav {
-    position: fixed;
-    top: 28px; right: 36px;
-    z-index: 5;
-    display: flex; gap: 22px;
-    animation: fade-in 0.8s ease 0.2s both;
-  }
-  .nav a {
-    color: var(--ink-dim);
-    text-decoration: none;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.22em;
-    transition: 0.18s ease;
-  }
-  .nav a:hover { color: var(--konjo); }
+/* ── layout helpers ──────────────────────────────────────────────────── */
+.row { display: flex; gap: 16px; }
+.col { flex: 1; min-width: 0; }
+h2 { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; color: var(--text); margin-bottom: 4px; }
+h3 { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 12px; }
+p.sub { font-size: 13px; color: var(--text-dim); margin-bottom: 20px; line-height: 1.6; }
 
-  /* Centerpiece */
-  .stage {
-    position: fixed;
-    inset: 0;
-    z-index: 2;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 56px;
-    pointer-events: none;
-    padding: 0 32px;
-  }
-  .stage > * { pointer-events: auto; }
+/* ── cards ───────────────────────────────────────────────────────────── */
+.card {
+  background: var(--panel); border: 1px solid var(--line-dim);
+  border-radius: var(--r); padding: 18px 20px;
+  transition: border-color .2s;
+}
+.card:hover { border-color: var(--line); }
+.card + .card { margin-top: 14px; }
 
-  .lede {
-    text-align: center;
-    animation: fade-in 1s ease 0.25s both;
-  }
-  .lede h1 {
-    font-size: clamp(36px, 6vw, 64px);
-    font-weight: 300;
-    letter-spacing: -0.02em;
-    margin: 0;
-    background: linear-gradient(180deg, #f5f7ff 0%, #a3aed0 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
-    line-height: 1.05;
-  }
-  .lede .tag {
-    color: var(--ink-dim);
-    font-size: 13px;
-    letter-spacing: 0.32em;
-    text-transform: uppercase;
-    margin-top: 14px;
-  }
+/* ── forms ───────────────────────────────────────────────────────────── */
+.field { margin-bottom: 12px; }
+.field label { display: block; font-size: 11.5px; font-weight: 600; color: var(--text-dim); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 5px; }
+.field input, .field select, .field textarea {
+  width: 100%; padding: 8px 11px;
+  background: var(--panel-2); border: 1px solid var(--line-dim);
+  border-radius: var(--r-sm); color: var(--text);
+  font-family: var(--mono); font-size: 12.5px;
+  transition: border-color .15s;
+  outline: none;
+}
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
+.field textarea { resize: vertical; min-height: 64px; }
+.field select option { background: var(--panel); }
 
-  /* Search input */
-  .search-wrap {
-    position: relative;
-    width: min(640px, 90vw);
-    animation: fade-in 1s ease 0.4s both, input-glow 4s ease-in-out 1.5s infinite;
-    border-radius: 999px;
-  }
-  .search {
-    width: 100%;
-    height: 60px;
-    padding: 0 28px 0 56px;
-    background: var(--glass);
-    border: 1px solid var(--glass-edge);
-    border-radius: 999px;
-    color: var(--ink);
-    font-size: 16px;
-    font-family: inherit;
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
-    outline: none;
-    transition: 0.18s ease;
-    letter-spacing: 0.02em;
-  }
-  .search::placeholder { color: var(--ink-dim); letter-spacing: 0.04em; }
-  .search:focus {
-    border-color: var(--konjo);
-  }
-  .search-icon {
-    position: absolute;
-    left: 22px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--ink-dim);
-    pointer-events: none;
-    font-size: 16px;
-  }
-  .search-hint {
-    position: absolute;
-    right: 22px;
-    top: 50%;
-    transform: translateY(-50%);
-    color: var(--ink-faint);
-    font-size: 10px;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    pointer-events: none;
-  }
+/* ── buttons ─────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 16px; border-radius: var(--r-sm);
+  font-size: 12.5px; font-weight: 600; letter-spacing: 0.03em;
+  border: 1px solid var(--line-dim); background: var(--panel);
+  color: var(--text); cursor: pointer;
+  transition: transform .12s var(--ease), background .15s, border-color .15s;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--panel-2); border-color: var(--line); }
+.btn:active { transform: scale(0.96); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.primary:hover { background: #6d28d9; }
+.btn.danger { color: var(--red); border-color: rgba(239,68,68,.3); }
+.btn.danger:hover { background: rgba(239,68,68,.1); border-color: var(--red); }
+.btn.sm { padding: 5px 10px; font-size: 11.5px; }
+.btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
 
-  /* Constellation under input */
-  .constellation {
-    position: relative;
-    width: min(640px, 90vw);
-    height: 96px;
-    animation: fade-in 1.1s ease 0.55s both;
-  }
-  .constellation svg {
-    width: 100%; height: 100%;
-    overflow: visible;
-  }
-  .count-pill {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    padding: 6px 16px;
-    background: var(--glass);
-    border: 1px solid var(--glass-edge);
-    border-radius: 999px;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    font-variant-numeric: tabular-nums;
-    font-size: 12px;
-    color: var(--ink-dim);
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
-  .count-pill .n {
-    color: var(--ink);
-    font-size: 14px;
-    font-weight: 500;
-    letter-spacing: 0.04em;
-    margin-right: 6px;
-  }
+/* ── badges / tags ───────────────────────────────────────────────────── */
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+.badge.green  { background: rgba(16,185,129,.15); color: var(--green); }
+.badge.purple { background: var(--accent-glow); color: #a78bfa; }
+.badge.blue   { background: rgba(34,211,238,.12); color: var(--accent-2); }
+.badge.amber  { background: rgba(245,158,11,.15); color: var(--warn); }
 
-  /* Footer */
-  .footer {
-    position: fixed;
-    bottom: 28px; left: 0; right: 0;
-    display: flex;
-    justify-content: center;
-    z-index: 5;
-    animation: fade-in 1s ease 0.7s both;
-  }
-  .footer .row {
-    display: flex;
-    gap: 32px;
-    font-size: 10px;
-    letter-spacing: 0.22em;
-    text-transform: uppercase;
-    color: var(--ink-dim);
-    align-items: center;
-  }
-  .footer .row .dot {
-    width: 4px; height: 4px;
-    border-radius: 50%;
-    background: var(--ink-faint);
-  }
+/* ── tables ──────────────────────────────────────────────────────────── */
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th { font-size: 10.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line-dim); }
+td { padding: 9px 10px; border-bottom: 1px solid rgba(255,255,255,.04); color: var(--text); font-family: var(--mono); }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(124,58,237,.06); }
+.num { text-align: right; }
 
-  /* Quiet status indicator near footer */
-  .pulse-dot {
-    display: inline-block;
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    background: var(--aurora);
-    margin-right: 8px;
-    box-shadow: 0 0 8px var(--aurora);
-    animation: input-glow 2s ease-in-out infinite;
-  }
+/* ── stats grid ─────────────────────────────────────────────────────── */
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; }
+.stat-cell { background: var(--panel-2); border: 1px solid var(--line-dim); border-radius: var(--r-sm); padding: 12px 14px; }
+.stat-cell .v { font-family: var(--mono); font-size: 20px; font-weight: 700; letter-spacing: -0.02em; color: #a78bfa; }
+.stat-cell .l { font-size: 10.5px; color: var(--text-muted); margin-top: 3px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+/* ── shimmer skeleton ────────────────────────────────────────────────── */
+.skeleton { background: linear-gradient(90deg, var(--panel) 25%, var(--panel-2) 50%, var(--panel) 75%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; border-radius: var(--r-sm); }
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+/* ── result rows ─────────────────────────────────────────────────────── */
+.result-row {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 10px 14px; border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: var(--panel-2); margin-bottom: 6px;
+  opacity: 0; transform: translateX(-12px);
+  transition: opacity .25s var(--ease), transform .25s var(--ease), border-color .15s;
+}
+.result-row.in { opacity: 1; transform: translateX(0); }
+.result-row:hover { border-color: var(--line); }
+.result-rank { font-family: var(--mono); font-size: 11px; color: var(--accent); width: 22px; flex-shrink: 0; padding-top: 2px; }
+.result-body { flex: 1; font-size: 13px; }
+.result-score { font-family: var(--mono); font-size: 11px; color: var(--text-dim); padding-top: 2px; }
+
+/* ── distance histogram ─────────────────────────────────────────────── */
+.hist-bar { display: flex; align-items: center; gap: 8px; margin: 3px 0; font-size: 11px; font-family: var(--mono); color: var(--text-dim); }
+.hist-track { flex: 1; height: 6px; background: var(--panel-2); border-radius: 999px; overflow: hidden; }
+.hist-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 999px; transition: width .5s var(--ease); width: 0; }
+
+/* ── benchmark charts ────────────────────────────────────────────────── */
+.bench-chart { display: flex; align-items: flex-end; gap: 8px; height: 140px; padding: 12px 0 0; }
+.bench-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; }
+.bench-bar-track { flex: 1; width: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
+.bench-bar { background: linear-gradient(to top, var(--accent), #a78bfa); border-radius: 4px 4px 0 0; width: 100%; height: 0; transition: height .7s var(--ease); box-shadow: 0 -4px 20px -4px rgba(124,58,237,.5); }
+.bench-label { font-family: var(--mono); font-size: 10px; color: var(--text-muted); text-align: center; }
+.bench-val { font-family: var(--mono); font-size: 12px; color: var(--text-dim); text-align: center; }
+
+/* ── big metric ─────────────────────────────────────────────────────── */
+.big-metric { text-align: center; padding: 24px 0; }
+.big-metric .v { font-family: var(--mono); font-size: 46px; font-weight: 800; letter-spacing: -0.04em; background: linear-gradient(135deg, var(--accent), var(--accent-2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.big-metric .l { font-size: 12px; color: var(--text-dim); margin-top: 4px; letter-spacing: 0.1em; text-transform: uppercase; }
+
+/* ── recall ring ─────────────────────────────────────────────────────── */
+.recall-ring-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 16px 0; }
+.recall-ring-wrap .pct { font-family: var(--mono); font-size: 28px; font-weight: 700; color: var(--text); }
+.recall-ring-wrap .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-dim); }
+
+/* ── canvas scatter ─────────────────────────────────────────────────── */
+#scatter-wrap { position: relative; background: var(--panel-2); border: 1px solid var(--line-dim); border-radius: var(--r); overflow: hidden; }
+#scatter-canvas { display: block; cursor: crosshair; }
+#scatter-tooltip {
+  position: absolute; pointer-events: none; z-index: 10;
+  background: rgba(13,13,32,.92); border: 1px solid var(--line);
+  border-radius: var(--r-sm); padding: 8px 12px;
+  font-family: var(--mono); font-size: 11px; color: var(--text);
+  backdrop-filter: blur(8px);
+  transition: opacity .12s; opacity: 0;
+  max-width: 220px;
+}
+#scatter-tooltip.vis { opacity: 1; }
+
+/* ── toast ───────────────────────────────────────────────────────────── */
+#toasts { position: fixed; top: 64px; right: 20px; z-index: 100; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.toast {
+  padding: 10px 16px; border-radius: var(--r-sm);
+  font-size: 12.5px; font-weight: 600; border-left: 3px solid;
+  backdrop-filter: blur(12px); max-width: 340px;
+  animation: toast-in .25s var(--ease);
+  transition: opacity .3s, transform .3s;
+}
+.toast.success { background: rgba(16,185,129,.15); border-color: var(--green); color: var(--green); }
+.toast.error   { background: rgba(239,68,68,.15);  border-color: var(--red);   color: var(--red);   }
+.toast.info    { background: var(--accent-glow);   border-color: var(--accent); color: #a78bfa; }
+@keyframes toast-in { from { opacity:0; transform: translateX(20px); } }
+.toast.out { opacity:0; transform: translateX(20px); }
+
+/* ── spinner ─────────────────────────────────────────────────────────── */
+.spin { display: inline-block; width: 13px; height: 13px; border: 2px solid rgba(124,58,237,.3); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── gauge (linear, liquid wave) ─────────────────────────────────────── */
+.gauge-track { height: 10px; border-radius: 999px; background: rgba(255,255,255,.06); overflow: hidden; position: relative; margin: 8px 0; }
+.gauge-fill { height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .8s var(--ease); width: 0; }
+
+/* ── tag cloud for index panel ───────────────────────────────────────── */
+.kv-row { display: flex; justify-content: space-between; font-size: 12px; padding: 4px 0; border-bottom: 1px solid var(--line-dim); }
+.kv-row:last-child { border-bottom: none; }
+.kv-row .k { color: var(--text-dim); font-family: var(--mono); }
+.kv-row .v { color: var(--text); font-family: var(--mono); }
+
+/* ── grid ────────────────────────────────────────────────────────────── */
+.g2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.g3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+.g3 .c3 { grid-column: span 3; }
+@media (max-width: 900px) { .g2, .g3 { grid-template-columns: 1fr; } .g3 .c3 { grid-column: span 1; } }
+
+/* ── accordion ───────────────────────────────────────────────────────── */
+.acc-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 10px 0; user-select: none; }
+.acc-header:hover { color: var(--accent); }
+.acc-chevron { font-size: 10px; transition: transform .2s; }
+.acc-header.open .acc-chevron { transform: rotate(90deg); }
+.acc-body { display: none; padding-bottom: 10px; }
+.acc-header.open + .acc-body { display: block; }
+
+/* ── range input ─────────────────────────────────────────────────────── */
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 999px; background: var(--panel-2); border: none; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); cursor: pointer; border: 2px solid var(--bg); box-shadow: 0 0 0 2px rgba(124,58,237,.4); }
+
+/* ── empty state ─────────────────────────────────────────────────────── */
+.empty { text-align: center; padding: 40px 20px; color: var(--text-muted); font-size: 13px; }
+.empty .icon { font-size: 28px; margin-bottom: 10px; }
+
+/* ── inline error ────────────────────────────────────────────────────── */
+.err-msg { color: var(--red); font-size: 12px; font-family: var(--mono); margin-top: 8px; display: none; }
+.err-msg.show { display: block; }
 </style>
 </head>
 <body>
+<div id="app">
 
-<svg id="stars" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
-
-<div class="brand">
-  <div class="mark">Konjo · Vectro</div>
-  <div class="name">v8 · Star Field</div>
-</div>
-
-<nav class="nav">
-  <a href="viz.html">Visualize →</a>
-  <a href="https://github.com/konjoai/vectro" target="_blank" rel="noopener">GitHub</a>
-  <a href="../PAPER.md" target="_blank">Paper</a>
-</nav>
-
-<main class="stage">
-  <div class="lede">
-    <h1>Search a galaxy of vectors.</h1>
-    <div class="tag">Embedding compression · approximate kNN · pure code</div>
-  </div>
-
-  <div class="search-wrap">
-    <span class="search-icon">⌕</span>
-    <input
-      class="search"
-      id="q"
-      type="text"
-      placeholder="Type anything — every keystroke fires a vector search"
-      autocomplete="off"
-      spellcheck="false"
-    />
-    <span class="search-hint" id="hint">live</span>
-  </div>
-
-  <div class="constellation" aria-hidden="true">
-    <svg id="cons" viewBox="0 0 640 96" preserveAspectRatio="xMidYMid meet"></svg>
-    <div class="count-pill"><span class="n" id="count-n">0</span>matches in the field</div>
-  </div>
-</main>
-
-<div class="footer">
-  <div class="row">
-    <span><span class="pulse-dot"></span><span id="status">offline · self-hosted demo</span></span>
-    <span class="dot"></span>
-    <span>2026 · MIT</span>
-    <span class="dot"></span>
-    <span>Konjo AI</span>
+<!-- ── top bar ─────────────────────────────────────────────────────── -->
+<div id="topbar">
+  <div class="logo">V<span>E</span>CTRO <sup>v5.2</sup></div>
+  <nav id="tabs">
+    <button class="tab active" data-panel="overview">Overview</button>
+    <button class="tab" data-panel="indexes">Indexes</button>
+    <button class="tab" data-panel="search">Search</button>
+    <button class="tab" data-panel="benchmark">Benchmark</button>
+    <button class="tab" data-panel="projection">2D Projection</button>
+  </nav>
+  <div id="status-pill">
+    <div id="status-dot"></div>
+    <span id="status-txt">connecting…</span>
   </div>
 </div>
+
+<!-- ── panels ──────────────────────────────────────────────────────── -->
+<div id="main">
+
+<!-- ─────────────── OVERVIEW ─────────────────────────────────────── -->
+<section class="panel active" id="panel-overview">
+  <h2>Vectro Vector Database Studio</h2>
+  <p class="sub">Real-time compression, search, and analysis — every number measured live on this machine.</p>
+
+  <div class="g3">
+    <!-- Compression calculator -->
+    <div class="card c3">
+      <h3>Compression calculator</h3>
+      <div class="g2">
+        <div>
+          <div class="field">
+            <label>Vectors <span id="ov-n-val" style="float:right;color:var(--text)">50,000</span></label>
+            <input type="range" id="ov-n" min="1000" max="200000" step="1000" value="50000" />
+          </div>
+          <div class="field">
+            <label>Dimensions <span id="ov-d-val" style="float:right;color:var(--text)">768</span></label>
+            <input type="range" id="ov-d" min="64" max="4096" step="64" value="768" />
+          </div>
+          <div class="field">
+            <label>Mode</label>
+            <select id="ov-mode">
+              <option value="balanced">INT8 balanced (4× compression)</option>
+              <option value="fast">INT8 fast (4×)</option>
+              <option value="quality">INT8 quality (4×)</option>
+              <option value="nf4">NF4 (8×)</option>
+              <option value="binary">Binary (32×)</option>
+            </select>
+          </div>
+          <button class="btn primary" id="ov-compress-btn">
+            <span class="spin" id="ov-spin" style="display:none"></span>
+            ▶ Compress (live)
+          </button>
+          <div class="err-msg" id="ov-err"></div>
+        </div>
+        <div>
+          <div class="stats-grid" id="ov-stats">
+            <div class="stat-cell"><div class="v" id="ov-ratio">—</div><div class="l">ratio</div></div>
+            <div class="stat-cell"><div class="v" id="ov-orig">—</div><div class="l">original</div></div>
+            <div class="stat-cell"><div class="v" id="ov-comp">—</div><div class="l">compressed</div></div>
+            <div class="stat-cell"><div class="v" id="ov-tput">—</div><div class="l">M vec/s</div></div>
+          </div>
+          <div style="margin-top:14px">
+            <h3>Memory bars</h3>
+            <div id="ov-bars"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recall gauge -->
+    <div class="card">
+      <h3>Recall@k estimate</h3>
+      <div class="recall-ring-wrap">
+        <canvas id="recall-canvas" width="120" height="120"></canvas>
+        <div class="pct" id="recall-pct">—</div>
+        <div class="lbl" id="recall-label">offline</div>
+      </div>
+      <div class="stats-grid" style="margin-top:8px">
+        <div class="stat-cell"><div class="v" id="rc-lo">—</div><div class="l">CI lo</div></div>
+        <div class="stat-cell"><div class="v" id="rc-hi">—</div><div class="l">CI hi</div></div>
+        <div class="stat-cell"><div class="v" id="rc-k">—</div><div class="l">k</div></div>
+        <div class="stat-cell"><div class="v" id="rc-n">—</div><div class="l">vectors</div></div>
+      </div>
+    </div>
+
+    <!-- Search (demo) -->
+    <div class="card">
+      <h3>Semantic search</h3>
+      <div class="field">
+        <label>Query</label>
+        <input id="ov-query" type="text" placeholder="capital of France…" />
+      </div>
+      <div class="field">
+        <label>k <span id="ov-k-val" style="float:right;color:var(--text)">5</span></label>
+        <input type="range" id="ov-k" min="1" max="15" value="5" />
+      </div>
+      <button class="btn primary" id="ov-search-btn">⊙ Search</button>
+      <div id="ov-results" style="margin-top:12px"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── INDEXES ─────────────────────────────────────── -->
+<section class="panel" id="panel-indexes">
+  <div class="row" style="align-items:flex-start;gap:20px">
+    <!-- Create form -->
+    <div style="width:280px;flex-shrink:0">
+      <div class="card">
+        <h3>Create index</h3>
+        <div class="field"><label>Name</label><input id="idx-name" type="text" placeholder="my-index" /></div>
+        <div class="field"><label>Dimensions</label><input id="idx-dim" type="number" value="128" min="2" max="4096" /></div>
+        <div class="field"><label>M (graph links)</label><input id="idx-m" type="number" value="16" min="4" max="64" /></div>
+        <div class="field"><label>ef_construction</label><input id="idx-ef" type="number" value="200" min="16" max="500" /></div>
+        <div class="field">
+          <label>Distance</label>
+          <select id="idx-space">
+            <option value="cosine">cosine</option>
+            <option value="l2">l2</option>
+          </select>
+        </div>
+        <button class="btn primary" id="idx-create-btn" style="width:100%">+ Create index</button>
+        <div class="err-msg" id="idx-err"></div>
+      </div>
+
+      <!-- ef/M explanation -->
+      <div class="card" style="margin-top:14px">
+        <div class="acc-header" id="params-acc">
+          <span style="font-size:12.5px;font-weight:600;color:var(--text-dim)">Parameter guide</span>
+          <span class="acc-chevron">▶</span>
+        </div>
+        <div class="acc-body" id="params-body">
+          <div class="kv-row" style="margin-top:4px">
+            <span class="k">M</span>
+            <span class="v" style="color:var(--text-dim);font-size:11px;max-width:160px;text-align:right">Max bidirectional links per node. Higher = better recall, more memory (16 = default, 32 = high-recall)</span>
+          </div>
+          <div class="kv-row">
+            <span class="k">ef_construction</span>
+            <span class="v" style="color:var(--text-dim);font-size:11px;max-width:160px;text-align:right">Beam width during build. Higher = better graph quality, slower build. (200 = default)</span>
+          </div>
+          <div class="kv-row">
+            <span class="k">ef_search</span>
+            <span class="v" style="color:var(--text-dim);font-size:11px;max-width:160px;text-align:right">Beam width during query. Controls recall/latency tradeoff at query time. (≥k, default 64)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Index list -->
+    <div class="col">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <h3 style="margin-bottom:0">Your indexes</h3>
+        <button class="btn sm" id="idx-refresh-btn">↻ Refresh</button>
+      </div>
+      <div id="idx-list-wrap">
+        <div class="empty"><div class="icon">⊘</div>No indexes yet. Create one to get started.</div>
+      </div>
+      <!-- Expanded stats panel -->
+      <div id="idx-detail" style="display:none;margin-top:16px">
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+            <h3 id="idx-detail-name" style="margin-bottom:0">stats</h3>
+            <button class="btn sm" id="idx-detail-close">✕</button>
+          </div>
+          <div class="stats-grid" id="idx-detail-stats"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── SEARCH ─────────────────────────────────────── -->
+<section class="panel" id="panel-search">
+  <div class="row" style="align-items:flex-start;gap:20px">
+    <!-- Controls -->
+    <div style="width:300px;flex-shrink:0">
+      <div class="card">
+        <h3>kNN search</h3>
+        <div class="field">
+          <label>Index</label>
+          <select id="srch-index"><option value="">— select an index —</option></select>
+        </div>
+        <div class="field">
+          <label>Query vector</label>
+          <textarea id="srch-vec" placeholder="[0.1, 0.2, 0.3, …]  or leave blank for random"></textarea>
+        </div>
+        <button class="btn sm" id="srch-rand-btn" style="margin-bottom:10px">⚂ Random vector</button>
+        <div class="field">
+          <label>k <span id="srch-k-val" style="float:right;color:var(--text)">10</span></label>
+          <input type="range" id="srch-k" min="1" max="50" value="10" />
+        </div>
+        <div class="field">
+          <label>ef (beam width) <span id="srch-ef-val" style="float:right;color:var(--text)">64</span></label>
+          <input type="range" id="srch-ef" min="10" max="200" value="64" />
+        </div>
+        <div class="field">
+          <label>Metadata filter <span style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0">(JSON, optional)</span></label>
+          <input id="srch-filter" type="text" placeholder='{"category":"science"}' />
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn primary" id="srch-btn" style="flex:1">⊙ Search</button>
+          <button class="btn" id="srch-trace-btn" title="Search with trace">⟁ Trace</button>
+        </div>
+        <div class="err-msg" id="srch-err"></div>
+      </div>
+    </div>
+    <!-- Results -->
+    <div class="col">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <h3 style="margin-bottom:0">Results</h3>
+        <span id="srch-timing" style="font-family:var(--mono);font-size:11px;color:var(--text-dim)"></span>
+      </div>
+      <div id="srch-results"></div>
+      <!-- Distance histogram -->
+      <div id="srch-hist" style="display:none;margin-top:20px">
+        <h3>Distance distribution</h3>
+        <div id="srch-hist-bars"></div>
+      </div>
+      <!-- Trace panel -->
+      <div id="srch-trace-panel" style="display:none;margin-top:20px">
+        <h3>Search trace</h3>
+        <div class="card">
+          <div class="kv-row"><span class="k">entry point</span><span id="tr-ep" class="v">—</span></div>
+          <div class="kv-row"><span class="k">l0 visited</span><span id="tr-vis" class="v">—</span></div>
+          <div class="kv-row"><span class="k">layer descents</span><span id="tr-layers" class="v">—</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── BENCHMARK ─────────────────────────────────────── -->
+<section class="panel" id="panel-benchmark">
+  <div class="row" style="align-items:flex-start;gap:20px">
+    <div style="width:260px;flex-shrink:0">
+      <div class="card">
+        <h3>Benchmark</h3>
+        <div class="field">
+          <label>Index</label>
+          <select id="bench-index"><option value="">— select an index —</option></select>
+        </div>
+        <div class="field">
+          <label>k <span id="bench-k-val" style="float:right;color:var(--text)">10</span></label>
+          <input type="range" id="bench-k" min="1" max="50" value="10" />
+        </div>
+        <div class="field">
+          <label>ef_search <span id="bench-ef-val" style="float:right;color:var(--text)">64</span></label>
+          <input type="range" id="bench-ef" min="10" max="200" value="64" />
+        </div>
+        <div class="field">
+          <label>Queries <span id="bench-nq-val" style="float:right;color:var(--text)">200</span></label>
+          <input type="range" id="bench-nq" min="20" max="2000" step="20" value="200" />
+        </div>
+        <button class="btn primary" id="bench-btn" style="width:100%">▶ Run benchmark</button>
+        <div class="err-msg" id="bench-err"></div>
+      </div>
+    </div>
+    <div class="col">
+      <div id="bench-results" style="display:none">
+        <div class="g2" style="margin-bottom:16px">
+          <div class="card big-metric">
+            <div class="v" id="bench-qps">—</div>
+            <div class="l">queries / second</div>
+          </div>
+          <div class="card">
+            <h3>Recall@k</h3>
+            <div class="recall-ring-wrap" style="padding:8px 0">
+              <canvas id="bench-recall-canvas" width="90" height="90"></canvas>
+              <div class="pct" id="bench-recall-pct" style="font-size:22px">—</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Latency distribution</h3>
+          <div class="bench-chart" id="bench-chart">
+            <div class="bench-bar-wrap"><div class="bench-bar-track"><div class="bench-bar" id="bar-p50"></div></div><div class="bench-val" id="bv-p50">—</div><div class="bench-label">p50</div></div>
+            <div class="bench-bar-wrap"><div class="bench-bar-track"><div class="bench-bar" id="bar-p95"></div></div><div class="bench-val" id="bv-p95">—</div><div class="bench-label">p95</div></div>
+            <div class="bench-bar-wrap"><div class="bench-bar-track"><div class="bench-bar" id="bar-p99"></div></div><div class="bench-val" id="bv-p99">—</div><div class="bench-label">p99</div></div>
+            <div class="bench-bar-wrap"><div class="bench-bar-track"><div class="bench-bar" id="bar-mean" style="background:linear-gradient(to top, var(--green), #6ee7b7)"></div></div><div class="bench-val" id="bv-mean">—</div><div class="bench-label">mean</div></div>
+          </div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <h3>Stats</h3>
+          <div class="stats-grid" id="bench-stats"></div>
+        </div>
+      </div>
+      <div id="bench-empty" class="empty"><div class="icon">📊</div>Select an index and click Run to measure real latency.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────── 2D PROJECTION ─────────────────────────────────── -->
+<section class="panel" id="panel-projection">
+  <div class="row" style="align-items:flex-start;gap:20px;height:calc(100vh - 120px)">
+    <!-- Controls sidebar -->
+    <div style="width:260px;flex-shrink:0;overflow-y:auto;height:100%;padding-right:4px">
+      <div class="card">
+        <h3>2D Projection</h3>
+        <div class="field">
+          <label>Index</label>
+          <select id="proj-index"><option value="">— select an index —</option></select>
+        </div>
+        <div class="field">
+          <label>Add vectors</label>
+          <textarea id="proj-vecs" placeholder="[[0.1,0.2,…],[…],…] or leave blank to auto-generate" style="min-height:80px"></textarea>
+        </div>
+        <div class="field">
+          <label>Count (auto) <span id="proj-n-val" style="float:right;color:var(--text)">50</span></label>
+          <input type="range" id="proj-n" min="5" max="500" step="5" value="50" />
+        </div>
+        <button class="btn sm" id="proj-gen-btn" style="width:100%;margin-bottom:8px">⚂ Auto-generate &amp; add</button>
+        <button class="btn sm" id="proj-add-btn" style="width:100%;margin-bottom:8px">+ Add JSON vectors</button>
+        <hr style="border:none;border-top:1px solid var(--line-dim);margin:10px 0"/>
+        <div class="field">
+          <label>k-means clusters <span id="proj-k-val" style="float:right;color:var(--text)">4</span></label>
+          <input type="range" id="proj-k" min="2" max="12" value="4" />
+        </div>
+        <button class="btn primary" id="proj-project-btn" style="width:100%;margin-bottom:8px">⊙ Project + cluster</button>
+        <hr style="border:none;border-top:1px solid var(--line-dim);margin:10px 0"/>
+        <div class="field"><label>Dim (dim of auto-vecs) <span id="proj-dim-val" style="float:right;color:var(--text)">32</span></label><input type="range" id="proj-dim" min="2" max="256" step="2" value="32" /></div>
+        <div class="err-msg" id="proj-err"></div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <h3>Legend</h3>
+        <div id="proj-legend"></div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <div class="kv-row"><span class="k">points</span><span id="proj-pt-count" class="v">0</span></div>
+        <div class="kv-row"><span class="k">proj ms</span><span id="proj-ms" class="v">—</span></div>
+        <div class="kv-row" style="margin-top:8px;font-size:11px;color:var(--text-muted)"><span>Scroll to zoom · Drag to pan · Hover for metadata</span></div>
+      </div>
+    </div>
+    <!-- Canvas -->
+    <div class="col" style="height:100%">
+      <div id="scatter-wrap" style="height:100%">
+        <canvas id="scatter-canvas"></canvas>
+        <div id="scatter-tooltip"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div><!-- #main -->
+</div><!-- #app -->
+
+<!-- toasts -->
+<div id="toasts"></div>
 
 <script>
-"use strict";
+'use strict';
+// ── Config ──────────────────────────────────────────────────────────────
+const API = window.location.origin;
 
-const API_BASE = (location.protocol === 'http:' || location.protocol === 'https:')
-  ? location.origin : null;
-const INDEX_NAME = 'starfield';
-const DIM = 32;
-
-// ── Background star field (matches viz.html aesthetic) ────────────
-function buildBackgroundStars() {
-  const W = window.innerWidth, H = window.innerHeight;
-  const N = Math.max(420, Math.floor(W * H / 1900));
-  const svg = document.getElementById('stars');
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.setAttribute('width', W);
-  svg.setAttribute('height', H);
-  let s = '';
-  for (let i = 0; i < N; i++) {
-    const x = Math.random() * W;
-    const y = Math.random() * H;
-    const r = Math.random() * 0.9 + 0.15;
-    const o = Math.random() * 0.6 + 0.15;
-    const dur = (Math.random() * 4 + 2.5).toFixed(2);
-    const delay = (-Math.random() * 6).toFixed(2);
-    s += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(2)}" fill="#fff" fill-opacity="${o.toFixed(2)}" style="animation: twinkle ${dur}s ease-in-out ${delay}s infinite"/>`;
-  }
-  svg.innerHTML = s;
-}
-window.addEventListener('resize', buildBackgroundStars);
-
-// ── Constellation: query → 32-D vector → cosine top-k → SVG dots ──
-//
-// The "result count" is rendered as a constellation pattern:
-// each match becomes one star plotted on a 640×96 strip, with size +
-// brightness encoding similarity score. Dots are connected by faint
-// lines forming an arbitrary spanning path so the result count reads
-// as a *shape*, not a number.
-
-const CLUSTER_COLORS = ['#7c3aed', '#3b82f6', '#10b981'];
-const corpus = []; // { id, label, vec, cluster }
-
-function gaussian() {
-  let u = 0, v = 0;
-  while (u === 0) u = Math.random();
-  while (v === 0) v = Math.random();
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-}
-
-function hash32(str) {
-  // Cheap, deterministic 32-D embedding for any input — every char
-  // perturbs a fixed-cluster centre so visually-similar queries cluster
-  // together. Good enough for a landing-page demo; not for production.
-  let cluster = 0;
-  for (let i = 0; i < str.length; i++) cluster = (cluster + str.charCodeAt(i) * 7) % 3;
-  const v = new Float32Array(DIM);
-  // Seeded via a tiny xorshift over the string
-  let seed = 2166136261 >>> 0;
-  for (let i = 0; i < str.length; i++) {
-    seed ^= str.charCodeAt(i);
-    seed = Math.imul(seed, 16777619) >>> 0;
-  }
-  function rnd() {
-    seed ^= seed << 13; seed >>>= 0;
-    seed ^= seed >> 17; seed >>>= 0;
-    seed ^= seed << 5;  seed >>>= 0;
-    return ((seed & 0x7fffffff) / 0x7fffffff) * 2 - 1;
-  }
-  for (let i = 0; i < DIM; i++) v[i] = (cluster === i % 3 ? 1.5 : 0) + rnd() * 0.6;
-  return { vec: v, cluster };
-}
-
-// Seed corpus with a small set of human-friendly labels so empty-input
-// state shows something — not just a zero count.
-const SEED = [
-  'embedding', 'vector', 'cosine', 'graph', 'beam search',
-  'index', 'compression', 'quantization', 'INT8', 'NF4',
-  'PQ-96', 'binary', 'HNSW', 'recall', 'latency',
-  'throughput', 'p99', 'GPU', 'BLAS', 'numpy',
-  'document', 'paper', 'cluster', 'star', 'galaxy',
-  'orbit', 'centre', 'edge', 'node', 'kernel',
-];
-let nextCorpusId = 0;
-for (const label of SEED) {
-  const { vec, cluster } = hash32(label);
-  corpus.push({ id: nextCorpusId++, label, vec, cluster });
-}
-
-function cosineLocal(a, b) {
-  let dot = 0, na = 0, nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
-  }
-  if (na === 0 || nb === 0) return 0;
-  return dot / Math.sqrt(na * nb);
-}
-
-function searchLocal(qStr, k) {
-  if (!qStr) return [];
-  const { vec } = hash32(qStr);
-  const scored = corpus.map(c => ({ c, score: cosineLocal(vec, c.vec) }));
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, k);
-}
-
-function renderConstellation(hits) {
-  const svg = document.getElementById('cons');
-  document.getElementById('count-n').textContent = hits.length;
-  if (hits.length === 0) { svg.innerHTML = ''; return; }
-
-  // Layout: stretch hits across the strip; vertical jitter from a
-  // deterministic per-hit hash so the constellation is stable per query.
-  const w = 640, h = 96;
-  const margin = 24;
-  const xs = hits.map((_, i) =>
-    margin + (hits.length === 1 ? (w - 2 * margin) / 2 : (i / (hits.length - 1)) * (w - 2 * margin)));
-  // Smooth curve through the points: y from a slow sin so the
-  // "constellation" feels like a celestial trail
-  const ys = hits.map((h, i) => {
-    const t = i / Math.max(1, hits.length - 1);
-    return h / 2 + Math.sin(t * Math.PI * 1.2 + h.score * 6) * 18;
-  });
-
-  let svgEls = '';
-  // Connecting trail (cubic-ish via polyline)
-  let path = '';
-  for (let i = 0; i < hits.length; i++) {
-    path += (i === 0 ? 'M' : 'L') + xs[i].toFixed(1) + ' ' + ys[i].toFixed(1);
-  }
-  svgEls += `<path d="${path}" stroke="rgba(124,58,237,0.35)" stroke-width="0.8" fill="none" />`;
-
-  // Stars
-  for (let i = 0; i < hits.length; i++) {
-    const { c, score } = hits[i];
-    const r = 1.6 + Math.max(0, score) * 5;
-    const col = CLUSTER_COLORS[c.cluster];
-    const haloR = r * 3.2;
-    svgEls += `
-      <g style="animation: star-drop 0.4s ease ${i * 0.025}s both">
-        <circle cx="${xs[i].toFixed(1)}" cy="${ys[i].toFixed(1)}" r="${haloR.toFixed(1)}" fill="${col}" fill-opacity="0.18" />
-        <circle cx="${xs[i].toFixed(1)}" cy="${ys[i].toFixed(1)}" r="${r.toFixed(1)}" fill="#ffffff" />
-      </g>`;
-  }
-  svg.innerHTML = svgEls;
-}
-
-// ── Optional FastAPI bridge ───────────────────────────────────────
-const backend = {
-  online: false,
-  async ping() {
-    if (!API_BASE) return false;
-    try {
-      const r = await fetch(API_BASE + '/health', { cache: 'no-store' });
-      this.online = r.ok;
-      return this.online;
-    } catch (_) { return false; }
-  },
+// ── Utilities ────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const mk = (tag, cls, txt) => {
+  const el = document.createElement(tag);
+  if (cls) el.className = cls;
+  if (txt != null) el.textContent = txt;
+  return el;
 };
 
-// ── Wiring ────────────────────────────────────────────────────────
-const q = document.getElementById('q');
-let timer = null;
-function fire() {
-  const k = 12;
-  const hits = searchLocal(q.value.trim(), k);
-  renderConstellation(hits);
+function toast(msg, type = 'info', dur = 3500) {
+  const el = mk('div', `toast ${type}`, msg);
+  $('toasts').appendChild(el);
+  setTimeout(() => {
+    el.classList.add('out');
+    setTimeout(() => el.remove(), 320);
+  }, dur);
 }
-q.addEventListener('input', () => {
-  clearTimeout(timer);
-  timer = setTimeout(fire, 50);
+
+function fmtBytes(b) {
+  if (b >= 1e9) return (b/1e9).toFixed(2)+' GB';
+  if (b >= 1e6) return (b/1e6).toFixed(2)+' MB';
+  if (b >= 1e3) return (b/1e3).toFixed(1)+' KB';
+  return b.toFixed(0)+' B';
+}
+
+function fmtNum(n) {
+  if (n >= 1e6) return (n/1e6).toFixed(2)+'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
+  return String(n);
+}
+
+let animFrames = {};
+function countUp(elId, to, unit = '', decimals = 0) {
+  const el = $(elId); if (!el) return;
+  cancelAnimationFrame(animFrames[elId]);
+  const from = parseFloat(el.dataset.val || 0);
+  const dur = 700, t0 = performance.now();
+  const step = t => {
+    const p = Math.min(1, (t - t0) / dur);
+    const e = 1 - Math.pow(1 - p, 3);
+    const v = from + (to - from) * e;
+    el.textContent = v.toFixed(decimals) + unit;
+    if (p < 1) animFrames[elId] = requestAnimationFrame(step);
+    else el.dataset.val = to;
+  };
+  animFrames[elId] = requestAnimationFrame(step);
+}
+
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+
+// ── Status banner ────────────────────────────────────────────────────────
+async function checkStatus() {
+  try {
+    const h = await api('GET', '/api/health');
+    $('status-dot').className = 'online';
+    $('status-txt').textContent = `live · v${h.version} · ${h.platform}`;
+  } catch {
+    $('status-dot').className = 'error';
+    $('status-txt').textContent = 'offline — run python demo/server.py';
+  }
+}
+setInterval(checkStatus, 30000);
+checkStatus();
+
+// ── Tab routing ──────────────────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    const id = 'panel-' + t.dataset.panel;
+    document.getElementById(id).classList.add('active');
+    if (t.dataset.panel === 'indexes') loadIndexList();
+    if (t.dataset.panel === 'search')  populateIndexSelects();
+    if (t.dataset.panel === 'benchmark') populateIndexSelects();
+    if (t.dataset.panel === 'projection') populateIndexSelects();
+  });
 });
-q.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Enter' && q.value.trim().length) {
-    // Treat enter as "remember this term" — adds to the corpus so the
-    // landing page becomes its own little vector store across keystrokes.
-    const { vec, cluster } = hash32(q.value.trim());
-    corpus.push({ id: nextCorpusId++, label: q.value.trim(), vec, cluster });
-    fire();
+
+// ═══════════════════════════════════════════════════════════════════
+// OVERVIEW PANEL
+// ═══════════════════════════════════════════════════════════════════
+const ovN = $('ov-n'), ovD = $('ov-d');
+ovN.addEventListener('input', () => { $('ov-n-val').textContent = (+ovN.value).toLocaleString(); });
+ovD.addEventListener('input', () => { $('ov-d-val').textContent = +ovD.value; });
+$('ov-k').addEventListener('input', e => $('ov-k-val').textContent = e.target.value);
+
+$('ov-compress-btn').addEventListener('click', async () => {
+  const btn = $('ov-compress-btn'), spin = $('ov-spin'), err = $('ov-err');
+  btn.disabled = true; spin.style.display = 'inline-block'; err.classList.remove('show');
+  try {
+    const r = await api('POST', '/api/compress', {
+      n_vecs: +ovN.value, dim: +ovD.value, mode: $('ov-mode').value,
+    });
+    countUp('ov-ratio', r.ratio, '×', 2);
+    $('ov-orig').textContent = fmtBytes(r.original_bytes);
+    $('ov-comp').textContent = fmtBytes(r.compressed_bytes);
+    countUp('ov-tput', r.throughput_M_vec_s, ' M', 3);
+    renderOvBars(r);
+    toast(`${r.ratio.toFixed(2)}× compression · ${r.throughput_M_vec_s.toFixed(3)} M vec/s`, 'success');
+  } catch(e) { err.textContent = e.message; err.classList.add('show'); toast(e.message, 'error'); }
+  finally { btn.disabled = false; spin.style.display = 'none'; }
+});
+
+const MODES = ['fast','balanced','quality','nf4','binary'];
+const MODE_RATIOS = { fast:4, balanced:4, quality:4, nf4:8, binary:32 };
+function renderOvBars(r) {
+  const wrap = $('ov-bars'); wrap.innerHTML = '';
+  const orig = r.original_bytes;
+  [['float32 (original)', 1], ['int8 4×', 4], ['nf4 8×', 8], ['binary 32×', 32]].forEach(([lbl, ratio]) => {
+    const bytes = orig / ratio;
+    const pct   = Math.round(100 / ratio);
+    const row   = mk('div', 'hist-bar');
+    row.innerHTML = `<span style="width:110px;color:var(--text-dim)">${lbl}</span>
+      <div class="hist-track"><div class="hist-fill" style="width:${pct}%"></div></div>
+      <span style="width:60px;text-align:right;font-family:var(--mono);font-size:11px;color:var(--text-dim)">${fmtBytes(bytes)}</span>`;
+    wrap.appendChild(row);
+  });
+}
+
+// Demo search
+$('ov-search-btn').addEventListener('click', async () => {
+  const q = $('ov-query').value.trim() || 'capital';
+  const k = +$('ov-k').value;
+  try {
+    const r = await api('POST', '/api/search', { query_text: q, k });
+    const wrap = $('ov-results'); wrap.innerHTML = '';
+    r.passages.forEach((p, i) => {
+      const row = mk('div', 'result-row');
+      row.innerHTML = `<div class="result-rank">#${i+1}</div>
+        <div class="result-body">${p}</div>
+        <div class="result-score">${(r.scores[i]||0).toFixed(4)}</div>`;
+      wrap.appendChild(row);
+      setTimeout(() => row.classList.add('in'), 60 * i);
+    });
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+// Recall gauge (arc canvas)
+function drawRecallArc(canvasId, pct, color = '#7c3aed') {
+  const c = $(canvasId); if (!c) return;
+  const ctx = c.getContext('2d'), w = c.width, h = c.height, cx = w/2, cy = h/2, r = cx - 8;
+  ctx.clearRect(0, 0, w, h);
+  // bg arc
+  ctx.beginPath(); ctx.arc(cx, cy, r, Math.PI*0.75, Math.PI*0.25); ctx.strokeStyle = 'rgba(255,255,255,.06)'; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.stroke();
+  // fill arc
+  if (pct > 0) {
+    const start = Math.PI*0.75, end = start + (Math.PI*1.5)*(pct/100);
+    const grad = ctx.createLinearGradient(0,0,w,h);
+    grad.addColorStop(0, color); grad.addColorStop(1, '#22d3ee');
+    ctx.beginPath(); ctx.arc(cx, cy, r, start, end); ctx.strokeStyle = grad; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.stroke();
+  }
+}
+
+async function loadRecall() {
+  try {
+    const r = await api('POST', '/api/recall_estimate', {sample_size:50, k:5, ef:32});
+    const pct = Math.round(r.recall * 100);
+    $('recall-pct').textContent = pct + '%';
+    $('recall-label').textContent = r.label || '';
+    $('rc-lo').textContent = (r.ci_95_lower*100).toFixed(1)+'%';
+    $('rc-hi').textContent = (r.ci_95_upper*100).toFixed(1)+'%';
+    $('rc-k').textContent  = r.k;
+    $('rc-n').textContent  = r.n_alive;
+    drawRecallArc('recall-canvas', pct, pct >= 95 ? '#10b981' : pct >= 80 ? '#7c3aed' : '#f59e0b');
+  } catch {}
+}
+setTimeout(loadRecall, 800); setInterval(loadRecall, 45000);
+
+// ═══════════════════════════════════════════════════════════════════
+// INDEXES PANEL
+// ═══════════════════════════════════════════════════════════════════
+$('idx-create-btn').addEventListener('click', async () => {
+  const btn = $('idx-create-btn'), err = $('idx-err');
+  err.classList.remove('show');
+  const name = $('idx-name').value.trim();
+  if (!name) { err.textContent = 'Name is required'; err.classList.add('show'); return; }
+  btn.disabled = true;
+  try {
+    const r = await api('POST', '/api/indexes', {
+      name, M: +$('idx-m').value, ef_construction: +$('idx-ef').value,
+      space: $('idx-space').value, dim: +$('idx-dim').value,
+    });
+    toast(`Created index "${r.name}" (M=${r.M}, ef=${r.ef_construction}, ${r.space})`, 'success');
+    $('idx-name').value = '';
+    loadIndexList();
+  } catch(e) { err.textContent = e.message; err.classList.add('show'); toast(e.message, 'error'); }
+  finally { btn.disabled = false; }
+});
+
+$('idx-refresh-btn').addEventListener('click', loadIndexList);
+$('idx-detail-close').addEventListener('click', () => $('idx-detail').style.display = 'none');
+$('params-acc').addEventListener('click', () => {
+  $('params-acc').classList.toggle('open');
+  $('params-body').style.display = $('params-acc').classList.contains('open') ? 'block' : 'none';
+});
+
+async function loadIndexList() {
+  const wrap = $('idx-list-wrap');
+  try {
+    const { indexes } = await api('GET', '/api/indexes');
+    if (!indexes.length) {
+      wrap.innerHTML = '<div class="empty"><div class="icon">⊘</div>No indexes yet.</div>';
+      return;
+    }
+    const tbl = mk('table');
+    tbl.innerHTML = `<thead><tr>
+      <th>Name</th><th>Vectors</th><th>Deleted</th><th>M</th><th>ef</th><th>Space</th><th>Dim</th><th></th>
+    </tr></thead>`;
+    const tbody = mk('tbody'); tbl.appendChild(tbody);
+    indexes.forEach(idx => {
+      const tr = mk('tr');
+      tr.innerHTML = `
+        <td><b>${idx.name}</b></td>
+        <td class="num">${idx.n_alive.toLocaleString()}</td>
+        <td class="num">${idx.n_deleted}</td>
+        <td class="num">${idx.M}</td>
+        <td class="num">${idx.ef_construction}</td>
+        <td><span class="badge purple">${idx.space}</span></td>
+        <td class="num">${idx.dim || '—'}</td>
+        <td style="text-align:right">
+          <button class="btn sm" data-stats="${idx.name}">stats</button>
+          <button class="btn sm danger" data-del="${idx.name}">✕</button>
+        </td>`;
+      tbody.appendChild(tr);
+    });
+    wrap.innerHTML = ''; wrap.appendChild(tbl);
+
+    tbl.addEventListener('click', async e => {
+      const sn = e.target.dataset.stats;
+      const dn = e.target.dataset.del;
+      if (sn) { showIndexStats(sn); return; }
+      if (dn && confirm(`Delete index "${dn}"?`)) {
+        try {
+          await api('DELETE', `/api/indexes/${dn}`);
+          toast(`Deleted "${dn}"`, 'success');
+          loadIndexList();
+          $('idx-detail').style.display = 'none';
+        } catch(ex) { toast(ex.message, 'error'); }
+      }
+    });
+  } catch(e) { wrap.innerHTML = `<div class="empty"><div class="icon">⚠</div>${e.message}</div>`; }
+}
+
+async function showIndexStats(name) {
+  const detail = $('idx-detail'), sg = $('idx-detail-stats');
+  detail.style.display = 'block';
+  $('idx-detail-name').textContent = name + ' — stats';
+  sg.innerHTML = '';
+  try {
+    const s = await api('GET', `/api/indexes/${name}`);
+    const cells = [
+      ['n_alive', 'live vectors'], ['n_deleted', 'deleted'], ['orphan_count', 'orphans'],
+      ['n_total', 'total'], ['max_level', 'layers'], ['avg_degree_l0', 'avg degree'],
+    ];
+    cells.forEach(([k, l]) => {
+      if (s[k] !== undefined) {
+        const cell = mk('div', 'stat-cell');
+        cell.innerHTML = `<div class="v">${typeof s[k]==='number'?s[k].toFixed?.(s[k]%1?2:0):s[k]:'—'}</div><div class="l">${l}</div>`;
+        sg.appendChild(cell);
+      }
+    });
+  } catch(e) { sg.innerHTML = `<div class="err-msg show">${e.message}</div>`; }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SEARCH PANEL
+// ═══════════════════════════════════════════════════════════════════
+$('srch-k').addEventListener('input',  e => $('srch-k-val').textContent = e.target.value);
+$('srch-ef').addEventListener('input', e => $('srch-ef-val').textContent = e.target.value);
+$('srch-rand-btn').addEventListener('click', () => $('srch-vec').value = '');
+
+async function runSearch(withTrace) {
+  const name = $('srch-index').value;
+  if (!name) { toast('Select an index first', 'error'); return; }
+  const btn = withTrace ? $('srch-trace-btn') : $('srch-btn');
+  const err = $('srch-err');
+  btn.disabled = true; err.classList.remove('show');
+  const k  = +$('srch-k').value;
+  const ef = +$('srch-ef').value;
+  let vecRaw = null;
+  const ta = $('srch-vec').value.trim();
+  if (ta) { try { vecRaw = JSON.parse(ta); } catch { err.textContent = 'Invalid JSON vector'; err.classList.add('show'); btn.disabled=false; return; } }
+  let filt = null;
+  const ft = $('srch-filter').value.trim();
+  if (ft) { try { filt = JSON.parse(ft); } catch { err.textContent = 'Invalid filter JSON'; err.classList.add('show'); btn.disabled=false; return; } }
+  try {
+    const payload = { k, ef, trace: withTrace };
+    if (vecRaw) payload.vector = vecRaw;
+    if (filt) payload.filter = filt;
+    const r = await api('POST', `/api/indexes/${name}/search`, payload);
+    $('srch-timing').textContent = `${r.timing_ms?.toFixed(2)} ms`;
+    renderSearchResults(r.results || []);
+    renderHistogram(r.results || []);
+    if (withTrace && r.trace) {
+      $('srch-trace-panel').style.display = 'block';
+      $('tr-ep').textContent    = r.trace.entry_point;
+      $('tr-vis').textContent   = r.trace.l0_visited?.length + ' nodes';
+      $('tr-layers').textContent = r.trace.layer_descents?.length + ' layers';
+    }
+  } catch(e) { err.textContent = e.message; err.classList.add('show'); toast(e.message, 'error'); }
+  finally { btn.disabled = false; }
+}
+$('srch-btn').addEventListener('click',       () => runSearch(false));
+$('srch-trace-btn').addEventListener('click', () => runSearch(true));
+
+function renderSearchResults(results) {
+  const wrap = $('srch-results'); wrap.innerHTML = '';
+  if (!results.length) { wrap.innerHTML = '<div class="empty"><div class="icon">⊘</div>No results.</div>'; return; }
+  results.forEach((r, i) => {
+    const row = mk('div', 'result-row');
+    const meta = r.metadata && Object.keys(r.metadata).length > 0
+      ? `<span style="font-size:10.5px;color:var(--text-muted)"> ${JSON.stringify(r.metadata)}</span>` : '';
+    row.innerHTML = `<div class="result-rank">#${i+1}</div>
+      <div class="result-body">ID&nbsp;<b>${r.id}</b>${meta}</div>
+      <div class="result-score">${r.distance?.toFixed(4)}</div>`;
+    wrap.appendChild(row);
+    setTimeout(() => row.classList.add('in'), 55*i);
+  });
+}
+
+function renderHistogram(results) {
+  const wrap = $('srch-hist-bars'), outer = $('srch-hist');
+  if (!results.length) { outer.style.display='none'; return; }
+  outer.style.display = 'block'; wrap.innerHTML = '';
+  const max = Math.max(...results.map(r => r.distance)) || 1;
+  results.forEach((r, i) => {
+    const pct = Math.round((r.distance / max) * 100);
+    const row = mk('div', 'hist-bar');
+    row.innerHTML = `<span style="width:32px">ID ${r.id}</span>
+      <div class="hist-track"><div class="hist-fill" style="width:${pct}%"></div></div>
+      <span style="width:48px;text-align:right">${r.distance?.toFixed(4)}</span>`;
+    wrap.appendChild(row);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// BENCHMARK PANEL
+// ═══════════════════════════════════════════════════════════════════
+$('bench-k').addEventListener('input',  e => $('bench-k-val').textContent = e.target.value);
+$('bench-ef').addEventListener('input', e => $('bench-ef-val').textContent = e.target.value);
+$('bench-nq').addEventListener('input', e => $('bench-nq-val').textContent = e.target.value);
+
+$('bench-btn').addEventListener('click', async () => {
+  const name = $('bench-index').value;
+  if (!name) { toast('Select an index first', 'error'); return; }
+  const btn = $('bench-btn'), err = $('bench-err');
+  btn.disabled = true; btn.textContent = 'Running…'; err.classList.remove('show');
+  $('bench-results').style.display = 'none';
+  $('bench-empty').style.display = 'none';
+  try {
+    const r = await api('POST', `/api/indexes/${name}/benchmark`, {
+      k: +$('bench-k').value, ef: +$('bench-ef').value, n_queries: +$('bench-nq').value, warmup: 5,
+    });
+    $('bench-results').style.display = 'block';
+    countUp('bench-qps', r.qps, '', 0);
+    // Latency bars
+    const maxMs = Math.max(r.p99_ms, r.mean_ms, 0.001);
+    [['p50', r.p50_ms], ['p95', r.p95_ms], ['p99', r.p99_ms], ['mean', r.mean_ms]].forEach(([id, v]) => {
+      $(`bar-${id}`).style.height = Math.max(4, (v/maxMs)*100) + '%';
+      $(`bv-${id}`).textContent = v?.toFixed(2)+'ms';
+    });
+    // Recall ring
+    if (r.recall_k != null) {
+      const pct = Math.round(r.recall_k * 100);
+      $('bench-recall-pct').textContent = pct + '%';
+      drawRecallArc('bench-recall-canvas', pct, pct >= 95 ? '#10b981' : '#7c3aed');
+    }
+    // Stats grid
+    const sg = $('bench-stats'); sg.innerHTML = '';
+    [['n_queries','queries'],['n_vectors','vectors'],['dim','dim'],['min_ms','min ms'],['max_ms','max ms']].forEach(([k,l]) => {
+      if (r[k] != null) {
+        const c = mk('div','stat-cell');
+        c.innerHTML = `<div class="v">${typeof r[k]==='number'&&r[k]%1?r[k].toFixed(2):r[k]}</div><div class="l">${l}</div>`;
+        sg.appendChild(c);
+      }
+    });
+    toast(`${r.qps.toFixed(0)} QPS · p50=${r.p50_ms.toFixed(2)}ms`, 'success');
+  } catch(e) { err.textContent = e.message; err.classList.add('show'); $('bench-empty').style.display='block'; toast(e.message,'error'); }
+  finally { btn.disabled = false; btn.textContent = '▶ Run benchmark'; }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// 2D PROJECTION PANEL
+// ═══════════════════════════════════════════════════════════════════
+$('proj-n').addEventListener('input',   e => $('proj-n-val').textContent = e.target.value);
+$('proj-k').addEventListener('input',   e => $('proj-k-val').textContent = e.target.value);
+$('proj-dim').addEventListener('input', e => $('proj-dim-val').textContent = e.target.value);
+
+const CLUSTER_COLORS = [
+  '#7c3aed','#22d3ee','#10b981','#f59e0b',
+  '#ef4444','#ec4899','#3b82f6','#84cc16',
+  '#f97316','#a855f7','#14b8a6','#eab308',
+];
+
+// Canvas scatter state
+let scatterPoints = [];
+let scatterCenters = [];
+let scatterK = 4;
+let scatterTransform = { ox: 0, oy: 0, scale: 1 };
+let scatterDrag = null;
+let scatterHover = null;
+
+function resizeScatter() {
+  const c = $('scatter-canvas'), wrap = $('scatter-wrap');
+  c.width  = wrap.clientWidth;
+  c.height = wrap.clientHeight;
+  drawScatter();
+}
+
+function worldToScreen(x, y) {
+  const c = $('scatter-canvas');
+  const { ox, oy, scale } = scatterTransform;
+  const cx = c.width/2, cy = c.height/2;
+  return [cx + (x - ox) * scale, cy + (y - oy) * scale];
+}
+
+function screenToWorld(sx, sy) {
+  const c = $('scatter-canvas');
+  const { ox, oy, scale } = scatterTransform;
+  const cx = c.width/2, cy = c.height/2;
+  return [(sx - cx) / scale + ox, (sy - cy) / scale + oy];
+}
+
+function drawScatter() {
+  const c = $('scatter-canvas'); if (!c) return;
+  const ctx = c.getContext('2d'), W = c.width, H = c.height;
+  ctx.clearRect(0,0,W,H);
+  // bg
+  ctx.fillStyle = '#0d0d20'; ctx.fillRect(0,0,W,H);
+  // grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 1;
+  const step = scatterTransform.scale * 0.25;
+  if (step > 6) {
+    const [wx0,wy0] = screenToWorld(0,0), [wx1,wy1] = screenToWorld(W,H);
+    for (let gx = Math.floor(wx0/0.25)*0.25; gx <= wx1; gx += 0.25) {
+      const [sx] = worldToScreen(gx, 0); ctx.beginPath(); ctx.moveTo(sx,0); ctx.lineTo(sx,H); ctx.stroke();
+    }
+    for (let gy = Math.floor(wy0/0.25)*0.25; gy <= wy1; gy += 0.25) {
+      const [,sy] = worldToScreen(0, gy); ctx.beginPath(); ctx.moveTo(0,sy); ctx.lineTo(W,sy); ctx.stroke();
+    }
+  }
+  // cluster arcs (very faint)
+  if (scatterCenters.length) {
+    scatterPoints.forEach(p => {
+      const ci = p.cluster ?? 0;
+      const [sx, sy] = worldToScreen(p.x, p.y);
+      const [cx2, cy2] = worldToScreen(scatterCenters[ci]?.[0]??0, scatterCenters[ci]?.[1]??0);
+      ctx.strokeStyle = CLUSTER_COLORS[ci % CLUSTER_COLORS.length] + '18';
+      ctx.lineWidth = 0.7;
+      ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(cx2,cy2); ctx.stroke();
+    });
+  }
+  // points
+  scatterPoints.forEach(p => {
+    const [sx, sy] = worldToScreen(p.x, p.y);
+    if (sx < -20 || sx > W+20 || sy < -20 || sy > H+20) return;
+    const ci = p.cluster ?? 0;
+    const col = CLUSTER_COLORS[ci % CLUSTER_COLORS.length];
+    const r = scatterHover?.id === p.id ? 8 : 5;
+    ctx.save();
+    ctx.shadowBlur  = scatterHover?.id === p.id ? 18 : 6;
+    ctx.shadowColor = col;
+    ctx.fillStyle   = col;
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath(); ctx.arc(sx, sy, r, 0, 2*Math.PI); ctx.fill();
+    ctx.restore();
+  });
+  // centroid rings
+  scatterCenters.forEach((c2, ci) => {
+    const [sx, sy] = worldToScreen(c2[0], c2[1]);
+    const col = CLUSTER_COLORS[ci % CLUSTER_COLORS.length];
+    ctx.save(); ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([4,4]);
+    ctx.shadowBlur = 12; ctx.shadowColor = col;
+    ctx.beginPath(); ctx.arc(sx, sy, 14, 0, 2*Math.PI); ctx.stroke();
+    ctx.setLineDash([]); ctx.restore();
+  });
+}
+
+// Scatter: zoom + pan
+$('scatter-canvas').addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY < 0 ? 1.12 : 0.89;
+  const rect  = $('scatter-canvas').getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const [wx, wy] = screenToWorld(mx, my);
+  scatterTransform.scale *= delta;
+  const [nx, ny] = worldToScreen(wx, wy);
+  scatterTransform.ox += (mx - nx) / scatterTransform.scale;
+  scatterTransform.oy += (my - ny) / scatterTransform.scale;
+  drawScatter();
+}, { passive: false });
+
+$('scatter-canvas').addEventListener('mousedown', e => {
+  scatterDrag = { sx: e.clientX, sy: e.clientY, ox: scatterTransform.ox, oy: scatterTransform.oy };
+});
+window.addEventListener('mousemove', e => {
+  if (scatterDrag) {
+    const dx = e.clientX - scatterDrag.sx, dy = e.clientY - scatterDrag.sy;
+    scatterTransform.ox = scatterDrag.ox - dx / scatterTransform.scale;
+    scatterTransform.oy = scatterDrag.oy - dy / scatterTransform.scale;
+    drawScatter();
+  } else {
+    // hover hit-test
+    const c = $('scatter-canvas'); if (!c) return;
+    const rect = c.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    let best = null, bd = 14;
+    scatterPoints.forEach(p => {
+      const [sx, sy] = worldToScreen(p.x, p.y);
+      const d = Math.hypot(sx-mx, sy-my);
+      if (d < bd) { bd=d; best=p; }
+    });
+    scatterHover = best;
+    drawScatter();
+    const tt = $('scatter-tooltip');
+    if (best) {
+      const meta = best.meta && Object.keys(best.meta).length ? JSON.stringify(best.meta) : '';
+      tt.innerHTML = `<b>ID ${best.id}</b>${meta ? `<br>${meta}` : ''}<br>cluster ${best.cluster??'—'}<br>(${best.x?.toFixed(3)}, ${best.y?.toFixed(3)})`;
+      tt.classList.add('vis');
+      tt.style.left = (e.clientX - rect.left + 14) + 'px';
+      tt.style.top  = (e.clientY - rect.top  - 8)  + 'px';
+    } else {
+      tt.classList.remove('vis');
+    }
   }
 });
+window.addEventListener('mouseup', () => { scatterDrag = null; });
+window.addEventListener('resize', resizeScatter);
 
-async function boot() {
-  buildBackgroundStars();
-  await backend.ping();
-  document.getElementById('status').textContent = backend.online
-    ? 'live · FastAPI backend connected'
-    : 'offline · static demo · open viz.html for the full field';
-  fire();
-  q.focus();
+function setScatterData(points, centers, k) {
+  scatterPoints  = points;
+  scatterCenters = centers;
+  scatterK       = k;
+  // Reset transform for new data
+  scatterTransform = { ox: 0, oy: 0, scale: Math.min($('scatter-canvas').width, $('scatter-canvas').height) * 0.42 };
+  drawScatter();
+  // Legend
+  const leg = $('proj-legend'); leg.innerHTML = '';
+  for (let i = 0; i < k; i++) {
+    const row = mk('div','kv-row');
+    row.innerHTML = `<span style="display:flex;align-items:center;gap:7px"><span style="width:10px;height:10px;border-radius:50%;background:${CLUSTER_COLORS[i%CLUSTER_COLORS.length]};display:inline-block;box-shadow:0 0 6px ${CLUSTER_COLORS[i%CLUSTER_COLORS.length]}55"></span>Cluster ${i}</span>
+      <span class="v">${points.filter(p=>p.cluster===i).length}</span>`;
+    leg.appendChild(row);
+  }
 }
 
-boot();
+$('proj-gen-btn').addEventListener('click', async () => {
+  const name = $('proj-index').value;
+  if (!name) { toast('Select an index first', 'error'); return; }
+  const n = +$('proj-n').value, dim = +$('proj-dim').value;
+  const btn = $('proj-gen-btn'); btn.disabled = true;
+  try {
+    // generate random unit vectors
+    const vecs = [];
+    for (let i = 0; i < n; i++) {
+      const v = Array.from({length: dim}, () => (Math.random()*2-1));
+      const norm = Math.sqrt(v.reduce((a,x)=>a+x*x,0)) || 1;
+      vecs.push(v.map(x=>x/norm));
+    }
+    const r = await api('POST', `/api/indexes/${name}/add`, {
+      vectors: vecs,
+      ids: vecs.map((_,i)=>`rnd-${Date.now()}-${i}`),
+    });
+    toast(`Added ${r.inserted} vectors (${r.updated} updated)`, 'success');
+    $('proj-pt-count').textContent = 'N/A (project to update)';
+  } catch(e) { toast(e.message,'error'); }
+  finally { btn.disabled = false; }
+});
+
+$('proj-add-btn').addEventListener('click', async () => {
+  const name = $('proj-index').value;
+  if (!name) { toast('Select an index first', 'error'); return; }
+  const raw = $('proj-vecs').value.trim();
+  if (!raw) { toast('Paste JSON vectors first', 'error'); return; }
+  let vecs;
+  try { vecs = JSON.parse(raw); } catch { toast('Invalid JSON', 'error'); return; }
+  const btn = $('proj-add-btn'); btn.disabled = true;
+  try {
+    const r = await api('POST', `/api/indexes/${name}/add`, { vectors: vecs });
+    toast(`Added ${r.inserted} vectors`, 'success');
+  } catch(e) { toast(e.message,'error'); }
+  finally { btn.disabled = false; }
+});
+
+$('proj-project-btn').addEventListener('click', async () => {
+  const name = $('proj-index').value;
+  if (!name) { toast('Select an index first', 'error'); return; }
+  const btn = $('proj-project-btn'), err = $('proj-err');
+  btn.disabled = true; err.classList.remove('show');
+  const k = +$('proj-k').value;
+  try {
+    resizeScatter();
+    const r = await api('POST', `/api/indexes/${name}/cluster`, { k });
+    if (!r.points?.length) { toast('Index is empty — add vectors first', 'error'); return; }
+    $('proj-pt-count').textContent = r.n;
+    $('proj-ms').textContent = r.timing_ms?.toFixed(2)+'ms';
+    setScatterData(r.points, r.centers, r.k);
+    toast(`Projected ${r.n} points into ${r.k} clusters`, 'success');
+  } catch(e) { err.textContent = e.message; err.classList.add('show'); toast(e.message,'error'); }
+  finally { btn.disabled = false; }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// INDEX SELECT SYNC (shared across panels)
+// ═══════════════════════════════════════════════════════════════════
+async function populateIndexSelects() {
+  try {
+    const { indexes } = await api('GET', '/api/indexes');
+    ['srch-index','bench-index','proj-index'].forEach(id => {
+      const sel = $(id); if (!sel) return;
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">— select an index —</option>';
+      indexes.forEach(idx => {
+        const opt = mk('option'); opt.value = idx.name; opt.textContent = `${idx.name} (${idx.n_alive} vectors)`;
+        if (idx.name === cur) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    });
+  } catch {}
+}
+
+// ── Init ──────────────────────────────────────────────────────────
+setTimeout(() => { $('ov-compress-btn').click(); }, 600);
+resizeScatter();
 </script>
 </body>
 </html>
